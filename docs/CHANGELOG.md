@@ -46,13 +46,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Attribute access with chaining, enabling method calls and complex postfix expressions
     - List literals with support for empty lists, trailing commas, nested lists, and arbitrary expressions
     - Tuple literals with proper disambiguation from parenthesized expressions, supporting empty tuples and single-element tuples
+    - Dict literals with key-value pairs, supporting empty dicts, trailing commas, nested dicts, expressions as keys/values
   - Statement parsing:
     - Assignment statements (x = 5)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 65 tests covering operators, postfix operations, list/tuple literals
-  - **212 total tests, all passing (142 lexer + 65 parser + 5 compound operator tests)**
+  - Parser test suite: 72 tests covering operators, postfix operations, collection literals
+  - **219 total tests, all passing (142 lexer + 72 parser + 5 compound operator tests)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

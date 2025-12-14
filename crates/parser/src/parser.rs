@@ -573,6 +573,44 @@ impl Parser {
                     position: pos,
                 })
             }
+            Some(TokenKind::LeftBrace) => {
+                // Dict literal: {key: value, ...}
+                let pos = self.current_position();
+                self.advance(); // consume '{'
+                let mut pairs = Vec::new();
+
+                // Parse pairs if not empty
+                if !self.check(&TokenKind::RightBrace) {
+                    loop {
+                        // Parse key
+                        let key = self.parse_expression()?;
+                        
+                        // Expect colon
+                        self.expect_token(TokenKind::Colon, "Expected ':' after dict key")?;
+                        
+                        // Parse value
+                        let value = self.parse_expression()?;
+                        
+                        pairs.push((key, value));
+                        
+                        if !self.match_token(&TokenKind::Comma) {
+                            break;
+                        }
+                        
+                        // Allow trailing comma
+                        if self.check(&TokenKind::RightBrace) {
+                            break;
+                        }
+                    }
+                }
+
+                self.expect_token(TokenKind::RightBrace, "Expected '}' after dict pairs")?;
+                
+                Ok(Expression::Dict {
+                    pairs,
+                    position: pos,
+                })
+            }
             _ => Err(MambaError::ParseError(format!(
                 "Unexpected token at {}:{}: {:?}",
                 self.current_position().line,

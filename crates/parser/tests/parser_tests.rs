@@ -1195,3 +1195,196 @@ fn test_parse_tuple_subscript() {
         _ => panic!("Expected subscript operation"),
     }
 }
+
+// ============================================================================
+// Dict Expression Tests
+// ============================================================================
+
+#[test]
+fn test_empty_dict() {
+    let module = parse("{}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 0);
+        }
+        _ => panic!("Expected dict expression"),
+    }
+}
+
+#[test]
+fn test_single_pair_dict() {
+    let module = parse("{\"key\": \"value\"}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 1);
+            
+            // Check key is string "key"
+            match &pairs[0].0 {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "key"),
+                _ => panic!("Expected string literal as key"),
+            }
+            
+            // Check value is string "value"
+            match &pairs[0].1 {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "value"),
+                _ => panic!("Expected string literal as value"),
+            }
+        }
+        _ => panic!("Expected dict expression"),
+    }
+}
+
+#[test]
+fn test_multiple_pairs_dict() {
+    let module = parse("{\"a\": 1, \"b\": 2, \"c\": 3}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 3);
+            
+            // Check first pair: "a": 1
+            match &pairs[0].0 {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "a"),
+                _ => panic!("Expected string literal as key"),
+            }
+            match &pairs[0].1 {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 1),
+                _ => panic!("Expected integer literal as value"),
+            }
+            
+            // Check second pair: "b": 2
+            match &pairs[1].0 {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "b"),
+                _ => panic!("Expected string literal as key"),
+            }
+            match &pairs[1].1 {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 2),
+                _ => panic!("Expected integer literal as value"),
+            }
+            
+            // Check third pair: "c": 3
+            match &pairs[2].0 {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "c"),
+                _ => panic!("Expected string literal as key"),
+            }
+            match &pairs[2].1 {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 3),
+                _ => panic!("Expected integer literal as value"),
+            }
+        }
+        _ => panic!("Expected dict expression"),
+    }
+}
+
+#[test]
+fn test_dict_with_trailing_comma() {
+    let module = parse("{\"x\": 10, \"y\": 20,}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 2);
+        }
+        _ => panic!("Expected dict expression"),
+    }
+}
+
+#[test]
+fn test_dict_with_expression_keys_and_values() {
+    let module = parse("{x + 1: y * 2, \"key\": [1, 2, 3]}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 2);
+            
+            // First pair: x + 1 : y * 2
+            match &pairs[0].0 {
+                Expression::BinaryOp { .. } => {},
+                _ => panic!("Expected binary operation as key"),
+            }
+            match &pairs[0].1 {
+                Expression::BinaryOp { .. } => {},
+                _ => panic!("Expected binary operation as value"),
+            }
+            
+            // Second pair: "key" : [1, 2, 3]
+            match &pairs[1].0 {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "key"),
+                _ => panic!("Expected string literal as key"),
+            }
+            match &pairs[1].1 {
+                Expression::List { elements, .. } => assert_eq!(elements.len(), 3),
+                _ => panic!("Expected list as value"),
+            }
+        }
+        _ => panic!("Expected dict expression"),
+    }
+}
+
+#[test]
+fn test_nested_dict() {
+    let module = parse("{\"outer\": {\"inner\": 42}}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 1);
+            
+            // Check key is "outer"
+            match &pairs[0].0 {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "outer"),
+                _ => panic!("Expected string literal as key"),
+            }
+            
+            // Check value is nested dict
+            match &pairs[0].1 {
+                Expression::Dict { pairs: inner_pairs, .. } => {
+                    assert_eq!(inner_pairs.len(), 1);
+                    
+                    // Check inner key is "inner"
+                    match &inner_pairs[0].0 {
+                        Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "inner"),
+                        _ => panic!("Expected string literal as inner key"),
+                    }
+                    
+                    // Check inner value is 42
+                    match &inner_pairs[0].1 {
+                        Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 42),
+                        _ => panic!("Expected integer literal as inner value"),
+                    }
+                }
+                _ => panic!("Expected dict as value"),
+            }
+        }
+        _ => panic!("Expected dict expression"),
+    }
+}
+
+#[test]
+fn test_dict_with_subscript() {
+    let module = parse("{\"a\": 1, \"b\": 2}[\"a\"]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { object, index, .. }) => {
+            // Object should be a dict
+            match **object {
+                Expression::Dict { .. } => {},
+                _ => panic!("Expected dict as subscript object"),
+            }
+            
+            // Index should be string "a"
+            match **index {
+                Expression::Literal(Literal::String { ref value, .. }) => assert_eq!(value, "a"),
+                _ => panic!("Expected string literal as index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
