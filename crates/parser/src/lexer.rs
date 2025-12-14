@@ -188,8 +188,50 @@ impl<'a> Lexer<'a> {
         
         self.advance(); // Skip opening quote
         
-        // TODO: Handle triple quotes, raw strings, f-strings
+        // Check for triple-quoted string
+        let is_triple = if self.current_char == Some(quote) && self.peek() == Some(quote) {
+            lexeme.push(quote);
+            lexeme.push(quote);
+            self.advance();
+            self.advance();
+            true
+        } else {
+            false
+        };
         
+        if is_triple {
+            // Triple-quoted string (multiline)
+            let mut quote_count = 0;
+            
+            while let Some(c) = self.current_char {
+                if c == quote {
+                    quote_count += 1;
+                    lexeme.push(c);
+                    self.advance();
+                    
+                    if quote_count == 3 {
+                        return Ok(Token::new(TokenKind::String(value), start_pos, lexeme));
+                    }
+                } else {
+                    // Add any accumulated quotes to value
+                    for _ in 0..quote_count {
+                        value.push(quote);
+                    }
+                    quote_count = 0;
+                    
+                    lexeme.push(c);
+                    value.push(c);
+                    self.advance();
+                }
+            }
+            
+            return Err(MambaError::SyntaxError(format!(
+                "Unterminated triple-quoted string at {}",
+                start_pos
+            )));
+        }
+        
+        // Single-quoted string
         while let Some(c) = self.current_char {
             if c == quote {
                 lexeme.push(c);
@@ -210,7 +252,8 @@ impl<'a> Lexer<'a> {
                         '\\' => '\\',
                         '\'' => '\'',
                         '"' => '"',
-                        _ => escaped, // TODO: Handle more escape sequences
+                        '0' => '\0',
+                        _ => escaped,
                     };
                     value.push(unescaped);
                     self.advance();
@@ -232,7 +275,30 @@ impl<'a> Lexer<'a> {
         let start_pos = self.position;
         let mut lexeme = String::new();
         
-        // TODO: Handle hex, oct, binary literals (0x, 0o, 0b)
+        // Check for hex, oct, binary literals (0x, 0o, 0b)
+        if self.current_char == Some('0') {
+            lexeme.push('0');
+            self.advance();
+            
+            match self.current_char {
+                Some('x') | Some('X') => {
+                    lexeme.push('x');
+                    self.advance();
+                    return self.tokenize_hex_number(start_pos, lexeme);
+                }
+                Some('o') | Some('O') => {
+                    lexeme.push('o');
+                    self.advance();
+                    return self.tokenize_oct_number(start_pos, lexeme);
+                }
+                Some('b') | Some('B') => {
+                    lexeme.push('b');
+                    self.advance();
+                    return self.tokenize_bin_number(start_pos, lexeme);
+                }
+                _ => {}
+            }
+        }
         
         // Read integer part
         while let Some(c) = self.current_char {
@@ -290,6 +356,16 @@ impl<'a> Lexer<'a> {
             } else {
                 break;
             }
+        }
+        
+        // Check for raw strings (r"..." or r'...')
+        if (lexeme == "r" || lexeme == "R") && matches!(self.current_char, Some('"') | Some('\'')) {
+            return self.tokenize_raw_string();
+        }
+        
+        // Check for f-strings (f"..." or f'...')
+        if (lexeme == "f" || lexeme == "F") && matches!(self.current_char, Some('"') | Some('\'')) {
+            return self.tokenize_fstring();
         }
         
         // Check if it's a keyword
@@ -520,6 +596,195 @@ impl<'a> Lexer<'a> {
         
         Ok(Token::new(TokenKind::Dot, start_pos, lexeme))
     }
+
+    fn tokenize_hex_number(&mut self, start_pos: SourcePosition, mut lexeme: String) -> LexResult {
+        let mut has_digits = false;
+        
+        while let Some(c) = self.current_char {
+            if c.is_ascii_hexdigit() {
+                lexeme.push(c);
+                self.advance();
+                has_digits = true;
+            } else {
+                break;
+            }
+        }
+        
+        if !has_digits {
+            return Err(MambaError::SyntaxError(format!(
+                "Invalid hexadecimal literal '{}' at {}",
+                lexeme, start_pos
+            )));
+        }
+        
+        let value = i64::from_str_radix(&lexeme[2..], 16).map_err(|_| {
+            MambaError::SyntaxError(format!(
+                "Invalid hexadecimal literal '{}' at {}",
+                lexeme, start_pos
+            ))
+        })?;
+        
+        Ok(Token::new(TokenKind::Integer(value), start_pos, lexeme))
+    }
+
+    fn tokenize_oct_number(&mut self, start_pos: SourcePosition, mut lexeme: String) -> LexResult {
+        let mut has_digits = false;
+        
+        while let Some(c) = self.current_char {
+            if c >= '0' && c <= '7' {
+                lexeme.push(c);
+                self.advance();
+                has_digits = true;
+            } else {
+                break;
+            }
+        }
+        
+        if !has_digits {
+            return Err(MambaError::SyntaxError(format!(
+                "Invalid octal literal '{}' at {}",
+                lexeme, start_pos
+            )));
+        }
+        
+        let value = i64::from_str_radix(&lexeme[2..], 8).map_err(|_| {
+            MambaError::SyntaxError(format!(
+                "Invalid octal literal '{}' at {}",
+                lexeme, start_pos
+            ))
+        })?;
+        
+        Ok(Token::new(TokenKind::Integer(value), start_pos, lexeme))
+    }
+
+    fn tokenize_bin_number(&mut self, start_pos: SourcePosition, mut lexeme: String) -> LexResult {
+        let mut has_digits = false;
+        
+        while let Some(c) = self.current_char {
+            if c == '0' || c == '1' {
+                lexeme.push(c);
+                self.advance();
+                has_digits = true;
+            } else {
+                break;
+            }
+        }
+        
+        if !has_digits {
+            return Err(MambaError::SyntaxError(format!(
+                "Invalid binary literal '{}' at {}",
+                lexeme, start_pos
+            )));
+        }
+        
+        let value = i64::from_str_radix(&lexeme[2..], 2).map_err(|_| {
+            MambaError::SyntaxError(format!(
+                "Invalid binary literal '{}' at {}",
+                lexeme, start_pos
+            ))
+        })?;
+        
+        Ok(Token::new(TokenKind::Integer(value), start_pos, lexeme))
+    }
+
+    fn tokenize_raw_string(&mut self) -> LexResult {
+        let start_pos = self.position;
+        let quote = self.current_char.unwrap();
+        let mut value = String::new();
+        let mut lexeme = format!("r{}", quote);
+        
+        self.advance(); // Skip opening quote
+        
+        // Check for triple-quoted raw string
+        let is_triple = if self.current_char == Some(quote) && self.peek() == Some(quote) {
+            lexeme.push(quote);
+            lexeme.push(quote);
+            self.advance();
+            self.advance();
+            true
+        } else {
+            false
+        };
+        
+        if is_triple {
+            // Triple-quoted raw string
+            let mut quote_count = 0;
+            
+            while let Some(c) = self.current_char {
+                if c == quote {
+                    quote_count += 1;
+                    lexeme.push(c);
+                    self.advance();
+                    
+                    if quote_count == 3 {
+                        return Ok(Token::new(TokenKind::String(value), start_pos, lexeme));
+                    }
+                } else {
+                    for _ in 0..quote_count {
+                        value.push(quote);
+                    }
+                    quote_count = 0;
+                    
+                    lexeme.push(c);
+                    value.push(c); // Raw string: no escape processing
+                    self.advance();
+                }
+            }
+            
+            return Err(MambaError::SyntaxError(format!(
+                "Unterminated triple-quoted raw string at {}",
+                start_pos
+            )));
+        }
+        
+        // Single-quoted raw string - no escape sequences processed
+        while let Some(c) = self.current_char {
+            if c == quote {
+                lexeme.push(c);
+                self.advance();
+                return Ok(Token::new(TokenKind::String(value), start_pos, lexeme));
+            }
+            
+            lexeme.push(c);
+            value.push(c); // Raw string: backslashes are literal
+            self.advance();
+        }
+        
+        Err(MambaError::SyntaxError(format!(
+            "Unterminated raw string at {}",
+            start_pos
+        )))
+    }
+
+    fn tokenize_fstring(&mut self) -> LexResult {
+        let start_pos = self.position;
+        // TODO: Proper f-string support with expression interpolation
+        // For now, treat as regular string and emit warning
+        log::warn!("F-string support is incomplete at {}", start_pos);
+        
+        let quote = self.current_char.unwrap();
+        let mut value = String::new();
+        let mut lexeme = format!("f{}", quote);
+        
+        self.advance(); // Skip opening quote
+        
+        while let Some(c) = self.current_char {
+            if c == quote {
+                lexeme.push(c);
+                self.advance();
+                return Ok(Token::new(TokenKind::String(value), start_pos, lexeme));
+            }
+            
+            lexeme.push(c);
+            value.push(c);
+            self.advance();
+        }
+        
+        Err(MambaError::SyntaxError(format!(
+            "Unterminated f-string at {}",
+            start_pos
+        )))
+    }
 }
 
 #[cfg(test)]
@@ -617,5 +882,113 @@ mod tests {
         assert_eq!(tokens[6].kind, TokenKind::Comma);
         assert_eq!(tokens[7].kind, TokenKind::Colon);
         assert_eq!(tokens[8].kind, TokenKind::Semicolon);
+    }
+
+    #[test]
+    fn test_hex_oct_bin_numbers() {
+        let mut lexer = Lexer::new("0xFF 0o77 0b1010");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::Integer(255));
+        assert_eq!(tokens[1].kind, TokenKind::Integer(63));
+        assert_eq!(tokens[2].kind, TokenKind::Integer(10));
+    }
+
+    #[test]
+    fn test_walrus_and_arrow() {
+        let mut lexer = Lexer::new(":= ->");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::Walrus);
+        assert_eq!(tokens[1].kind, TokenKind::Arrow);
+    }
+
+    #[test]
+    fn test_ellipsis() {
+        let mut lexer = Lexer::new("...");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::Ellipsis);
+    }
+
+    #[test]
+    fn test_double_star() {
+        let mut lexer = Lexer::new("** **=");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::DoubleStar);
+        assert_eq!(tokens[1].kind, TokenKind::DoubleStarAssign);
+    }
+
+    #[test]
+    fn test_shift_operators() {
+        let mut lexer = Lexer::new("<< >> <<= >>=");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::LeftShift);
+        assert_eq!(tokens[1].kind, TokenKind::RightShift);
+        assert_eq!(tokens[2].kind, TokenKind::LeftShiftAssign);
+        assert_eq!(tokens[3].kind, TokenKind::RightShiftAssign);
+    }
+
+    #[test]
+    fn test_comment() {
+        let mut lexer = Lexer::new("# this is a comment\nx = 5");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::Comment("this is a comment".to_string()));
+        assert_eq!(tokens[1].kind, TokenKind::Newline);
+        assert_eq!(tokens[2].kind, TokenKind::Identifier("x".to_string()));
+    }
+
+    #[test]
+    fn test_string_escapes() {
+        let mut lexer = Lexer::new(r#""hello\nworld""#);
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::String("hello\nworld".to_string()));
+    }
+
+    #[test]
+    fn test_unterminated_string() {
+        let mut lexer = Lexer::new("\"unterminated");
+        let result = lexer.tokenize();
+        
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let mut lexer = Lexer::new("\"\"");
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::String(String::new()));
+    }
+
+    #[test]
+    fn test_triple_quoted_string() {
+        let mut lexer = Lexer::new(r#""""hello
+world""""#);
+        let tokens = lexer.tokenize().unwrap();
+        
+        assert_eq!(tokens[0].kind, TokenKind::String("hello\nworld".to_string()));
+    }
+
+    #[test]
+    fn test_raw_string() {
+        let mut lexer = Lexer::new(r#"r"hello\nworld""#);
+        let tokens = lexer.tokenize().unwrap();
+        
+        // Raw string: backslashes are literal
+        assert_eq!(tokens[0].kind, TokenKind::String(r"hello\nworld".to_string()));
+    }
+
+    #[test]
+    fn test_fstring_basic() {
+        let mut lexer = Lexer::new(r#"f"hello""#);
+        let tokens = lexer.tokenize().unwrap();
+        
+        // Basic f-string (TODO: interpolation not yet supported)
+        assert_eq!(tokens[0].kind, TokenKind::String("hello".to_string()));
     }
 }

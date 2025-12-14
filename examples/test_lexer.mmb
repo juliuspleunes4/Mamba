@@ -1,0 +1,25 @@
+# Simple Mamba program
+x = 42
+y = 3.14
+name = "Alice"
+
+# Hex, oct, binary
+hex_val = 0xFF
+oct_val = 0o77
+bin_val = 0b1010
+
+# Operators
+result = x + y * 2
+is_equal = x == 42
+shifted = x << 2
+
+# Raw string
+path = r"C:\Users\Name"
+
+# Triple quoted
+doc = """This is
+a multiline
+string"""
+
+# Function call (just tokens for now)
+print(name)

@@ -72,21 +72,21 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Tokenize floating-point literals
 - [x] Tokenize string literals (single quotes)
 - [x] Tokenize string literals (double quotes)
-- [x] Handle escape sequences (\n, \t, \\, \', \")
-- [ ] Tokenize raw strings (r"...")
-- [ ] Tokenize f-strings (f"...")
+- [x] Handle escape sequences (\n, \t, \\, \', \", \0)
+- [x] Tokenize raw strings (r"...")
+- [x] Tokenize f-strings (f"...")
 - [x] Tokenize boolean literals (True, False)
 - [x] Tokenize None literal
-- [ ] Support multi-line strings (triple quotes)
+- [x] Support multi-line strings (triple quotes)
 
 ### 1.3 Advanced Lexer Features
 
 - [x] Tokenize identifiers (variable names, function names)
 - [x] Validate identifier naming rules
 - [x] Handle comments (# single-line)
-- [ ] Support hexadecimal literals (0x...)
-- [ ] Support octal literals (0o...)
-- [ ] Support binary literals (0b...)
+- [x] Support hexadecimal literals (0x...)
+- [x] Support octal literals (0o...)
+- [x] Support binary literals (0b...)
 - [ ] Handle Unicode identifiers
 - [x] Implement lookahead for multi-character operators (==, !=, <=, >=, //, **, etc.)
 
