@@ -393,3 +393,55 @@ fn test_parse_complex_expression() {
         _ => panic!("Expected subtraction as top-level operation"),
     }
 }
+
+#[test]
+fn test_parse_not_in_operator() {
+    let module = parse("x not in list\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::BinaryOp { op, .. }) => {
+            assert!(matches!(op, BinaryOperator::NotIn));
+        }
+        _ => panic!("Expected binary operation with NotIn operator"),
+    }
+}
+
+#[test]
+fn test_parse_is_not_operator() {
+    let module = parse("x is not y\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::BinaryOp { op, .. }) => {
+            assert!(matches!(op, BinaryOperator::IsNot));
+        }
+        _ => panic!("Expected binary operation with IsNot operator"),
+    }
+}
+
+#[test]
+fn test_parse_in_operator() {
+    let module = parse("x in list\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::BinaryOp { op, .. }) => {
+            assert!(matches!(op, BinaryOperator::In));
+        }
+        _ => panic!("Expected binary operation with In operator"),
+    }
+}
+
+#[test]
+fn test_parse_is_operator() {
+    let module = parse("x is None\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::BinaryOp { op, .. }) => {
+            assert!(matches!(op, BinaryOperator::Is));
+        }
+        _ => panic!("Expected binary operation with Is operator"),
+    }
+}

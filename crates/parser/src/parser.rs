@@ -450,6 +450,37 @@ impl Parser {
 
     /// Match comparison operators
     fn match_comparison_op(&mut self) -> Option<BinaryOperator> {
+        // Handle compound operators first (not in, is not)
+        match self.current_kind() {
+            Some(TokenKind::Not) => {
+                // Peek ahead to see if this is "not in"
+                if let Some(next_token) = self.tokens.peek() {
+                    if next_token.kind == TokenKind::In {
+                        self.advance(); // consume "not"
+                        self.advance(); // consume "in"
+                        return Some(BinaryOperator::NotIn);
+                    }
+                }
+                // Not a comparison operator
+                return None;
+            }
+            Some(TokenKind::Is) => {
+                // Peek ahead to see if this is "is not"
+                if let Some(next_token) = self.tokens.peek() {
+                    if next_token.kind == TokenKind::Not {
+                        self.advance(); // consume "is"
+                        self.advance(); // consume "not"
+                        return Some(BinaryOperator::IsNot);
+                    }
+                }
+                // Just "is"
+                self.advance();
+                return Some(BinaryOperator::Is);
+            }
+            _ => {}
+        }
+        
+        // Handle simple operators
         let op = match self.current_kind() {
             Some(TokenKind::Equal) => BinaryOperator::Equal,
             Some(TokenKind::NotEqual) => BinaryOperator::NotEqual,
@@ -458,7 +489,6 @@ impl Parser {
             Some(TokenKind::Greater) => BinaryOperator::GreaterThan,
             Some(TokenKind::GreaterEqual) => BinaryOperator::GreaterThanEq,
             Some(TokenKind::In) => BinaryOperator::In,
-            Some(TokenKind::Is) => BinaryOperator::Is,
             _ => return None,
         };
         self.advance();
