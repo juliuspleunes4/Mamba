@@ -105,7 +105,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Test edge cases (empty files, whitespace-only, etc.)
 - [x] Test error conditions
 - [x] Create lexer benchmarks
-- [ ] Add fuzzing tests for robustness
+- [x] Add fuzzing tests for robustness
 
 ---
 

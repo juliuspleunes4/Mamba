@@ -1,0 +1,10 @@
+target
+artifacts
+coverage
+
+# Ignore fuzzer-generated corpus files (binary, auto-generated)
+corpus/*/*
+# But keep our manually created seed inputs (.txt files)
+!corpus/*/*.txt
+# Keep corpus directory structure
+!corpus/*/
