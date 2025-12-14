@@ -1349,6 +1349,184 @@ fn test_parse_if_elif_without_else() {
 }
 
 // ============================================================================
+// Control Flow - While Loop Tests
+// ============================================================================
+
+#[test]
+fn test_parse_while_simple() {
+    let module = parse("while x:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::While { condition, body, else_block, .. } => {
+            match condition {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier condition"),
+            }
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0], Statement::Pass(_)));
+            assert!(else_block.is_none());
+        }
+        _ => panic!("Expected while statement"),
+    }
+}
+
+#[test]
+fn test_parse_while_else() {
+    let module = parse("while x:\n    pass\nelse:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::While { condition, body, else_block, .. } => {
+            match condition {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier"),
+            }
+            assert_eq!(body.len(), 1);
+            assert!(else_block.is_some());
+            let else_stmts = else_block.as_ref().unwrap();
+            assert_eq!(else_stmts.len(), 1);
+        }
+        _ => panic!("Expected while statement"),
+    }
+}
+
+#[test]
+fn test_parse_while_with_break() {
+    let module = parse("while x:\n    break\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::While { body, .. } => {
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0], Statement::Break(_)));
+        }
+        _ => panic!("Expected while statement"),
+    }
+}
+
+#[test]
+fn test_parse_while_with_complex_condition() {
+    let module = parse("while x > 0 and y < 10:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::While { condition, .. } => {
+            assert!(matches!(condition, Expression::BinaryOp { .. }));
+        }
+        _ => panic!("Expected while statement"),
+    }
+}
+
+#[test]
+fn test_parse_nested_while() {
+    let module = parse("while x:\n    while y:\n        pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::While { body, .. } => {
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0], Statement::While { .. }));
+        }
+        _ => panic!("Expected while statement"),
+    }
+}
+
+// ============================================================================
+// Control Flow - For Loop Tests
+// ============================================================================
+
+#[test]
+fn test_parse_for_simple() {
+    let module = parse("for x in items:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::For { target, iter, body, else_block, .. } => {
+            match target {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier target"),
+            }
+            match iter {
+                Expression::Identifier { name, .. } => assert_eq!(name, "items"),
+                _ => panic!("Expected identifier iter"),
+            }
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0], Statement::Pass(_)));
+            assert!(else_block.is_none());
+        }
+        _ => panic!("Expected for statement"),
+    }
+}
+
+#[test]
+fn test_parse_for_else() {
+    let module = parse("for x in items:\n    pass\nelse:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::For { body, else_block, .. } => {
+            assert_eq!(body.len(), 1);
+            assert!(else_block.is_some());
+            let else_stmts = else_block.as_ref().unwrap();
+            assert_eq!(else_stmts.len(), 1);
+        }
+        _ => panic!("Expected for statement"),
+    }
+}
+
+#[test]
+fn test_parse_for_with_tuple_unpacking() {
+    let module = parse("for x, y in items:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::For { target, .. } => {
+            // Target should be a tuple
+            match target {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 2);
+                }
+                _ => panic!("Expected tuple target"),
+            }
+        }
+        _ => panic!("Expected for statement"),
+    }
+}
+
+#[test]
+fn test_parse_for_with_range() {
+    let module = parse("for i in range(10):\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::For { iter, .. } => {
+            // iter should be a function call
+            assert!(matches!(iter, Expression::Call { .. }));
+        }
+        _ => panic!("Expected for statement"),
+    }
+}
+
+#[test]
+fn test_parse_nested_for() {
+    let module = parse("for x in items:\n    for y in x:\n        pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::For { body, .. } => {
+            assert_eq!(body.len(), 1);
+            assert!(matches!(body[0], Statement::For { .. }));
+        }
+        _ => panic!("Expected for statement"),
+    }
+}
+
+#[test]
+fn test_parse_for_with_break_continue() {
+    let module = parse("for x in items:\n    if x:\n        break\n    continue\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::For { body, .. } => {
+            assert_eq!(body.len(), 2);
+            assert!(matches!(body[0], Statement::If { .. }));
+            assert!(matches!(body[1], Statement::Continue(_)));
+        }
+        _ => panic!("Expected for statement"),
+    }
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 
@@ -1577,6 +1755,54 @@ fn test_parse_elif_missing_colon_error() {
 #[test]
 fn test_parse_else_missing_colon_error() {
     let result = parse("if x:\n    pass\nelse\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_while_missing_colon_error() {
+    let result = parse("while x\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_while_missing_condition_error() {
+    let result = parse("while :\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_while_missing_block_error() {
+    let result = parse("while x:\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_for_missing_in_error() {
+    let result = parse("for x items:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_for_missing_colon_error() {
+    let result = parse("for x in items\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_for_missing_target_error() {
+    let result = parse("for in items:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_for_missing_iterable_error() {
+    let result = parse("for x in :\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_for_missing_block_error() {
+    let result = parse("for x in items:\n");
     assert!(result.is_err());
 }
 
