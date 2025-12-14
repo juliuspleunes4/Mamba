@@ -60,6 +60,7 @@ impl Parser {
             Some(TokenKind::Return) => self.parse_return(),
             Some(TokenKind::Assert) => self.parse_assert(),
             Some(TokenKind::Del) => self.parse_del(),
+            Some(TokenKind::Global) => self.parse_global(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -226,6 +227,48 @@ impl Parser {
         self.consume_newline_or_eof()?;
         Ok(Statement::Del {
             targets,
+            position: pos,
+        })
+    }
+
+    /// Parse global statement (global x, y, z)
+    fn parse_global(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'global'
+        
+        // Parse comma-separated identifier names
+        let mut names = Vec::new();
+        
+        loop {
+            match self.current_kind() {
+                Some(TokenKind::Identifier(name)) => {
+                    names.push(name.clone());
+                    self.advance();
+                }
+                _ => {
+                    return Err(MambaError::ParseError(
+                        format!("Expected identifier after 'global' at {}:{}", 
+                            self.current_position().line, 
+                            self.current_position().column)
+                    ));
+                }
+            }
+            
+            // Check for comma
+            if self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma
+                if self.check(&TokenKind::Newline) || self.is_at_end() {
+                    break;
+                }
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Global {
+            names,
             position: pos,
         })
     }

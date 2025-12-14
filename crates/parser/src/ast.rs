@@ -52,6 +52,11 @@ pub enum Statement {
         targets: Vec<Expression>,
         position: SourcePosition,
     },
+    /// Global statement (global x, y)
+    Global {
+        names: Vec<String>,
+        position: SourcePosition,
+    },
     /// If statement
     If {
         condition: Expression,
@@ -366,6 +371,7 @@ impl Statement {
             Statement::Return { position, .. } => position,
             Statement::Assert { position, .. } => position,
             Statement::Del { position, .. } => position,
+            Statement::Global { position, .. } => position,
             Statement::If { position, .. } => position,
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,
