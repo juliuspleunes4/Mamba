@@ -1202,6 +1202,153 @@ fn test_parse_from_import_trailing_comma() {
 }
 
 // ============================================================================
+// Control Flow - If Statement Tests
+// ============================================================================
+
+#[test]
+fn test_parse_if_simple() {
+    let module = parse("if x:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { condition, then_block, elif_blocks, else_block, .. } => {
+            // Check condition
+            match condition {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier condition"),
+            }
+            // Check then block
+            assert_eq!(then_block.len(), 1);
+            assert!(matches!(then_block[0], Statement::Pass(_)));
+            // No elif or else
+            assert_eq!(elif_blocks.len(), 0);
+            assert!(else_block.is_none());
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+#[test]
+fn test_parse_if_else() {
+    let module = parse("if x:\n    pass\nelse:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { condition, then_block, elif_blocks, else_block, .. } => {
+            match condition {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier condition"),
+            }
+            assert_eq!(then_block.len(), 1);
+            assert_eq!(elif_blocks.len(), 0);
+            assert!(else_block.is_some());
+            let else_stmts = else_block.as_ref().unwrap();
+            assert_eq!(else_stmts.len(), 1);
+            assert!(matches!(else_stmts[0], Statement::Pass(_)));
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+#[test]
+fn test_parse_if_elif_else() {
+    let module = parse("if x:\n    pass\nelif y:\n    pass\nelse:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { condition, then_block, elif_blocks, else_block, .. } => {
+            match condition {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier condition"),
+            }
+            assert_eq!(then_block.len(), 1);
+            assert_eq!(elif_blocks.len(), 1);
+            // Check elif
+            match &elif_blocks[0].0 {
+                Expression::Identifier { name, .. } => assert_eq!(name, "y"),
+                _ => panic!("Expected identifier condition"),
+            }
+            assert_eq!(elif_blocks[0].1.len(), 1);
+            // Check else
+            assert!(else_block.is_some());
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+#[test]
+fn test_parse_if_multiple_elif() {
+    let module = parse("if x:\n    pass\nelif y:\n    pass\nelif z:\n    pass\nelse:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { elif_blocks, .. } => {
+            assert_eq!(elif_blocks.len(), 2);
+            match &elif_blocks[0].0 {
+                Expression::Identifier { name, .. } => assert_eq!(name, "y"),
+                _ => panic!("Expected identifier"),
+            }
+            match &elif_blocks[1].0 {
+                Expression::Identifier { name, .. } => assert_eq!(name, "z"),
+                _ => panic!("Expected identifier"),
+            }
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+#[test]
+fn test_parse_if_with_multiple_statements() {
+    let module = parse("if x:\n    a = 1\n    b = 2\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { then_block, .. } => {
+            assert_eq!(then_block.len(), 3);
+            assert!(matches!(then_block[0], Statement::Assignment { .. }));
+            assert!(matches!(then_block[1], Statement::Assignment { .. }));
+            assert!(matches!(then_block[2], Statement::Pass(_)));
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+#[test]
+fn test_parse_if_with_complex_condition() {
+    let module = parse("if x > 5 and y < 10:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { condition, .. } => {
+            // Should parse as a logical AND of two comparisons
+            assert!(matches!(condition, Expression::BinaryOp { .. }));
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+#[test]
+fn test_parse_nested_if() {
+    let module = parse("if x:\n    if y:\n        pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { then_block, .. } => {
+            assert_eq!(then_block.len(), 1);
+            // Inner if should be another If statement
+            assert!(matches!(then_block[0], Statement::If { .. }));
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+#[test]
+fn test_parse_if_elif_without_else() {
+    let module = parse("if x:\n    pass\nelif y:\n    pass\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::If { elif_blocks, else_block, .. } => {
+            assert_eq!(elif_blocks.len(), 1);
+            assert!(else_block.is_none());
+        }
+        _ => panic!("Expected if statement"),
+    }
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 
@@ -1394,6 +1541,42 @@ fn test_parse_from_import_missing_module_name_error() {
 #[test]
 fn test_parse_assert_with_invalid_expression_error() {
     let result = parse("assert if\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_if_missing_colon_error() {
+    let result = parse("if x\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_if_missing_condition_error() {
+    let result = parse("if :\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_if_missing_block_error() {
+    let result = parse("if x:\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_if_empty_block_error() {
+    let result = parse("if x:\n\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_elif_missing_colon_error() {
+    let result = parse("if x:\n    pass\nelif y\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_else_missing_colon_error() {
+    let result = parse("if x:\n    pass\nelse\n    pass\n");
     assert!(result.is_err());
 }
 

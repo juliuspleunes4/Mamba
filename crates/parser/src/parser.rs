@@ -65,6 +65,7 @@ impl Parser {
             Some(TokenKind::Raise) => self.parse_raise(),
             Some(TokenKind::Import) => self.parse_import(),
             Some(TokenKind::From) => self.parse_from_import(),
+            Some(TokenKind::If) => self.parse_if(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -548,6 +549,114 @@ impl Parser {
             items,
             position: pos,
         })
+    }
+
+    /// Parse if statement with optional elif and else blocks
+    fn parse_if(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'if'
+        
+        // Parse condition
+        let condition = self.parse_expression()?;
+        
+        // Expect colon
+        if !self.match_token(&TokenKind::Colon) {
+            return Err(MambaError::ParseError(
+                format!("Expected ':' after if condition at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse then block
+        let then_block = self.parse_block()?;
+        
+        // Parse elif blocks (zero or more)
+        let mut elif_blocks = Vec::new();
+        while self.check(&TokenKind::Elif) {
+            self.advance(); // consume 'elif'
+            
+            let elif_condition = self.parse_expression()?;
+            
+            if !self.match_token(&TokenKind::Colon) {
+                return Err(MambaError::ParseError(
+                    format!("Expected ':' after elif condition at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+            
+            let elif_body = self.parse_block()?;
+            elif_blocks.push((elif_condition, elif_body));
+        }
+        
+        // Parse optional else block
+        let else_block = if self.match_token(&TokenKind::Else) {
+            if !self.match_token(&TokenKind::Colon) {
+                return Err(MambaError::ParseError(
+                    format!("Expected ':' after else at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+        
+        Ok(Statement::If {
+            condition,
+            then_block,
+            elif_blocks,
+            else_block,
+            position: pos,
+        })
+    }
+
+    /// Parse an indented block of statements (INDENT ... DEDENT)
+    fn parse_block(&mut self) -> ParseResult<Vec<Statement>> {
+        // Consume newline after colon
+        if !self.match_token(&TokenKind::Newline) {
+            return Err(MambaError::ParseError(
+                format!("Expected newline after ':' at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Expect INDENT token
+        if !self.match_token(&TokenKind::Indent) {
+            return Err(MambaError::ParseError(
+                format!("Expected indented block at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse statements until DEDENT
+        let mut statements = Vec::new();
+        while !self.check(&TokenKind::Dedent) && !self.is_at_end() {
+            statements.push(self.parse_statement()?);
+        }
+        
+        // Expect DEDENT token
+        if !self.match_token(&TokenKind::Dedent) {
+            return Err(MambaError::ParseError(
+                format!("Expected dedent after block at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        if statements.is_empty() {
+            return Err(MambaError::ParseError(
+                format!("Block cannot be empty (use 'pass' for empty blocks) at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        Ok(statements)
     }
 
     /// Validate that at most one starred expression appears in unpacking targets
