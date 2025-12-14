@@ -73,7 +73,7 @@ This project is licensed under the terms of the [LICENSE](LICENSE).
 
 ---
 
-<p align="center">
+<div align="center">
 
 <pre>
 ███╗   ███╗ █████╗ ███╗   ███╗██████╗  █████╗
@@ -84,5 +84,5 @@ This project is licensed under the terms of the [LICENSE](LICENSE).
 ╚═╝     ╚═╝╚═╝  ╚═╝╚═╝     ╚═╝╚═════╝ ╚═╝  ╚═╝
 </pre>
 
-</p>
+</div>
 
