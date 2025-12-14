@@ -5,8 +5,6 @@
 ![Status](https://img.shields.io/badge/status-active--development-brightgreen?style=flat-square)
 ![PRs Welcome](https://img.shields.io/badge/PRs-welcome-blueviolet?style=flat-square)
 
----
-
 **Mamba** is a programming language with full Python syntax compatibility that transpiles to Rust and compiles to native binaries.
 
 > **Write Python-style code. Ship fast, native executables. No Python. No Rust. No setup.**
