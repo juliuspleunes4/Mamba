@@ -393,6 +393,92 @@ fn test_parse_chained_assignment() {
 }
 
 #[test]
+fn test_parse_tuple_unpacking() {
+    let module = parse("a, b = 1, 2\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assignment { targets, value, .. } => {
+            // Should have one target (the tuple)
+            assert_eq!(targets.len(), 1);
+            
+            // Check target is a tuple with two elements
+            match &targets[0] {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 2);
+                    match &elements[0] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "a"),
+                        _ => panic!("Expected identifier 'a'"),
+                    }
+                    match &elements[1] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "b"),
+                        _ => panic!("Expected identifier 'b'"),
+                    }
+                }
+                _ => panic!("Expected tuple as target"),
+            }
+            
+            // Check value is a tuple with two integers
+            match value {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 2);
+                    match &elements[0] {
+                        Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 1),
+                        _ => panic!("Expected integer 1"),
+                    }
+                    match &elements[1] {
+                        Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 2),
+                        _ => panic!("Expected integer 2"),
+                    }
+                }
+                _ => panic!("Expected tuple as value"),
+            }
+        }
+        _ => panic!("Expected assignment statement"),
+    }
+}
+
+#[test]
+fn test_parse_list_unpacking() {
+    let module = parse("x, y, z = [10, 20, 30]\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assignment { targets, value, .. } => {
+            // Should have one target (the tuple)
+            assert_eq!(targets.len(), 1);
+            
+            // Check target is a tuple with three elements
+            match &targets[0] {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 3);
+                    match &elements[0] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                        _ => panic!("Expected identifier 'x'"),
+                    }
+                    match &elements[1] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "y"),
+                        _ => panic!("Expected identifier 'y'"),
+                    }
+                    match &elements[2] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "z"),
+                        _ => panic!("Expected identifier 'z'"),
+                    }
+                }
+                _ => panic!("Expected tuple as target"),
+            }
+            
+            // Check value is a list
+            match value {
+                Expression::List { elements, .. } => {
+                    assert_eq!(elements.len(), 3);
+                }
+                _ => panic!("Expected list as value"),
+            }
+        }
+        _ => panic!("Expected assignment statement"),
+    }
+}
+
+#[test]
 fn test_parse_pass_statement() {
     let module = parse("pass\n").unwrap();
     

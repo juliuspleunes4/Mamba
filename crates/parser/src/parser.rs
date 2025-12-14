@@ -62,6 +62,42 @@ impl Parser {
                 // Try to parse as assignment or expression
                 let expr = self.parse_expression()?;
                 
+                // Check for comma (tuple without parentheses) - this could be unpacking
+                if self.check(&TokenKind::Comma) {
+                    // Build a tuple from comma-separated expressions
+                    let mut elements = vec![expr];
+                    let pos = elements[0].position().clone();
+                    
+                    while self.match_token(&TokenKind::Comma) {
+                        // Allow trailing comma before assignment or newline
+                        if self.check(&TokenKind::Assign) || self.check(&TokenKind::Newline) || self.is_at_end() {
+                            break;
+                        }
+                        elements.push(self.parse_expression()?);
+                    }
+                    
+                    // Create tuple expression
+                    let tuple_expr = Expression::Tuple {
+                        elements,
+                        position: pos.clone(),
+                    };
+                    
+                    // Now check for assignment
+                    if self.match_token(&TokenKind::Assign) {
+                        let value = self.parse_tuple_or_expression()?;
+                        self.consume_newline_or_eof()?;
+                        return Ok(Statement::Assignment {
+                            targets: vec![tuple_expr],
+                            value,
+                            position: pos,
+                        });
+                    }
+                    
+                    // Otherwise it's an expression statement (tuple)
+                    self.consume_newline_or_eof()?;
+                    return Ok(Statement::Expression(tuple_expr));
+                }
+                
                 // Check for assignment (including chained assignments like x = y = 5)
                 if self.match_token(&TokenKind::Assign) {
                     let mut targets = vec![expr];
@@ -69,7 +105,7 @@ impl Parser {
                     
                     // Parse chained assignments: x = y = z = value
                     loop {
-                        let next_expr = self.parse_expression()?;
+                        let next_expr = self.parse_tuple_or_expression()?;
                         
                         if self.match_token(&TokenKind::Assign) {
                             // More assignments coming
@@ -144,6 +180,33 @@ impl Parser {
         
         self.consume_newline_or_eof()?;
         Ok(Statement::Return { value, position: pos })
+    }
+
+    /// Parse expression or implicit tuple (comma-separated expressions)
+    /// Used in assignment RHS where `1, 2` creates a tuple without parentheses
+    fn parse_tuple_or_expression(&mut self) -> ParseResult<Expression> {
+        let first = self.parse_expression()?;
+        
+        // Check for comma - creates implicit tuple
+        if self.check(&TokenKind::Comma) {
+            let mut elements = vec![first];
+            let pos = elements[0].position().clone();
+            
+            while self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma before newline or EOF
+                if self.check(&TokenKind::Newline) || self.is_at_end() {
+                    break;
+                }
+                elements.push(self.parse_expression()?);
+            }
+            
+            Ok(Expression::Tuple {
+                elements,
+                position: pos,
+            })
+        } else {
+            Ok(first)
+        }
     }
 
     /// Parse an expression with operator precedence

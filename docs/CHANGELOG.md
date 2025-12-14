@@ -61,11 +61,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Statement parsing:
     - Assignment statements (x = 5)
     - Multiple/chained assignment (x = y = z = 5)
+    - Tuple unpacking assignment (a, b = 1, 2 or x, y, z = tuple)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 136 tests (131 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions
-  - **278 total tests, all passing (142 lexer + 136 parser)**
+  - Parser test suite: 140 tests (135 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements
+  - **282 total tests, all passing (142 lexer + 140 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
