@@ -150,7 +150,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse list comprehensions
 - [x] Parse dict comprehensions
 - [x] Parse set comprehensions
-- [ ] Parse generator expressions
+- [x] Parse generator expressions
 
 ### 2.3 Statement Parsing
 

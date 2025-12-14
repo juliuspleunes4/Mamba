@@ -606,6 +606,19 @@ impl Parser {
                 // Parse first expression
                 let first_expr = self.parse_expression()?;
                 
+                // Check if it's a generator expression (has 'for' keyword)
+                if self.check(&TokenKind::For) {
+                    // Generator expression: (expr for target in iter)
+                    let generators = self.parse_comprehension_generators()?;
+                    self.expect_token(TokenKind::RightParen, "Expected ')' after generator expression")?;
+                    
+                    return Ok(Expression::GeneratorExpr {
+                        element: Box::new(first_expr),
+                        generators,
+                        position: pos,
+                    });
+                }
+                
                 // Check if it's a tuple (has comma) or parenthesized expression
                 if self.match_token(&TokenKind::Comma) {
                     // It's a tuple

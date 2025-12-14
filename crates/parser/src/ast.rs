@@ -177,6 +177,12 @@ pub enum Expression {
         generators: Vec<Comprehension>,
         position: SourcePosition,
     },
+    /// Generator expression ((expr for target in iter))
+    GeneratorExpr {
+        element: Box<Expression>,
+        generators: Vec<Comprehension>,
+        position: SourcePosition,
+    },
 }
 
 /// Comprehension clause (for target in iter [if condition])
@@ -325,6 +331,7 @@ impl Expression {
             Expression::ListComp { position, .. } => position,
             Expression::DictComp { position, .. } => position,
             Expression::SetComp { position, .. } => position,
+            Expression::GeneratorExpr { position, .. } => position,
         }
     }
 }

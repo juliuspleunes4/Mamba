@@ -55,13 +55,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - List comprehensions ([expr for target in iter if cond]) with support for multiple generators and conditions
     - Dict comprehensions ({key: value for target in iter if cond}) with support for complex key-value expressions
     - Set comprehensions ({expr for target in iter if cond}) with support for nested loops and conditions
+    - Generator expressions ((expr for target in iter if cond)) for lazy evaluation with full comprehension syntax
   - Statement parsing:
     - Assignment statements (x = 5)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 124 tests covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, list/dict/set comprehensions
-  - **271 total tests, all passing (142 lexer + 124 parser + 5 compound operator tests)**
+  - Parser test suite: 131 tests covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions
+  - **278 total tests, all passing (142 lexer + 131 parser + 5 compound operator tests)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
