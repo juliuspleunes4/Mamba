@@ -158,6 +158,21 @@ pub enum Expression {
         value: Box<Expression>,
         position: SourcePosition,
     },
+    /// List comprehension ([expr for target in iter])
+    ListComp {
+        element: Box<Expression>,
+        generators: Vec<Comprehension>,
+        position: SourcePosition,
+    },
+}
+
+/// Comprehension clause (for target in iter [if condition])
+#[derive(Debug, Clone, PartialEq)]
+pub struct Comprehension {
+    pub target: String,
+    pub iter: Expression,
+    pub conditions: Vec<Expression>,
+    pub position: SourcePosition,
 }
 
 /// Literal values
@@ -294,6 +309,7 @@ impl Expression {
             Expression::Lambda { position, .. } => position,
             Expression::Conditional { position, .. } => position,
             Expression::AssignmentExpr { position, .. } => position,
+            Expression::ListComp { position, .. } => position,
         }
     }
 }

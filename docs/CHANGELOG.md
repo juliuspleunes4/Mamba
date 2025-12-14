@@ -52,13 +52,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Conditional expressions (ternary operator) with proper precedence and chaining support
     - Walrus operator / assignment expressions (:=) for inline assignment within expressions
     - Ellipsis literal (...) for use in slicing, type hints, and as placeholder
+    - List comprehensions ([expr for target in iter if cond]) with support for multiple generators and conditions
   - Statement parsing:
     - Assignment statements (x = 5)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 107 tests covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis
-  - **254 total tests, all passing (142 lexer + 107 parser + 5 compound operator tests)**
+  - Parser test suite: 114 tests covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, list comprehensions
+  - **261 total tests, all passing (142 lexer + 114 parser + 5 compound operator tests)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

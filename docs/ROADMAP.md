@@ -147,7 +147,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse conditional expressions (ternary)
 - [x] Parse walrus operator (:=)
 - [x] Parse ellipsis (...)
-- [ ] Parse list comprehensions
+- [x] Parse list comprehensions
 - [ ] Parse dict comprehensions
 - [ ] Parse set comprehensions
 - [ ] Parse generator expressions

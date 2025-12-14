@@ -643,25 +643,44 @@ impl Parser {
                 }
             }
             Some(TokenKind::LeftBracket) => {
-                // List literal: [1, 2, 3]
+                // List literal or list comprehension: [1, 2, 3] or [x for x in iter]
                 let pos = self.current_position();
                 self.advance(); // consume '['
-                let mut elements = Vec::new();
 
-                // Parse elements if not empty
-                if !self.check(&TokenKind::RightBracket) {
-                    loop {
-                        elements.push(self.parse_expression()?);
-                        
-                        if !self.match_token(&TokenKind::Comma) {
-                            break;
-                        }
-                        
-                        // Allow trailing comma
-                        if self.check(&TokenKind::RightBracket) {
-                            break;
-                        }
+                // Empty list
+                if self.check(&TokenKind::RightBracket) {
+                    self.advance();
+                    return Ok(Expression::List {
+                        elements: Vec::new(),
+                        position: pos,
+                    });
+                }
+
+                // Parse first element
+                let first_element = self.parse_expression()?;
+
+                // Check if it's a comprehension (has 'for' keyword)
+                if self.check(&TokenKind::For) {
+                    // List comprehension: [expr for target in iter]
+                    let generators = self.parse_comprehension_generators()?;
+                    self.expect_token(TokenKind::RightBracket, "Expected ']' after list comprehension")?;
+                    
+                    return Ok(Expression::ListComp {
+                        element: Box::new(first_element),
+                        generators,
+                        position: pos,
+                    });
+                }
+
+                // Regular list: parse remaining elements
+                let mut elements = vec![first_element];
+                
+                while self.match_token(&TokenKind::Comma) {
+                    // Allow trailing comma
+                    if self.check(&TokenKind::RightBracket) {
+                        break;
                     }
+                    elements.push(self.parse_expression()?);
                 }
 
                 self.expect_token(TokenKind::RightBracket, "Expected ']' after list elements")?;
@@ -941,5 +960,57 @@ impl Parser {
             self.current_kind(),
             Some(TokenKind::Eof) | None
         )
+    }
+
+    /// Parse comprehension generators: for target in iter [if cond] [for ...]
+    fn parse_comprehension_generators(&mut self) -> ParseResult<Vec<Comprehension>> {
+        let mut generators = Vec::new();
+
+        // Parse at least one generator
+        loop {
+            if !self.match_token(&TokenKind::For) {
+                break;
+            }
+
+            let pos = self.current_position();
+
+            // Parse target (simple identifier for now)
+            let target = match self.current_kind() {
+                Some(TokenKind::Identifier(name)) => {
+                    let name = name.clone();
+                    self.advance();
+                    name
+                }
+                _ => {
+                    return Err(MambaError::ParseError(format!(
+                        "Expected identifier after 'for' at {}:{}",
+                        self.current_position().line,
+                        self.current_position().column
+                    )))
+                }
+            };
+
+            // Expect 'in' keyword
+            self.expect_token(TokenKind::In, "Expected 'in' after loop target")?;
+
+            // Parse iterator expression (use or precedence to avoid 'if' being parsed as conditional)
+            let iter = self.parse_or()?;
+
+            // Parse optional 'if' conditions
+            let mut conditions = Vec::new();
+            while self.check(&TokenKind::If) {
+                self.advance(); // consume 'if'
+                conditions.push(self.parse_or()?);
+            }
+
+            generators.push(Comprehension {
+                target,
+                iter,
+                conditions,
+                position: pos,
+            });
+        }
+
+        Ok(generators)
     }
 }
