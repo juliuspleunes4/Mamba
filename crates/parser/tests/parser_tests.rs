@@ -445,3 +445,162 @@ fn test_parse_is_operator() {
         _ => panic!("Expected binary operation with Is operator"),
     }
 }
+
+#[test]
+fn test_parse_function_call_no_args() {
+    let module = parse("foo()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            // Function should be an identifier
+            match **function {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "foo"),
+                _ => panic!("Expected identifier as function"),
+            }
+            assert_eq!(arguments.len(), 0);
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_function_call_single_arg() {
+    let module = parse("print(42)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            match **function {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "print"),
+                _ => panic!("Expected identifier as function"),
+            }
+            assert_eq!(arguments.len(), 1);
+            
+            match &arguments[0] {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 42),
+                _ => panic!("Expected integer argument"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_function_call_multiple_args() {
+    let module = parse("add(1, 2, 3)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            match **function {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "add"),
+                _ => panic!("Expected identifier as function"),
+            }
+            assert_eq!(arguments.len(), 3);
+            
+            for (i, arg) in arguments.iter().enumerate() {
+                match arg {
+                    Expression::Literal(Literal::Integer { value, .. }) => {
+                        assert_eq!(*value, (i + 1) as i64);
+                    }
+                    _ => panic!("Expected integer argument"),
+                }
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_function_call_with_expression_args() {
+    let module = parse("func(1 + 2, x * y)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { arguments, .. }) => {
+            assert_eq!(arguments.len(), 2);
+            
+            // First arg should be addition
+            match &arguments[0] {
+                Expression::BinaryOp { op, .. } => {
+                    assert!(matches!(op, BinaryOperator::Add));
+                }
+                _ => panic!("Expected binary operation"),
+            }
+            
+            // Second arg should be multiplication
+            match &arguments[1] {
+                Expression::BinaryOp { op, .. } => {
+                    assert!(matches!(op, BinaryOperator::Multiply));
+                }
+                _ => panic!("Expected binary operation"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_nested_function_calls() {
+    let module = parse("outer(inner(5))\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            // Outer function should be "outer"
+            match **function {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "outer"),
+                _ => panic!("Expected identifier"),
+            }
+            
+            assert_eq!(arguments.len(), 1);
+            
+            // Argument should be another function call
+            match &arguments[0] {
+                Expression::Call { function: inner_func, arguments: inner_args, .. } => {
+                    match **inner_func {
+                        Expression::Identifier { ref name, .. } => assert_eq!(name, "inner"),
+                        _ => panic!("Expected identifier for inner function"),
+                    }
+                    assert_eq!(inner_args.len(), 1);
+                }
+                _ => panic!("Expected nested function call"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_function_call_trailing_comma() {
+    let module = parse("func(1, 2,)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { arguments, .. }) => {
+            assert_eq!(arguments.len(), 2);
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_chained_function_calls() {
+    let module = parse("get_func()()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            // Outer call should have no arguments
+            assert_eq!(arguments.len(), 0);
+            
+            // Function should be another call
+            match **function {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected inner function call"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}

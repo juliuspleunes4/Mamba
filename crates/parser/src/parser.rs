@@ -332,7 +332,7 @@ impl Parser {
 
     /// Parse power operation (**)
     fn parse_power(&mut self) -> ParseResult<Expression> {
-        let mut left = self.parse_primary()?;
+        let mut left = self.parse_postfix()?;
 
         if self.match_token(&TokenKind::DoubleStar) {
             let op_pos = self.previous_position();
@@ -347,6 +347,49 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    /// Parse postfix operations (function calls, attribute access, subscripts)
+    fn parse_postfix(&mut self) -> ParseResult<Expression> {
+        let mut expr = self.parse_primary()?;
+
+        loop {
+            match self.current_kind() {
+                Some(TokenKind::LeftParen) => {
+                    // Function call: func(args)
+                    self.advance(); // consume '('
+                    let mut arguments = Vec::new();
+                    let call_pos = expr.position().clone();
+
+                    // Parse arguments if not empty
+                    if !self.check(&TokenKind::RightParen) {
+                        loop {
+                            arguments.push(self.parse_expression()?);
+                            
+                            if !self.match_token(&TokenKind::Comma) {
+                                break;
+                            }
+                            
+                            // Allow trailing comma
+                            if self.check(&TokenKind::RightParen) {
+                                break;
+                            }
+                        }
+                    }
+
+                    self.expect_token(TokenKind::RightParen, "Expected ')' after arguments")?;
+                    
+                    expr = Expression::Call {
+                        function: Box::new(expr),
+                        arguments,
+                        position: call_pos,
+                    };
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
     }
 
     /// Parse primary expressions (literals, identifiers, parenthesized)
