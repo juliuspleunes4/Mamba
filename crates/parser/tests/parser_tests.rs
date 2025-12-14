@@ -902,6 +902,146 @@ fn test_parse_raise_with_expression() {
 }
 
 // ============================================================================
+// Import Statement Tests
+// ============================================================================
+
+#[test]
+fn test_parse_import_single() {
+    let module = parse("import os\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].module, "os");
+            assert_eq!(items[0].alias, None);
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_multiple() {
+    let module = parse("import os, sys, json\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0].module, "os");
+            assert_eq!(items[1].module, "sys");
+            assert_eq!(items[2].module, "json");
+            assert_eq!(items[0].alias, None);
+            assert_eq!(items[1].alias, None);
+            assert_eq!(items[2].alias, None);
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_dotted() {
+    let module = parse("import os.path\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].module, "os.path");
+            assert_eq!(items[0].alias, None);
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_deeply_dotted() {
+    let module = parse("import package.subpackage.module\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].module, "package.subpackage.module");
+            assert_eq!(items[0].alias, None);
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_with_alias() {
+    let module = parse("import numpy as np\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].module, "numpy");
+            assert_eq!(items[0].alias, Some("np".to_string()));
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_dotted_with_alias() {
+    let module = parse("import os.path as ospath\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].module, "os.path");
+            assert_eq!(items[0].alias, Some("ospath".to_string()));
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_multiple_with_aliases() {
+    let module = parse("import numpy as np, pandas as pd\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0].module, "numpy");
+            assert_eq!(items[0].alias, Some("np".to_string()));
+            assert_eq!(items[1].module, "pandas");
+            assert_eq!(items[1].alias, Some("pd".to_string()));
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_mixed_aliases() {
+    let module = parse("import os, sys as system, json\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0].module, "os");
+            assert_eq!(items[0].alias, None);
+            assert_eq!(items[1].module, "sys");
+            assert_eq!(items[1].alias, Some("system".to_string()));
+            assert_eq!(items[2].module, "json");
+            assert_eq!(items[2].alias, None);
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+#[test]
+fn test_parse_import_trailing_comma() {
+    let module = parse("import os, sys,\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Import { items, .. } => {
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0].module, "os");
+            assert_eq!(items[1].module, "sys");
+        }
+        _ => panic!("Expected import statement"),
+    }
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 
@@ -1010,6 +1150,42 @@ fn test_parse_starred_outside_unpacking_error() {
 #[test]
 fn test_parse_raise_with_invalid_expression_error() {
     let result = parse("raise if\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_import_missing_module_name_error() {
+    let result = parse("import\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_import_missing_alias_after_as_error() {
+    let result = parse("import os as\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_import_invalid_alias_error() {
+    let result = parse("import os as 123\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_import_missing_identifier_after_dot_error() {
+    let result = parse("import os.\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_import_double_dot_error() {
+    let result = parse("import os..path\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_import_keyword_as_module_error() {
+    let result = parse("import if\n");
     assert!(result.is_err());
 }
 

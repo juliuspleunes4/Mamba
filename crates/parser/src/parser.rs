@@ -63,6 +63,7 @@ impl Parser {
             Some(TokenKind::Global) => self.parse_global(),
             Some(TokenKind::Nonlocal) => self.parse_nonlocal(),
             Some(TokenKind::Raise) => self.parse_raise(),
+            Some(TokenKind::Import) => self.parse_import(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -333,6 +334,102 @@ impl Parser {
             exception,
             position: pos,
         })
+    }
+
+    /// Parse import statement (import module, import module.submodule as alias)
+    fn parse_import(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'import'
+        
+        let mut items = Vec::new();
+        
+        loop {
+            // Parse module name (possibly dotted, like os.path)
+            let item_pos = self.current_position();
+            let module = self.parse_dotted_name()?;
+            
+            // Check for optional 'as' alias
+            let alias = if self.match_token(&TokenKind::As) {
+                match self.current_kind() {
+                    Some(TokenKind::Identifier(name)) => {
+                        let alias_name = name.clone();
+                        self.advance();
+                        Some(alias_name)
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected identifier after 'as' at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                }
+            } else {
+                None
+            };
+            
+            items.push(ImportItem {
+                module,
+                alias,
+                position: item_pos,
+            });
+            
+            // Check for comma (multiple imports)
+            if self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma
+                if self.check(&TokenKind::Newline) || self.is_at_end() {
+                    break;
+                }
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Import {
+            items,
+            position: pos,
+        })
+    }
+
+    /// Parse a dotted module name (e.g., "os", "os.path", "package.submodule")
+    fn parse_dotted_name(&mut self) -> ParseResult<String> {
+        let mut parts = Vec::new();
+        
+        // Parse first identifier
+        match self.current_kind() {
+            Some(TokenKind::Identifier(name)) => {
+                parts.push(name.clone());
+                self.advance();
+            }
+            _ => {
+                return Err(MambaError::ParseError(
+                    format!("Expected module name after 'import' at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+        }
+        
+        // Parse subsequent parts separated by dots
+        while self.match_token(&TokenKind::Dot) {
+            match self.current_kind() {
+                Some(TokenKind::Identifier(name)) => {
+                    parts.push(name.clone());
+                    self.advance();
+                }
+                _ => {
+                    return Err(MambaError::ParseError(
+                        format!("Expected identifier after '.' in module name at {}:{}", 
+                            self.current_position().line, 
+                            self.current_position().column)
+                    ));
+                }
+            }
+        }
+        
+        Ok(parts.join("."))
     }
 
     /// Validate that at most one starred expression appears in unpacking targets
