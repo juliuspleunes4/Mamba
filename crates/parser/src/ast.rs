@@ -1,0 +1,286 @@
+//! Abstract Syntax Tree (AST) node definitions for Mamba
+//!
+//! This module defines the structure of the AST that represents parsed Mamba code.
+//! Each node includes position information for error reporting.
+
+use crate::token::SourcePosition;
+
+/// A complete Mamba program (module)
+#[derive(Debug, Clone, PartialEq)]
+pub struct Module {
+    pub statements: Vec<Statement>,
+    pub position: SourcePosition,
+}
+
+/// Represents any statement in Mamba
+#[derive(Debug, Clone, PartialEq)]
+pub enum Statement {
+    /// Expression statement (e.g., function call)
+    Expression(Expression),
+    /// Assignment statement (x = 5)
+    Assignment {
+        target: Expression,
+        value: Expression,
+        position: SourcePosition,
+    },
+    /// Augmented assignment (x += 5)
+    AugmentedAssignment {
+        target: Expression,
+        op: AugmentedOperator,
+        value: Expression,
+        position: SourcePosition,
+    },
+    /// Pass statement
+    Pass(SourcePosition),
+    /// Break statement
+    Break(SourcePosition),
+    /// Continue statement
+    Continue(SourcePosition),
+    /// Return statement
+    Return {
+        value: Option<Expression>,
+        position: SourcePosition,
+    },
+    /// If statement
+    If {
+        condition: Expression,
+        then_block: Vec<Statement>,
+        elif_blocks: Vec<(Expression, Vec<Statement>)>,
+        else_block: Option<Vec<Statement>>,
+        position: SourcePosition,
+    },
+    /// While loop
+    While {
+        condition: Expression,
+        body: Vec<Statement>,
+        else_block: Option<Vec<Statement>>,
+        position: SourcePosition,
+    },
+    /// For loop
+    For {
+        target: Expression,
+        iter: Expression,
+        body: Vec<Statement>,
+        else_block: Option<Vec<Statement>>,
+        position: SourcePosition,
+    },
+    /// Function definition
+    FunctionDef {
+        name: String,
+        parameters: Vec<Parameter>,
+        body: Vec<Statement>,
+        position: SourcePosition,
+    },
+}
+
+/// Represents any expression in Mamba
+#[derive(Debug, Clone, PartialEq)]
+pub enum Expression {
+    /// Literal value (42, 3.14, "hello", True, False, None)
+    Literal(Literal),
+    /// Identifier (variable reference)
+    Identifier {
+        name: String,
+        position: SourcePosition,
+    },
+    /// Binary operation (x + y, a == b)
+    BinaryOp {
+        left: Box<Expression>,
+        op: BinaryOperator,
+        right: Box<Expression>,
+        position: SourcePosition,
+    },
+    /// Unary operation (-x, not y)
+    UnaryOp {
+        op: UnaryOperator,
+        operand: Box<Expression>,
+        position: SourcePosition,
+    },
+    /// Parenthesized expression
+    Parenthesized {
+        expr: Box<Expression>,
+        position: SourcePosition,
+    },
+    /// Function call (func(arg1, arg2))
+    Call {
+        function: Box<Expression>,
+        arguments: Vec<Expression>,
+        position: SourcePosition,
+    },
+    /// Attribute access (obj.attr)
+    Attribute {
+        object: Box<Expression>,
+        attribute: String,
+        position: SourcePosition,
+    },
+    /// Subscript (list[index])
+    Subscript {
+        object: Box<Expression>,
+        index: Box<Expression>,
+        position: SourcePosition,
+    },
+    /// List literal ([1, 2, 3])
+    List {
+        elements: Vec<Expression>,
+        position: SourcePosition,
+    },
+    /// Tuple literal ((1, 2, 3))
+    Tuple {
+        elements: Vec<Expression>,
+        position: SourcePosition,
+    },
+    /// Dict literal ({key: value})
+    Dict {
+        pairs: Vec<(Expression, Expression)>,
+        position: SourcePosition,
+    },
+}
+
+/// Literal values
+#[derive(Debug, Clone, PartialEq)]
+pub enum Literal {
+    Integer {
+        value: i64,
+        position: SourcePosition,
+    },
+    Float {
+        value: f64,
+        position: SourcePosition,
+    },
+    String {
+        value: String,
+        position: SourcePosition,
+    },
+    Boolean {
+        value: bool,
+        position: SourcePosition,
+    },
+    None {
+        position: SourcePosition,
+    },
+}
+
+/// Binary operators
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOperator {
+    // Arithmetic
+    Add,         // +
+    Subtract,    // -
+    Multiply,    // *
+    Divide,      // /
+    FloorDivide, // //
+    Modulo,      // %
+    Power,       // **
+    
+    // Comparison
+    Equal,        // ==
+    NotEqual,     // !=
+    LessThan,     // <
+    LessThanEq,   // <=
+    GreaterThan,  // >
+    GreaterThanEq, // >=
+    
+    // Logical
+    And, // and
+    Or,  // or
+    
+    // Bitwise
+    BitwiseAnd,      // &
+    BitwiseOr,       // |
+    BitwiseXor,      // ^
+    LeftShift,       // <<
+    RightShift,      // >>
+    
+    // Membership
+    In,    // in
+    NotIn, // not in
+    
+    // Identity
+    Is,    // is
+    IsNot, // is not
+}
+
+/// Unary operators
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UnaryOperator {
+    Minus,       // -
+    Plus,        // +
+    Not,         // not
+    BitwiseNot,  // ~
+}
+
+/// Augmented assignment operators
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AugmentedOperator {
+    Add,         // +=
+    Subtract,    // -=
+    Multiply,    // *=
+    Divide,      // /=
+    FloorDivide, // //=
+    Modulo,      // %=
+    Power,       // **=
+    BitwiseAnd,  // &=
+    BitwiseOr,   // |=
+    BitwiseXor,  // ^=
+    LeftShift,   // <<=
+    RightShift,  // >>=
+}
+
+/// Function parameter
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
+    pub name: String,
+    pub default: Option<Expression>,
+    pub position: SourcePosition,
+}
+
+impl Literal {
+    /// Get the position of this literal
+    pub fn position(&self) -> &SourcePosition {
+        match self {
+            Literal::Integer { position, .. } => position,
+            Literal::Float { position, .. } => position,
+            Literal::String { position, .. } => position,
+            Literal::Boolean { position, .. } => position,
+            Literal::None { position } => position,
+        }
+    }
+}
+
+impl Expression {
+    /// Get the position of this expression
+    pub fn position(&self) -> &SourcePosition {
+        match self {
+            Expression::Literal(lit) => lit.position(),
+            Expression::Identifier { position, .. } => position,
+            Expression::BinaryOp { position, .. } => position,
+            Expression::UnaryOp { position, .. } => position,
+            Expression::Parenthesized { position, .. } => position,
+            Expression::Call { position, .. } => position,
+            Expression::Attribute { position, .. } => position,
+            Expression::Subscript { position, .. } => position,
+            Expression::List { position, .. } => position,
+            Expression::Tuple { position, .. } => position,
+            Expression::Dict { position, .. } => position,
+        }
+    }
+}
+
+impl Statement {
+    /// Get the position of this statement
+    pub fn position(&self) -> &SourcePosition {
+        match self {
+            Statement::Expression(expr) => expr.position(),
+            Statement::Assignment { position, .. } => position,
+            Statement::AugmentedAssignment { position, .. } => position,
+            Statement::Pass(position) => position,
+            Statement::Break(position) => position,
+            Statement::Continue(position) => position,
+            Statement::Return { position, .. } => position,
+            Statement::If { position, .. } => position,
+            Statement::While { position, .. } => position,
+            Statement::For { position, .. } => position,
+            Statement::FunctionDef { position, .. } => position,
+        }
+    }
+}
