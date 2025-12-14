@@ -17,9 +17,9 @@ pub struct Module {
 pub enum Statement {
     /// Expression statement (e.g., function call)
     Expression(Expression),
-    /// Assignment statement (x = 5)
+    /// Assignment statement (x = 5 or x = y = 5)
     Assignment {
-        target: Expression,
+        targets: Vec<Expression>,
         value: Expression,
         position: SourcePosition,
     },
@@ -39,6 +39,32 @@ pub enum Statement {
     /// Return statement
     Return {
         value: Option<Expression>,
+        position: SourcePosition,
+    },
+    /// Assert statement (assert condition, optional_message)
+    Assert {
+        condition: Expression,
+        message: Option<Expression>,
+        position: SourcePosition,
+    },
+    /// Del statement (del x, del obj.attr, del list[0])
+    Del {
+        targets: Vec<Expression>,
+        position: SourcePosition,
+    },
+    /// Global statement (global x, y)
+    Global {
+        names: Vec<String>,
+        position: SourcePosition,
+    },
+    /// Nonlocal statement (nonlocal x, y)
+    Nonlocal {
+        names: Vec<String>,
+        position: SourcePosition,
+    },
+    /// Raise statement (raise, raise Exception, raise Exception("msg"))
+    Raise {
+        exception: Option<Expression>,
         position: SourcePosition,
     },
     /// If statement
@@ -181,6 +207,11 @@ pub enum Expression {
     GeneratorExpr {
         element: Box<Expression>,
         generators: Vec<Comprehension>,
+        position: SourcePosition,
+    },
+    /// Starred expression (*expr) - used in unpacking
+    Starred {
+        value: Box<Expression>,
         position: SourcePosition,
     },
 }
@@ -332,6 +363,7 @@ impl Expression {
             Expression::DictComp { position, .. } => position,
             Expression::SetComp { position, .. } => position,
             Expression::GeneratorExpr { position, .. } => position,
+            Expression::Starred { position, .. } => position,
         }
     }
 }
@@ -347,6 +379,11 @@ impl Statement {
             Statement::Break(position) => position,
             Statement::Continue(position) => position,
             Statement::Return { position, .. } => position,
+            Statement::Assert { position, .. } => position,
+            Statement::Del { position, .. } => position,
+            Statement::Global { position, .. } => position,
+            Statement::Nonlocal { position, .. } => position,
+            Statement::Raise { position, .. } => position,
             Statement::If { position, .. } => position,
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,

@@ -156,10 +156,10 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 - [x] Parse assignment statements (x = 5)
 - [x] Parse augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
-- [ ] Parse multiple assignment (x = y = 5)
-- [ ] Parse unpacking assignment (a, b = 1, 2)
-- [ ] Parse tuple unpacking (a, b, c = tuple)
-- [ ] Parse starred assignment (a, *b, c = list)
+- [x] Parse multiple assignment (x = y = 5)
+- [x] Parse unpacking assignment (a, b = 1, 2)
+- [x] Parse tuple unpacking (a, b, c = tuple)
+- [x] Parse starred assignment (a, *b, c = list)
 - [x] Parse expression statements
 - [x] Parse pass statement
 - [x] Parse break statement
@@ -167,11 +167,11 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse return statement
 - [ ] Parse import statements (basic)
 - [ ] Parse from...import statements (basic)
-- [ ] Parse global statement
-- [ ] Parse nonlocal statement
-- [ ] Parse assert statement
-- [ ] Parse del statement
-- [ ] Parse raise statement (basic)
+- [x] Parse global statement
+- [x] Parse nonlocal statement
+- [x] Parse assert statement
+- [x] Parse del statement
+- [x] Parse raise statement (basic)
 
 ### 2.4 Control Flow Parsing
 

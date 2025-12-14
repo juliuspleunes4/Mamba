@@ -60,11 +60,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Generator expressions ((expr for target in iter if cond)) for lazy evaluation with full comprehension syntax
   - Statement parsing:
     - Assignment statements (x = 5)
+    - Multiple/chained assignment (x = y = z = 5)
+    - Tuple unpacking assignment (a, b = 1, 2 or x, y, z = tuple)
+    - Starred unpacking assignment (a, *b, c = [1, 2, 3, 4])
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 136 tests (131 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions
-  - **278 total tests, all passing (142 lexer + 136 parser)**
+    - Assert statement with optional message (assert condition, "message")
+    - Del statement for deleting variables, attributes, or subscripts (del x, del obj.attr, del list[0])
+    - Global statement for declaring global variables (global x, y)
+    - Nonlocal statement for declaring nonlocal variables (nonlocal x, y)
+    - Raise statement for raising exceptions (raise, raise Exception, raise Exception("msg"))
+  - Parser test suite: 176 tests (171 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling
+  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages
+  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error
+  - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
+  - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal
+  - **318 total tests, all passing (142 lexer + 176 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

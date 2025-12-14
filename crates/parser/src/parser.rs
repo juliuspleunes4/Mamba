@@ -58,20 +58,80 @@ impl Parser {
             Some(TokenKind::Break) => self.parse_break(),
             Some(TokenKind::Continue) => self.parse_continue(),
             Some(TokenKind::Return) => self.parse_return(),
+            Some(TokenKind::Assert) => self.parse_assert(),
+            Some(TokenKind::Del) => self.parse_del(),
+            Some(TokenKind::Global) => self.parse_global(),
+            Some(TokenKind::Nonlocal) => self.parse_nonlocal(),
+            Some(TokenKind::Raise) => self.parse_raise(),
             _ => {
                 // Try to parse as assignment or expression
-                let expr = self.parse_expression()?;
+                let expr = self.parse_assignment_target()?;
                 
-                // Check for assignment
-                if self.match_token(&TokenKind::Assign) {
-                    let value = self.parse_expression()?;
+                // Check for comma (tuple without parentheses) - this could be unpacking
+                if self.check(&TokenKind::Comma) {
+                    // Build a tuple from comma-separated targets
+                    let mut elements = vec![expr];
+                    let pos = elements[0].position().clone();
+                    
+                    while self.match_token(&TokenKind::Comma) {
+                        // Allow trailing comma before assignment or newline
+                        if self.check(&TokenKind::Assign) || self.check(&TokenKind::Newline) || self.is_at_end() {
+                            break;
+                        }
+                        elements.push(self.parse_assignment_target()?);
+                    }
+                    
+                    // Create tuple expression
+                    let tuple_expr = Expression::Tuple {
+                        elements: elements.clone(),
+                        position: pos.clone(),
+                    };
+                    
+                    // Now check for assignment
+                    if self.match_token(&TokenKind::Assign) {
+                        // Validate starred expressions in unpacking
+                        self.validate_unpacking_targets(&elements)?;
+                        
+                        let value = self.parse_tuple_or_expression()?;
+                        self.consume_newline_or_eof()?;
+                        return Ok(Statement::Assignment {
+                            targets: vec![tuple_expr],
+                            value,
+                            position: pos,
+                        });
+                    }
+                    
+                    // Otherwise it's an expression statement (tuple)
                     self.consume_newline_or_eof()?;
-                    let pos = expr.position().clone();
-                    return Ok(Statement::Assignment {
-                        target: expr,
-                        value,
-                        position: pos,
-                    });
+                    return Ok(Statement::Expression(tuple_expr));
+                }
+                
+                // Check for assignment (including chained assignments like x = y = 5)
+                if self.match_token(&TokenKind::Assign) {
+                    let mut targets = vec![expr.clone()];
+                    let pos = targets[0].position().clone();
+                    
+                    // Validate starred expressions in the first target
+                    self.validate_single_target(&expr)?;
+                    
+                    // Parse chained assignments: x = y = z = value
+                    loop {
+                        let next_expr = self.parse_tuple_or_expression()?;
+                        
+                        if self.match_token(&TokenKind::Assign) {
+                            // More assignments coming - validate this target too
+                            self.validate_single_target(&next_expr)?;
+                            targets.push(next_expr);
+                        } else {
+                            // This is the final value
+                            self.consume_newline_or_eof()?;
+                            return Ok(Statement::Assignment {
+                                targets,
+                                value: next_expr,
+                                position: pos,
+                            });
+                        }
+                    }
                 }
                 
                 // Check for augmented assignment
@@ -132,6 +192,236 @@ impl Parser {
         
         self.consume_newline_or_eof()?;
         Ok(Statement::Return { value, position: pos })
+    }
+
+    /// Parse assert statement (assert condition, optional_message)
+    fn parse_assert(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'assert'
+        
+        // Parse the condition
+        let condition = self.parse_expression()?;
+        
+        // Check for optional message after comma
+        let message = if self.match_token(&TokenKind::Comma) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Assert {
+            condition,
+            message,
+            position: pos,
+        })
+    }
+
+    /// Parse del statement (del x or del x, y, z)
+    fn parse_del(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'del'
+        
+        // Parse comma-separated targets
+        let mut targets = vec![self.parse_expression()?];
+        
+        while self.match_token(&TokenKind::Comma) {
+            // Allow trailing comma
+            if self.check(&TokenKind::Newline) || self.is_at_end() {
+                break;
+            }
+            targets.push(self.parse_expression()?);
+        }
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Del {
+            targets,
+            position: pos,
+        })
+    }
+
+    /// Parse global statement (global x, y, z)
+    fn parse_global(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'global'
+        
+        let names = self.parse_name_list("global")?;
+        self.consume_newline_or_eof()?;
+        
+        Ok(Statement::Global {
+            names,
+            position: pos,
+        })
+    }
+
+    /// Parse nonlocal statement (nonlocal x, y, z)
+    fn parse_nonlocal(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'nonlocal'
+        
+        let names = self.parse_name_list("nonlocal")?;
+        self.consume_newline_or_eof()?;
+        
+        Ok(Statement::Nonlocal {
+            names,
+            position: pos,
+        })
+    }
+
+    /// Helper function to parse comma-separated identifier names
+    /// Used by global and nonlocal statements
+    fn parse_name_list(&mut self, keyword: &str) -> ParseResult<Vec<String>> {
+        let mut names = Vec::new();
+        
+        loop {
+            match self.current_kind() {
+                Some(TokenKind::Identifier(name)) => {
+                    names.push(name.clone());
+                    self.advance();
+                }
+                _ => {
+                    // Provide more specific error message if no names were parsed yet
+                    if names.is_empty() {
+                        return Err(MambaError::ParseError(
+                            format!("Expected at least one identifier after '{}' at {}:{}", 
+                                keyword,
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    } else {
+                        return Err(MambaError::ParseError(
+                            format!("Expected identifier after '{}' at {}:{}", 
+                                keyword,
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                }
+            }
+            
+            // Check for comma
+            if self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma
+                if self.check(&TokenKind::Newline) || self.is_at_end() {
+                    break;
+                }
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        Ok(names)
+    }
+
+    /// Parse raise statement (raise, raise Exception, raise Exception("msg"))
+    fn parse_raise(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'raise'
+        
+        // Check if there's an exception expression
+        let exception = if self.check(&TokenKind::Newline) || self.is_at_end() {
+            // Bare raise (re-raises current exception)
+            None
+        } else {
+            // Parse exception expression
+            Some(self.parse_expression()?)
+        };
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Raise {
+            exception,
+            position: pos,
+        })
+    }
+
+    /// Validate that at most one starred expression appears in unpacking targets
+    fn validate_unpacking_targets(&self, targets: &[Expression]) -> ParseResult<()> {
+        let starred_count = self.count_starred_expressions(targets);
+        
+        if starred_count > 1 {
+            return Err(MambaError::ParseError(
+                format!("Multiple starred expressions in assignment (only one allowed)")
+            ));
+        }
+        
+        Ok(())
+    }
+
+    /// Validate a single assignment target (checks for multiple starred expressions)
+    fn validate_single_target(&self, target: &Expression) -> ParseResult<()> {
+        match target {
+            Expression::Tuple { elements, .. } => {
+                self.validate_unpacking_targets(elements)?;
+            }
+            Expression::List { elements, .. } => {
+                self.validate_unpacking_targets(elements)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Count starred expressions in a list of expressions (recursively handles tuples)
+    fn count_starred_expressions(&self, exprs: &[Expression]) -> usize {
+        let mut count = 0;
+        for expr in exprs {
+            match expr {
+                Expression::Starred { .. } => count += 1,
+                Expression::Tuple { elements, .. } => {
+                    count += self.count_starred_expressions(elements);
+                }
+                Expression::List { elements, .. } => {
+                    count += self.count_starred_expressions(elements);
+                }
+                _ => {}
+            }
+        }
+        count
+    }
+
+    /// Parse an assignment target (expression or starred expression)
+    /// Used on the LHS of assignments to handle starred unpacking
+    fn parse_assignment_target(&mut self) -> ParseResult<Expression> {
+        // Check for starred expression (*var)
+        if self.match_token(&TokenKind::Star) {
+            let pos = self.previous_position();
+            let value = Box::new(self.parse_expression()?);
+            return Ok(Expression::Starred {
+                value,
+                position: pos,
+            });
+        }
+        
+        // Otherwise parse regular expression
+        self.parse_expression()
+    }
+
+    /// Parse expression or implicit tuple (comma-separated expressions)
+    /// Used in assignment RHS where `1, 2` creates a tuple without parentheses
+    fn parse_tuple_or_expression(&mut self) -> ParseResult<Expression> {
+        let first = self.parse_expression()?;
+        
+        // Check for comma - creates implicit tuple
+        if self.check(&TokenKind::Comma) {
+            let mut elements = vec![first];
+            let pos = elements[0].position().clone();
+            
+            while self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma before newline or EOF
+                if self.check(&TokenKind::Newline) || self.is_at_end() {
+                    break;
+                }
+                elements.push(self.parse_expression()?);
+            }
+            
+            Ok(Expression::Tuple {
+                elements,
+                position: pos,
+            })
+        } else {
+            Ok(first)
+        }
     }
 
     /// Parse an expression with operator precedence
