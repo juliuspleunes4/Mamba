@@ -349,10 +349,19 @@ pub enum AugmentedOperator {
     RightShift,  // >>=
 }
 
+/// Parameter kind (regular, *args, **kwargs)
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParameterKind {
+    Regular,   // x or x=default
+    VarArgs,   // *args
+    VarKwargs, // **kwargs
+}
+
 /// Function parameter
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
     pub name: String,
+    pub kind: ParameterKind,
     pub default: Option<Expression>,
     pub position: SourcePosition,
 }

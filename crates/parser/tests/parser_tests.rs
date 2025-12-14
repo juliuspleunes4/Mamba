@@ -1754,6 +1754,202 @@ fn test_parse_function_invalid_default() {
     assert!(result.is_err());
 }
 
+// Variadic parameters tests
+
+#[test]
+fn test_parse_function_with_args_only() {
+    let result = parse("def foo(*args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "foo");
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0].name, "args");
+            assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+            assert!(parameters[0].default.is_none());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_kwargs_only() {
+    let result = parse("def foo(**kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "foo");
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0].name, "kwargs");
+            assert!(matches!(parameters[0].kind, ParameterKind::VarKwargs));
+            assert!(parameters[0].default.is_none());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_args_and_kwargs() {
+    let result = parse("def foo(*args, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 2);
+            assert_eq!(parameters[0].name, "args");
+            assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+            assert_eq!(parameters[1].name, "kwargs");
+            assert!(matches!(parameters[1].kind, ParameterKind::VarKwargs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_regular_and_args() {
+    let result = parse("def foo(x, y, *args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert_eq!(parameters[0].name, "x");
+            assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+            assert_eq!(parameters[1].name, "y");
+            assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+            assert_eq!(parameters[2].name, "args");
+            assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_regular_and_kwargs() {
+    let result = parse("def foo(x, y, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert_eq!(parameters[0].name, "x");
+            assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+            assert_eq!(parameters[1].name, "y");
+            assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+            assert_eq!(parameters[2].name, "kwargs");
+            assert!(matches!(parameters[2].kind, ParameterKind::VarKwargs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_all_parameter_types() {
+    let result = parse("def foo(a, b, c=3, *args, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 5);
+            assert_eq!(parameters[0].name, "a");
+            assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+            assert!(parameters[0].default.is_none());
+            assert_eq!(parameters[1].name, "b");
+            assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+            assert!(parameters[1].default.is_none());
+            assert_eq!(parameters[2].name, "c");
+            assert!(matches!(parameters[2].kind, ParameterKind::Regular));
+            assert!(parameters[2].default.is_some());
+            assert_eq!(parameters[3].name, "args");
+            assert!(matches!(parameters[3].kind, ParameterKind::VarArgs));
+            assert_eq!(parameters[4].name, "kwargs");
+            assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_defaults_before_args() {
+    let result = parse("def foo(x=1, y=2, *args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert!(parameters[0].default.is_some());
+            assert!(parameters[1].default.is_some());
+            assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_trailing_comma_after_args() {
+    let result = parse("def foo(*args,):\n    pass\n");
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_parse_function_trailing_comma_after_kwargs() {
+    let result = parse("def foo(**kwargs,):\n    pass\n");
+    assert!(result.is_ok());
+}
+
+// Error tests for variadic parameters
+
+#[test]
+fn test_parse_function_multiple_args_error() {
+    let result = parse("def foo(*args, *more):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_multiple_kwargs_error() {
+    let result = parse("def foo(**kwargs, **more):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_kwargs_before_args_error() {
+    let result = parse("def foo(**kwargs, *args):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_regular_after_args_error() {
+    let result = parse("def foo(*args, x):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_regular_after_kwargs_error() {
+    let result = parse("def foo(**kwargs, x):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_default_after_args_error() {
+    let result = parse("def foo(*args, x=1):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_param_without_default_after_default_error() {
+    let result = parse("def foo(x=1, y):\n    pass\n");
+    assert!(result.is_err());
+}
+
 // ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================

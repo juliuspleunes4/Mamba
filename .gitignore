@@ -68,3 +68,5 @@ __pycache__/
 *.pyd
 *.pyc
 
+# Ignore every .md file in the docs folder that starts with .temp
+docs/.temp*.md

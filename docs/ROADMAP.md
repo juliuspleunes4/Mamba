@@ -188,10 +188,11 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse function definitions (def)
 - [x] Parse function parameters
 - [x] Parse default parameter values
+- [x] Parse *args (variadic parameters)
+- [x] Parse **kwargs (keyword parameters)
+- [x] Validate parameter order (regular, defaults, *args, **kwargs)
 - [ ] Parse keyword-only parameters (after *)
 - [ ] Parse positional-only parameters (before /)
-- [ ] Parse *args (variadic parameters)
-- [ ] Parse **kwargs (keyword parameters)
 - [ ] Parse type hints (basic)
 - [ ] Parse return type annotations
 - [ ] Parse decorators (basic)

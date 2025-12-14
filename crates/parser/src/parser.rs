@@ -844,6 +844,9 @@ impl Parser {
     /// Parse parameter list inside function definition
     fn parse_parameter_list(&mut self) -> ParseResult<Vec<Parameter>> {
         let mut parameters = Vec::new();
+        let mut seen_varargs = false;
+        let mut seen_varkwargs = false;
+        let mut seen_default = false;
         
         // Check for empty parameter list
         if self.check(&TokenKind::RightParen) {
@@ -853,34 +856,134 @@ impl Parser {
         loop {
             let param_pos = self.current_position();
             
-            // Parse parameter name
-            let param_name = match self.current_kind() {
-                Some(TokenKind::Identifier(n)) => {
-                    let name = n.clone();
-                    self.advance();
-                    name
-                }
-                _ => {
+            // Check for **kwargs
+            if self.match_token(&TokenKind::DoubleStar) {
+                if seen_varkwargs {
                     return Err(MambaError::ParseError(
-                        format!("Expected parameter name at {}:{}", 
-                            self.current_position().line, 
-                            self.current_position().column)
+                        format!("Duplicate **kwargs parameter at {}:{}", 
+                            param_pos.line, param_pos.column)
                     ));
                 }
-            };
-            
-            // Check for default value (=)
-            let default = if self.match_token(&TokenKind::Assign) {
-                Some(self.parse_expression()?)
-            } else {
-                None
-            };
-            
-            parameters.push(Parameter {
-                name: param_name,
-                default,
-                position: param_pos,
-            });
+                
+                let param_name = match self.current_kind() {
+                    Some(TokenKind::Identifier(n)) => {
+                        let name = n.clone();
+                        self.advance();
+                        name
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected parameter name after '**' at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                };
+                
+                parameters.push(Parameter {
+                    name: param_name,
+                    kind: ParameterKind::VarKwargs,
+                    default: None,
+                    position: param_pos,
+                });
+                
+                seen_varkwargs = true;
+            }
+            // Check for *args
+            else if self.match_token(&TokenKind::Star) {
+                if seen_varargs {
+                    return Err(MambaError::ParseError(
+                        format!("Duplicate *args parameter at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                if seen_varkwargs {
+                    return Err(MambaError::ParseError(
+                        format!("*args must come before **kwargs at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                
+                let param_name = match self.current_kind() {
+                    Some(TokenKind::Identifier(n)) => {
+                        let name = n.clone();
+                        self.advance();
+                        name
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected parameter name after '*' at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                };
+                
+                parameters.push(Parameter {
+                    name: param_name,
+                    kind: ParameterKind::VarArgs,
+                    default: None,
+                    position: param_pos,
+                });
+                
+                seen_varargs = true;
+            }
+            // Regular parameter
+            else {
+                if seen_varargs {
+                    return Err(MambaError::ParseError(
+                        format!("Regular parameter '{}' cannot appear after *args at {}:{}", 
+                            match self.current_kind() {
+                                Some(TokenKind::Identifier(n)) => n.clone(),
+                                _ => String::from(""),
+                            },
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                if seen_varkwargs {
+                    return Err(MambaError::ParseError(
+                        format!("Regular parameter cannot appear after **kwargs at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                
+                let param_name = match self.current_kind() {
+                    Some(TokenKind::Identifier(n)) => {
+                        let name = n.clone();
+                        self.advance();
+                        name
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected parameter name at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                };
+                
+                // Check for default value (=)
+                let default = if self.match_token(&TokenKind::Assign) {
+                    seen_default = true;
+                    Some(self.parse_expression()?)
+                } else {
+                    // Regular parameter without default cannot come after parameter with default
+                    if seen_default {
+                        return Err(MambaError::ParseError(
+                            format!("Parameter without default cannot follow parameter with default at {}:{}", 
+                                param_pos.line, param_pos.column)
+                        ));
+                    }
+                    None
+                };
+                
+                parameters.push(Parameter {
+                    name: param_name,
+                    kind: ParameterKind::Regular,
+                    default,
+                    position: param_pos,
+                });
+            }
             
             // Check for comma (more parameters)
             if self.match_token(&TokenKind::Comma) {

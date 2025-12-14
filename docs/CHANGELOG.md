@@ -80,14 +80,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Function definitions:
       * Basic function definitions with def keyword (def foo(): pass)
       * Function parameters (simple, multiple, default values)
+      * Variadic positional parameters (*args)
+      * Variadic keyword parameters (**kwargs)
+      * Parameter order validation (regular → defaults → *args → **kwargs)
       * Nested function definitions
       * Complex default values (expressions, lists, dicts)
-  - Parser test suite: 253 tests (248 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions
-  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages
-  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error
+  - Parser test suite: 269 tests (264 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types
+  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations
+  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
-  - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal
-  - **400 total tests, all passing (142 lexer + 253 parser + 5 compound)**
+  - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages
+  - **416 total tests, all passing (142 lexer + 269 parser + 5 compound)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
