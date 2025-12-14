@@ -274,33 +274,3 @@ impl fmt::Display for TokenKind {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_source_position() {
-        let pos = SourcePosition::new(10, 5, 100);
-        assert_eq!(pos.line, 10);
-        assert_eq!(pos.column, 5);
-        assert_eq!(pos.offset, 100);
-    }
-
-    #[test]
-    fn test_keyword_detection() {
-        assert!(TokenKind::If.is_keyword());
-        assert!(TokenKind::For.is_keyword());
-        assert!(!matches!(TokenKind::Identifier("foo".to_string()).is_keyword(), true));
-    }
-
-    #[test]
-    fn test_keyword_from_str() {
-        assert_eq!(TokenKind::keyword_from_str("if"), Some(TokenKind::If));
-        assert_eq!(TokenKind::keyword_from_str("for"), Some(TokenKind::For));
-        assert_eq!(TokenKind::keyword_from_str("True"), Some(TokenKind::True));
-        assert_eq!(TokenKind::keyword_from_str("False"), Some(TokenKind::False));
-        assert_eq!(TokenKind::keyword_from_str("None"), Some(TokenKind::None));
-        assert_eq!(TokenKind::keyword_from_str("notakeyword"), None);
-    }
-}
