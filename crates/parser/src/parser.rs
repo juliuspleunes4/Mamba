@@ -140,7 +140,32 @@ impl Parser {
             return self.parse_lambda();
         }
         
-        self.parse_or()
+        self.parse_conditional()
+    }
+
+    /// Parse conditional expression (x if condition else y)
+    fn parse_conditional(&mut self) -> ParseResult<Expression> {
+        let mut expr = self.parse_or()?;
+        
+        // Check for 'if' keyword to start conditional
+        if self.match_token(&TokenKind::If) {
+            let pos = expr.position().clone();
+            let condition = Box::new(self.parse_or()?);
+            
+            // Expect 'else' keyword
+            self.expect_token(TokenKind::Else, "Expected 'else' in conditional expression")?;
+            
+            let false_expr = Box::new(self.parse_conditional()?); // Allow chaining
+            
+            expr = Expression::Conditional {
+                condition,
+                true_expr: Box::new(expr),
+                false_expr,
+                position: pos,
+            };
+        }
+        
+        Ok(expr)
     }
 
     /// Parse lambda expression (lambda x, y: expr)

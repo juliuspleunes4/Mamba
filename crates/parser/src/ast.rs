@@ -145,6 +145,13 @@ pub enum Expression {
         body: Box<Expression>,
         position: SourcePosition,
     },
+    /// Conditional expression (x if condition else y)
+    Conditional {
+        condition: Box<Expression>,
+        true_expr: Box<Expression>,
+        false_expr: Box<Expression>,
+        position: SourcePosition,
+    },
 }
 
 /// Literal values
@@ -275,6 +282,7 @@ impl Expression {
             Expression::Dict { position, .. } => position,
             Expression::Set { position, .. } => position,
             Expression::Lambda { position, .. } => position,
+            Expression::Conditional { position, .. } => position,
         }
     }
 }

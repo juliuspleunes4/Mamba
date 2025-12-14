@@ -1532,6 +1532,7 @@ fn test_set_vs_dict_disambiguation() {
         _ => panic!("Expected dict expression for {{1: 2}}"),
     }
 }
+
 // ============================================================================
 // Lambda Expression Tests
 // ============================================================================
@@ -1669,5 +1670,180 @@ fn test_lambda_with_list() {
             }
         }
         _ => panic!("Expected lambda expression"),
+    }
+}
+
+// ============================================================================
+// Conditional Expression Tests (Ternary)
+// ============================================================================
+
+#[test]
+fn test_simple_conditional() {
+    let module = parse("1 if True else 0\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Conditional { condition, true_expr, false_expr, .. }) => {
+            // true_expr should be 1
+            match **true_expr {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(value, 1),
+                _ => panic!("Expected integer 1 as true expression"),
+            }
+            
+            // condition should be True
+            match **condition {
+                Expression::Literal(Literal::Boolean { value, .. }) => assert_eq!(value, true),
+                _ => panic!("Expected True as condition"),
+            }
+            
+            // false_expr should be 0
+            match **false_expr {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(value, 0),
+                _ => panic!("Expected integer 0 as false expression"),
+            }
+        }
+        _ => panic!("Expected conditional expression"),
+    }
+}
+
+#[test]
+fn test_conditional_with_comparison() {
+    let module = parse("'yes' if x > 0 else 'no'\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Conditional { condition, true_expr, false_expr, .. }) => {
+            // Condition should be a comparison
+            match **condition {
+                Expression::BinaryOp { op: BinaryOperator::GreaterThan, .. } => {},
+                _ => panic!("Expected comparison as condition"),
+            }
+            
+            // true_expr should be string
+            match **true_expr {
+                Expression::Literal(Literal::String { ref value, .. }) => assert_eq!(value, "yes"),
+                _ => panic!("Expected string literal"),
+            }
+            
+            // false_expr should be string
+            match **false_expr {
+                Expression::Literal(Literal::String { ref value, .. }) => assert_eq!(value, "no"),
+                _ => panic!("Expected string literal"),
+            }
+        }
+        _ => panic!("Expected conditional expression"),
+    }
+}
+
+#[test]
+fn test_conditional_with_expressions() {
+    let module = parse("x + 1 if x > 0 else x - 1\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Conditional { condition, true_expr, false_expr, .. }) => {
+            // true_expr should be binary op
+            match **true_expr {
+                Expression::BinaryOp { op: BinaryOperator::Add, .. } => {},
+                _ => panic!("Expected addition"),
+            }
+            
+            // condition should be comparison
+            match **condition {
+                Expression::BinaryOp { op: BinaryOperator::GreaterThan, .. } => {},
+                _ => panic!("Expected comparison"),
+            }
+            
+            // false_expr should be binary op
+            match **false_expr {
+                Expression::BinaryOp { op: BinaryOperator::Subtract, .. } => {},
+                _ => panic!("Expected subtraction"),
+            }
+        }
+        _ => panic!("Expected conditional expression"),
+    }
+}
+
+#[test]
+fn test_nested_conditional() {
+    let module = parse("'a' if x > 0 else 'b' if x < 0 else 'c'\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Conditional { false_expr, .. }) => {
+            // false_expr should itself be a conditional
+            match **false_expr {
+                Expression::Conditional { .. } => {},
+                _ => panic!("Expected nested conditional in false branch"),
+            }
+        }
+        _ => panic!("Expected conditional expression"),
+    }
+}
+
+#[test]
+fn test_conditional_in_function_call() {
+    let module = parse("func(1 if cond else 0)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { arguments, .. }) => {
+            assert_eq!(arguments.len(), 1);
+            
+            // Argument should be conditional
+            match &arguments[0] {
+                Expression::Conditional { .. } => {},
+                _ => panic!("Expected conditional as argument"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_conditional_with_list() {
+    let module = parse("[1, 2, 3] if flag else []\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Conditional { true_expr, false_expr, .. }) => {
+            // true_expr should be list with 3 elements
+            match **true_expr {
+                Expression::List { ref elements, .. } => assert_eq!(elements.len(), 3),
+                _ => panic!("Expected list with 3 elements"),
+            }
+            
+            // false_expr should be empty list
+            match **false_expr {
+                Expression::List { ref elements, .. } => assert_eq!(elements.len(), 0),
+                _ => panic!("Expected empty list"),
+            }
+        }
+        _ => panic!("Expected conditional expression"),
+    }
+}
+
+#[test]
+fn test_conditional_with_function_calls() {
+    let module = parse("func1() if condition() else func2()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Conditional { condition, true_expr, false_expr, .. }) => {
+            // All three parts should be function calls
+            match **true_expr {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected call in true branch"),
+            }
+            match **condition {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected call in condition"),
+            }
+            match **false_expr {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected call in false branch"),
+            }
+        }
+        _ => panic!("Expected conditional expression"),
     }
 }
