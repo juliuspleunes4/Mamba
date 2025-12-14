@@ -575,6 +575,11 @@ impl Parser {
                 self.advance();
                 Ok(Expression::Literal(Literal::None { position: pos }))
             }
+            Some(TokenKind::Ellipsis) => {
+                let pos = self.current_position();
+                self.advance();
+                Ok(Expression::Literal(Literal::Ellipsis { position: pos }))
+            }
             Some(TokenKind::Identifier(name)) => {
                 let pos = self.current_position();
                 let name_str = name.clone();

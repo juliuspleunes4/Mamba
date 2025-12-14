@@ -182,6 +182,9 @@ pub enum Literal {
     None {
         position: SourcePosition,
     },
+    Ellipsis {
+        position: SourcePosition,
+    },
 }
 
 /// Binary operators
@@ -267,6 +270,7 @@ impl Literal {
             Literal::String { position, .. } => position,
             Literal::Boolean { position, .. } => position,
             Literal::None { position } => position,
+            Literal::Ellipsis { position } => position,
         }
     }
 }

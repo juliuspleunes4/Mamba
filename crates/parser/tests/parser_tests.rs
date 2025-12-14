@@ -1979,3 +1979,143 @@ fn test_walrus_with_function_call_value() {
         _ => panic!("Expected assignment expression"),
     }
 }
+
+// ============================================================================
+// Ellipsis Tests
+// ============================================================================
+
+#[test]
+fn test_ellipsis_literal() {
+    let module = parse("...\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Literal(Literal::Ellipsis { .. })) => {},
+        _ => panic!("Expected ellipsis literal"),
+    }
+}
+
+#[test]
+fn test_ellipsis_in_list() {
+    let module = parse("[1, ..., 3]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::List { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            // Check middle element is ellipsis
+            match &elements[1] {
+                Expression::Literal(Literal::Ellipsis { .. }) => {},
+                _ => panic!("Expected ellipsis in list"),
+            }
+        }
+        _ => panic!("Expected list expression"),
+    }
+}
+
+#[test]
+fn test_ellipsis_in_tuple() {
+    let module = parse("(1, ..., 3)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Tuple { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            // Check middle element is ellipsis
+            match &elements[1] {
+                Expression::Literal(Literal::Ellipsis { .. }) => {},
+                _ => panic!("Expected ellipsis in tuple"),
+            }
+        }
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_ellipsis_as_function_argument() {
+    let module = parse("func(...)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { arguments, .. }) => {
+            assert_eq!(arguments.len(), 1);
+            
+            match &arguments[0] {
+                Expression::Literal(Literal::Ellipsis { .. }) => {},
+                _ => panic!("Expected ellipsis as argument"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_ellipsis_in_subscript() {
+    let module = parse("arr[...]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { index, .. }) => {
+            match **index {
+                Expression::Literal(Literal::Ellipsis { .. }) => {},
+                _ => panic!("Expected ellipsis as subscript index"),
+            }
+        }
+        _ => panic!("Expected subscript expression"),
+    }
+}
+
+#[test]
+fn test_ellipsis_in_slice() {
+    let module = parse("arr[(..., 0)]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { index, .. }) => {
+            // The index should be a tuple with ellipsis and 0
+            match **index {
+                Expression::Tuple { ref elements, .. } => {
+                    assert_eq!(elements.len(), 2);
+                    
+                    match &elements[0] {
+                        Expression::Literal(Literal::Ellipsis { .. }) => {},
+                        _ => panic!("Expected ellipsis as first element"),
+                    }
+                    
+                    match &elements[1] {
+                        Expression::Literal(Literal::Integer { value, .. }) => {
+                            assert_eq!(*value, 0);
+                        }
+                        _ => panic!("Expected integer as second element"),
+                    }
+                }
+                _ => panic!("Expected tuple as index"),
+            }
+        }
+        _ => panic!("Expected subscript expression"),
+    }
+}
+
+#[test]
+fn test_multiple_ellipsis_in_dict() {
+    let module = parse("{...: ..., 1: 2}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 2);
+            
+            // Check first key-value pair has ellipsis for both
+            match (&pairs[0].0, &pairs[0].1) {
+                (
+                    Expression::Literal(Literal::Ellipsis { .. }),
+                    Expression::Literal(Literal::Ellipsis { .. })
+                ) => {},
+                _ => panic!("Expected ellipsis for key and value in first pair"),
+            }
+        }
+        _ => panic!("Expected dict expression"),
+    }
+}
