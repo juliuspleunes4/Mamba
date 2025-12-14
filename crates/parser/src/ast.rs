@@ -5,6 +5,26 @@
 
 use crate::token::SourcePosition;
 
+/// A single import item in an import statement (module name + optional alias)
+#[derive(Debug, Clone, PartialEq)]
+pub struct ImportItem {
+    /// Dotted module name (e.g., "os", "os.path")
+    pub module: String,
+    /// Optional alias (the name after 'as')
+    pub alias: Option<String>,
+    pub position: SourcePosition,
+}
+
+/// A single name imported in a from...import statement (name + optional alias)
+#[derive(Debug, Clone, PartialEq)]
+pub struct FromImportItem {
+    /// Name being imported (e.g., "path", "*")
+    pub name: String,
+    /// Optional alias (the name after 'as')
+    pub alias: Option<String>,
+    pub position: SourcePosition,
+}
+
 /// A complete Mamba program (module)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Module {
@@ -65,6 +85,17 @@ pub enum Statement {
     /// Raise statement (raise, raise Exception, raise Exception("msg"))
     Raise {
         exception: Option<Expression>,
+        position: SourcePosition,
+    },
+    /// Import statement (import module, import module as alias)
+    Import {
+        items: Vec<ImportItem>,
+        position: SourcePosition,
+    },
+    /// From...import statement (from module import name, from module import *)
+    FromImport {
+        module: String,
+        items: Vec<FromImportItem>,
         position: SourcePosition,
     },
     /// If statement
@@ -384,6 +415,8 @@ impl Statement {
             Statement::Global { position, .. } => position,
             Statement::Nonlocal { position, .. } => position,
             Statement::Raise { position, .. } => position,
+            Statement::Import { position, .. } => position,
+            Statement::FromImport { position, .. } => position,
             Statement::If { position, .. } => position,
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,
