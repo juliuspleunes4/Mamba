@@ -83,12 +83,15 @@ impl Parser {
                     
                     // Create tuple expression
                     let tuple_expr = Expression::Tuple {
-                        elements,
+                        elements: elements.clone(),
                         position: pos.clone(),
                     };
                     
                     // Now check for assignment
                     if self.match_token(&TokenKind::Assign) {
+                        // Validate starred expressions in unpacking
+                        self.validate_unpacking_targets(&elements)?;
+                        
                         let value = self.parse_tuple_or_expression()?;
                         self.consume_newline_or_eof()?;
                         return Ok(Statement::Assignment {
@@ -105,15 +108,19 @@ impl Parser {
                 
                 // Check for assignment (including chained assignments like x = y = 5)
                 if self.match_token(&TokenKind::Assign) {
-                    let mut targets = vec![expr];
+                    let mut targets = vec![expr.clone()];
                     let pos = targets[0].position().clone();
+                    
+                    // Validate starred expressions in the first target
+                    self.validate_single_target(&expr)?;
                     
                     // Parse chained assignments: x = y = z = value
                     loop {
                         let next_expr = self.parse_tuple_or_expression()?;
                         
                         if self.match_token(&TokenKind::Assign) {
-                            // More assignments coming
+                            // More assignments coming - validate this target too
+                            self.validate_single_target(&next_expr)?;
                             targets.push(next_expr);
                         } else {
                             // This is the final value
@@ -238,37 +245,9 @@ impl Parser {
         let pos = self.current_position();
         self.advance(); // consume 'global'
         
-        // Parse comma-separated identifier names
-        let mut names = Vec::new();
-        
-        loop {
-            match self.current_kind() {
-                Some(TokenKind::Identifier(name)) => {
-                    names.push(name.clone());
-                    self.advance();
-                }
-                _ => {
-                    return Err(MambaError::ParseError(
-                        format!("Expected identifier after 'global' at {}:{}", 
-                            self.current_position().line, 
-                            self.current_position().column)
-                    ));
-                }
-            }
-            
-            // Check for comma
-            if self.match_token(&TokenKind::Comma) {
-                // Allow trailing comma
-                if self.check(&TokenKind::Newline) || self.is_at_end() {
-                    break;
-                }
-                continue;
-            } else {
-                break;
-            }
-        }
-        
+        let names = self.parse_name_list("global")?;
         self.consume_newline_or_eof()?;
+        
         Ok(Statement::Global {
             names,
             position: pos,
@@ -280,7 +259,18 @@ impl Parser {
         let pos = self.current_position();
         self.advance(); // consume 'nonlocal'
         
-        // Parse comma-separated identifier names
+        let names = self.parse_name_list("nonlocal")?;
+        self.consume_newline_or_eof()?;
+        
+        Ok(Statement::Nonlocal {
+            names,
+            position: pos,
+        })
+    }
+
+    /// Helper function to parse comma-separated identifier names
+    /// Used by global and nonlocal statements
+    fn parse_name_list(&mut self, keyword: &str) -> ParseResult<Vec<String>> {
         let mut names = Vec::new();
         
         loop {
@@ -290,11 +280,22 @@ impl Parser {
                     self.advance();
                 }
                 _ => {
-                    return Err(MambaError::ParseError(
-                        format!("Expected identifier after 'nonlocal' at {}:{}", 
-                            self.current_position().line, 
-                            self.current_position().column)
-                    ));
+                    // Provide more specific error message if no names were parsed yet
+                    if names.is_empty() {
+                        return Err(MambaError::ParseError(
+                            format!("Expected at least one identifier after '{}' at {}:{}", 
+                                keyword,
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    } else {
+                        return Err(MambaError::ParseError(
+                            format!("Expected identifier after '{}' at {}:{}", 
+                                keyword,
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
                 }
             }
             
@@ -310,11 +311,7 @@ impl Parser {
             }
         }
         
-        self.consume_newline_or_eof()?;
-        Ok(Statement::Nonlocal {
-            names,
-            position: pos,
-        })
+        Ok(names)
     }
 
     /// Parse raise statement (raise, raise Exception, raise Exception("msg"))
@@ -336,6 +333,51 @@ impl Parser {
             exception,
             position: pos,
         })
+    }
+
+    /// Validate that at most one starred expression appears in unpacking targets
+    fn validate_unpacking_targets(&self, targets: &[Expression]) -> ParseResult<()> {
+        let starred_count = self.count_starred_expressions(targets);
+        
+        if starred_count > 1 {
+            return Err(MambaError::ParseError(
+                format!("Multiple starred expressions in assignment (only one allowed)")
+            ));
+        }
+        
+        Ok(())
+    }
+
+    /// Validate a single assignment target (checks for multiple starred expressions)
+    fn validate_single_target(&self, target: &Expression) -> ParseResult<()> {
+        match target {
+            Expression::Tuple { elements, .. } => {
+                self.validate_unpacking_targets(elements)?;
+            }
+            Expression::List { elements, .. } => {
+                self.validate_unpacking_targets(elements)?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    /// Count starred expressions in a list of expressions (recursively handles tuples)
+    fn count_starred_expressions(&self, exprs: &[Expression]) -> usize {
+        let mut count = 0;
+        for expr in exprs {
+            match expr {
+                Expression::Starred { .. } => count += 1,
+                Expression::Tuple { elements, .. } => {
+                    count += self.count_starred_expressions(elements);
+                }
+                Expression::List { elements, .. } => {
+                    count += self.count_starred_expressions(elements);
+                }
+                _ => {}
+            }
+        }
+        count
     }
 
     /// Parse an assignment target (expression or starred expression)
