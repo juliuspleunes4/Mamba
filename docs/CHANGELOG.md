@@ -78,7 +78,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal
-  - **350 total tests, all passing (142 lexer + 203 parser + 5 compound operators)**
+  - **345 total tests, all passing (142 lexer + 203 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

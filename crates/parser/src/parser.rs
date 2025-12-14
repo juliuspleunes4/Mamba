@@ -347,7 +347,7 @@ impl Parser {
         loop {
             // Parse module name (possibly dotted, like os.path)
             let item_pos = self.current_position();
-            let module = self.parse_dotted_name()?;
+            let module = self.parse_dotted_name("import")?;
             
             // Check for optional 'as' alias
             let alias = if self.match_token(&TokenKind::As) {
@@ -395,7 +395,8 @@ impl Parser {
     }
 
     /// Parse a dotted module name (e.g., "os", "os.path", "package.submodule")
-    fn parse_dotted_name(&mut self) -> ParseResult<String> {
+    /// The `context` parameter is used for error messages (e.g., "import" or "from")
+    fn parse_dotted_name(&mut self, context: &str) -> ParseResult<String> {
         let mut parts = Vec::new();
         
         // Parse first identifier
@@ -406,7 +407,8 @@ impl Parser {
             }
             _ => {
                 return Err(MambaError::ParseError(
-                    format!("Expected module name after 'import' at {}:{}", 
+                    format!("Expected module name after '{}' at {}:{}", 
+                        context,
                         self.current_position().line, 
                         self.current_position().column)
                 ));
@@ -439,7 +441,7 @@ impl Parser {
         self.advance(); // consume 'from'
         
         // Parse module name (possibly dotted, like os.path)
-        let module = self.parse_dotted_name()?;
+        let module = self.parse_dotted_name("from")?;
         
         // Expect 'import' keyword
         if !self.match_token(&TokenKind::Import) {
@@ -455,7 +457,7 @@ impl Parser {
         // Check for wildcard import
         if self.match_token(&TokenKind::Star) {
             // Wildcard import: from module import *
-            let wildcard_pos = self.previous_position.clone();
+            let wildcard_pos = self.previous_position();
             
             // Wildcard can't have an alias
             if self.check(&TokenKind::As) {
