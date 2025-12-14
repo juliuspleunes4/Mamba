@@ -9,6 +9,10 @@
 
 > **Write Python-style code. Ship fast, native executables. No Python. No Rust. No setup.**
 
+<p align="center">
+    <img src="assets/mamba_logo.png" alt="Mamba Logo" width="180"/>
+</p>
+
 ---
 
 ## ✨ Features
