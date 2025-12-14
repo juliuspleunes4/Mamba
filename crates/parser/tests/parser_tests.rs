@@ -599,6 +599,72 @@ fn test_parse_starred_at_end() {
 }
 
 #[test]
+fn test_parse_assert_simple() {
+    let module = parse("assert x > 0\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assert { condition, message, .. } => {
+            // Check condition is a comparison
+            match condition {
+                Expression::BinaryOp { op, .. } => {
+                    assert!(matches!(op, BinaryOperator::GreaterThan));
+                }
+                _ => panic!("Expected binary operation"),
+            }
+            
+            // No message
+            assert!(message.is_none());
+        }
+        _ => panic!("Expected assert statement"),
+    }
+}
+
+#[test]
+fn test_parse_assert_with_message() {
+    let module = parse("assert x > 0, \"x must be positive\"\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assert { condition, message, .. } => {
+            // Check condition
+            match condition {
+                Expression::BinaryOp { op, .. } => {
+                    assert!(matches!(op, BinaryOperator::GreaterThan));
+                }
+                _ => panic!("Expected binary operation"),
+            }
+            
+            // Check message
+            assert!(message.is_some());
+            match message.as_ref().unwrap() {
+                Expression::Literal(Literal::String { value, .. }) => {
+                    assert_eq!(value, "x must be positive");
+                }
+                _ => panic!("Expected string literal as message"),
+            }
+        }
+        _ => panic!("Expected assert statement"),
+    }
+}
+
+#[test]
+fn test_parse_assert_true() {
+    let module = parse("assert True\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assert { condition, message, .. } => {
+            match condition {
+                Expression::Literal(Literal::Boolean { value, .. }) => {
+                    assert_eq!(*value, true);
+                }
+                _ => panic!("Expected boolean literal"),
+            }
+            assert!(message.is_none());
+        }
+        _ => panic!("Expected assert statement"),
+    }
+}
+
+#[test]
 fn test_parse_pass_statement() {
     let module = parse("pass\n").unwrap();
     

@@ -41,6 +41,12 @@ pub enum Statement {
         value: Option<Expression>,
         position: SourcePosition,
     },
+    /// Assert statement (assert condition, optional_message)
+    Assert {
+        condition: Expression,
+        message: Option<Expression>,
+        position: SourcePosition,
+    },
     /// If statement
     If {
         condition: Expression,
@@ -353,6 +359,7 @@ impl Statement {
             Statement::Break(position) => position,
             Statement::Continue(position) => position,
             Statement::Return { position, .. } => position,
+            Statement::Assert { position, .. } => position,
             Statement::If { position, .. } => position,
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,

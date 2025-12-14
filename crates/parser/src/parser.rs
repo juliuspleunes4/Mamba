@@ -58,6 +58,7 @@ impl Parser {
             Some(TokenKind::Break) => self.parse_break(),
             Some(TokenKind::Continue) => self.parse_continue(),
             Some(TokenKind::Return) => self.parse_return(),
+            Some(TokenKind::Assert) => self.parse_assert(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -180,6 +181,29 @@ impl Parser {
         
         self.consume_newline_or_eof()?;
         Ok(Statement::Return { value, position: pos })
+    }
+
+    /// Parse assert statement (assert condition, optional_message)
+    fn parse_assert(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'assert'
+        
+        // Parse the condition
+        let condition = self.parse_expression()?;
+        
+        // Check for optional message after comma
+        let message = if self.match_token(&TokenKind::Comma) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Assert {
+            condition,
+            message,
+            position: pos,
+        })
     }
 
     /// Parse an assignment target (expression or starred expression)
