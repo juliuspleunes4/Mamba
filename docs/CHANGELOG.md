@@ -85,12 +85,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * Parameter order validation (regular → defaults → *args → **kwargs)
       * Nested function definitions
       * Complex default values (expressions, lists, dicts)
-  - Parser test suite: 269 tests (264 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types
-  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations
-  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced
+    - Class definitions:
+      * Basic class definitions with class keyword (class Foo: pass)
+      * Class body with statements and methods
+      * Single inheritance (class Child(Parent): pass)
+      * Multiple inheritance (class Child(Parent1, Parent2): pass)
+      * Inheritance with dotted names (class Child(pkg.Module): pass)
+      * Nested class definitions
+      * Complex class bodies with attributes and methods
+  - Parser test suite: 286 tests (281 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types, class definitions with inheritance
+  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations, invalid class names
+  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
-  - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages
-  - **416 total tests, all passing (142 lexer + 269 parser + 5 compound)**
+  - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages
+  - **433 total tests, all passing (142 lexer + 286 parser + 5 compound)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

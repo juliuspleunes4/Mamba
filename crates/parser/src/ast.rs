@@ -128,6 +128,13 @@ pub enum Statement {
         body: Vec<Statement>,
         position: SourcePosition,
     },
+    /// Class definition
+    ClassDef {
+        name: String,
+        bases: Vec<Expression>,
+        body: Vec<Statement>,
+        position: SourcePosition,
+    },
 }
 
 /// Represents any expression in Mamba
@@ -430,6 +437,7 @@ impl Statement {
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,
             Statement::FunctionDef { position, .. } => position,
+            Statement::ClassDef { position, .. } => position,
         }
     }
 }

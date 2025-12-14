@@ -69,6 +69,7 @@ impl Parser {
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
             Some(TokenKind::Def) => self.parse_function_def(),
+            Some(TokenKind::Class) => self.parse_class_def(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -836,6 +837,85 @@ impl Parser {
         Ok(Statement::FunctionDef {
             name,
             parameters,
+            body,
+            position: pos,
+        })
+    }
+
+    /// Parse class definition (class Name[(bases)]: body)
+    fn parse_class_def(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'class'
+        
+        // Parse class name
+        let name = match self.current_kind() {
+            Some(TokenKind::Identifier(n)) => {
+                let class_name = n.clone();
+                self.advance();
+                class_name
+            }
+            _ => {
+                return Err(MambaError::ParseError(
+                    format!("Expected class name after 'class' at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+        };
+        
+        // Parse optional base classes (inheritance)
+        let bases = if self.match_token(&TokenKind::LeftParen) {
+            let mut base_list = Vec::new();
+            
+            // Check for empty parentheses
+            if !self.check(&TokenKind::RightParen) {
+                loop {
+                    // Parse base class expression (identifier or attribute access)
+                    let base = self.parse_expression()?;
+                    base_list.push(base);
+                    
+                    // Check for comma (more base classes)
+                    if self.match_token(&TokenKind::Comma) {
+                        // Allow trailing comma
+                        if self.check(&TokenKind::RightParen) {
+                            break;
+                        }
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            
+            // Expect closing parenthesis
+            if !self.match_token(&TokenKind::RightParen) {
+                return Err(MambaError::ParseError(
+                    format!("Expected ')' after base classes at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+            
+            base_list
+        } else {
+            Vec::new()
+        };
+        
+        // Expect colon
+        if !self.match_token(&TokenKind::Colon) {
+            return Err(MambaError::ParseError(
+                format!("Expected ':' after class header at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse body
+        let body = self.parse_block()?;
+        
+        Ok(Statement::ClassDef {
+            name,
+            bases,
             body,
             position: pos,
         })

@@ -1951,6 +1951,236 @@ fn test_parse_function_param_without_default_after_default_error() {
 }
 
 // ============================================================================
+// Class Definition Tests
+// ============================================================================
+
+#[test]
+fn test_parse_class_empty() {
+    let result = parse("class Foo:\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, bases, body, .. } => {
+            assert_eq!(name, "Foo");
+            assert_eq!(bases.len(), 0);
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::Pass(_) => {},
+                _ => panic!("Expected pass statement in body"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_with_statements() {
+    let result = parse("class Person:\n    name = 'Unknown'\n    age = 0\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, body, .. } => {
+            assert_eq!(name, "Person");
+            assert_eq!(body.len(), 2);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_with_method() {
+    let result = parse("class Person:\n    def greet(self):\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, body, .. } => {
+            assert_eq!(name, "Person");
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::FunctionDef { name, .. } => {
+                    assert_eq!(name, "greet");
+                }
+                _ => panic!("Expected function definition"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_with_multiple_methods() {
+    let result = parse("class Person:\n    def __init__(self):\n        pass\n    def greet(self):\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { body, .. } => {
+            assert_eq!(body.len(), 2);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_single_inheritance() {
+    let result = parse("class Child(Parent):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, bases, .. } => {
+            assert_eq!(name, "Child");
+            assert_eq!(bases.len(), 1);
+            match &bases[0] {
+                Expression::Identifier { name, .. } => {
+                    assert_eq!(name, "Parent");
+                }
+                _ => panic!("Expected identifier for base class"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_multiple_inheritance() {
+    let result = parse("class Child(Parent1, Parent2, Parent3):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, bases, .. } => {
+            assert_eq!(name, "Child");
+            assert_eq!(bases.len(), 3);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_inheritance_with_dotted_name() {
+    let result = parse("class MyClass(package.module.BaseClass):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { bases, .. } => {
+            assert_eq!(bases.len(), 1);
+            match &bases[0] {
+                Expression::Attribute { .. } => {},
+                _ => panic!("Expected attribute access for dotted base class"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_empty_inheritance_parens() {
+    let result = parse("class Foo():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { bases, .. } => {
+            assert_eq!(bases.len(), 0);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_trailing_comma_in_bases() {
+    let result = parse("class Child(Parent1, Parent2,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { bases, .. } => {
+            assert_eq!(bases.len(), 2);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_nested_class() {
+    let result = parse("class Outer:\n    class Inner:\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, body, .. } => {
+            assert_eq!(name, "Outer");
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::ClassDef { name, .. } => {
+                    assert_eq!(name, "Inner");
+                }
+                _ => panic!("Expected nested class definition"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_complex_body() {
+    let result = parse("class Person:\n    name = 'Unknown'\n    def __init__(self, name):\n        self.name = name\n    def greet(self):\n        return self.name\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { body, .. } => {
+            assert_eq!(body.len(), 3);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+// Error tests for class definitions
+
+#[test]
+fn test_parse_class_missing_name() {
+    let result = parse("class :\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_missing_colon() {
+    let result = parse("class Foo\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_missing_body() {
+    let result = parse("class Foo:\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_keyword_as_name() {
+    let result = parse("class if:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_number_as_name() {
+    let result = parse("class 123:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_missing_closing_paren() {
+    let result = parse("class Child(Parent:\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 
