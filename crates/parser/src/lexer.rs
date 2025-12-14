@@ -635,6 +635,12 @@ impl<'a> Lexer<'a> {
                 lexeme.push(c);
                 self.advance();
                 has_digits = true;
+            } else if c.is_ascii_digit() {
+                // Invalid octal digit (8 or 9)
+                return Err(MambaError::SyntaxError(format!(
+                    "Invalid octal digit '{}' in '{}' at {}",
+                    c, lexeme, start_pos
+                )));
             } else {
                 break;
             }
@@ -665,6 +671,12 @@ impl<'a> Lexer<'a> {
                 lexeme.push(c);
                 self.advance();
                 has_digits = true;
+            } else if c.is_ascii_digit() {
+                // Invalid binary digit (2-9)
+                return Err(MambaError::SyntaxError(format!(
+                    "Invalid binary digit '{}' in '{}' at {}",
+                    c, lexeme, start_pos
+                )));
             } else {
                 break;
             }
@@ -738,16 +750,29 @@ impl<'a> Lexer<'a> {
         }
         
         // Single-quoted raw string - no escape sequences processed
+        // BUT we still need to handle escaped quotes in raw strings (r"\"" should include the backslash AND quote)
         while let Some(c) = self.current_char {
-            if c == quote {
+            if c == '\\' && self.peek() == Some(quote) {
+                // In raw strings, backslash before quote is literal
+                lexeme.push(c);
+                value.push(c);
+                self.advance();
+                
+                // Also include the quote
+                if let Some(q) = self.current_char {
+                    lexeme.push(q);
+                    value.push(q);
+                    self.advance();
+                }
+            } else if c == quote {
                 lexeme.push(c);
                 self.advance();
                 return Ok(Token::new(TokenKind::String(value), start_pos, lexeme));
+            } else {
+                lexeme.push(c);
+                value.push(c); // Raw string: backslashes are literal
+                self.advance();
             }
-            
-            lexeme.push(c);
-            value.push(c); // Raw string: backslashes are literal
-            self.advance();
         }
         
         Err(MambaError::SyntaxError(format!(

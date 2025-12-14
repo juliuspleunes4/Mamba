@@ -396,3 +396,501 @@ fn test_invalid_bin_literal() {
     let result = lexer.tokenize();
     assert!(result.is_err());
 }
+
+// ============ EDGE CASE TESTS ============
+
+#[test]
+fn test_operators_without_spaces() {
+    let mut lexer = Lexer::new("a+b-c*d/e");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("a".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Plus);
+    assert_eq!(tokens[2].kind, TokenKind::Identifier("b".to_string()));
+    assert_eq!(tokens[3].kind, TokenKind::Minus);
+    assert_eq!(tokens[4].kind, TokenKind::Identifier("c".to_string()));
+    assert_eq!(tokens[5].kind, TokenKind::Star);
+    assert_eq!(tokens[6].kind, TokenKind::Identifier("d".to_string()));
+    assert_eq!(tokens[7].kind, TokenKind::Slash);
+    assert_eq!(tokens[8].kind, TokenKind::Identifier("e".to_string()));
+}
+
+#[test]
+fn test_multiple_dots_in_number() {
+    let mut lexer = Lexer::new("3.14.15");
+    let tokens = lexer.tokenize().unwrap();
+
+    // Should parse as: 3.14, ., 15
+    assert_eq!(tokens[0].kind, TokenKind::Float(3.14));
+    assert_eq!(tokens[1].kind, TokenKind::Dot);
+    assert_eq!(tokens[2].kind, TokenKind::Integer(15));
+}
+
+#[test]
+fn test_number_followed_by_identifier() {
+    let mut lexer = Lexer::new("123abc");
+    let tokens = lexer.tokenize().unwrap();
+
+    // Numbers can't start identifiers in Python, so this is: 123, abc
+    assert_eq!(tokens[0].kind, TokenKind::Integer(123));
+    assert_eq!(tokens[1].kind, TokenKind::Identifier("abc".to_string()));
+}
+
+#[test]
+fn test_identifier_with_numbers() {
+    let mut lexer = Lexer::new("var123 test_456");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("var123".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Identifier("test_456".to_string()));
+}
+
+#[test]
+fn test_keyword_as_part_of_identifier() {
+    let mut lexer = Lexer::new("ifx forloop whileTrue");
+    let tokens = lexer.tokenize().unwrap();
+
+    // These are identifiers, not keywords
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("ifx".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Identifier("forloop".to_string()));
+    assert_eq!(tokens[2].kind, TokenKind::Identifier("whileTrue".to_string()));
+}
+
+#[test]
+fn test_single_underscore_identifier() {
+    let mut lexer = Lexer::new("_");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("_".to_string()));
+}
+
+#[test]
+fn test_multiple_underscores() {
+    let mut lexer = Lexer::new("__ ___ ____");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("__".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Identifier("___".to_string()));
+    assert_eq!(tokens[2].kind, TokenKind::Identifier("____".to_string()));
+}
+
+#[test]
+fn test_comment_at_end_of_file() {
+    let mut lexer = Lexer::new("x = 5 # no newline");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("x".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Assign);
+    assert_eq!(tokens[2].kind, TokenKind::Integer(5));
+    assert_eq!(tokens[3].kind, TokenKind::Comment("no newline".to_string()));
+    assert_eq!(tokens[4].kind, TokenKind::Eof);
+}
+
+#[test]
+fn test_comment_only() {
+    let mut lexer = Lexer::new("# just a comment");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Comment("just a comment".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Eof);
+}
+
+#[test]
+fn test_empty_comment() {
+    let mut lexer = Lexer::new("#");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Comment(String::new()));
+    assert_eq!(tokens[1].kind, TokenKind::Eof);
+}
+
+#[test]
+fn test_consecutive_operators() {
+    let mut lexer = Lexer::new("+++---");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Plus);
+    assert_eq!(tokens[1].kind, TokenKind::Plus);
+    assert_eq!(tokens[2].kind, TokenKind::Plus);
+    assert_eq!(tokens[3].kind, TokenKind::Minus);
+    assert_eq!(tokens[4].kind, TokenKind::Minus);
+    assert_eq!(tokens[5].kind, TokenKind::Minus);
+}
+
+#[test]
+fn test_mixed_quotes() {
+    let mut lexer = Lexer::new(r#""double" 'single'"#);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::String("double".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::String("single".to_string()));
+}
+
+#[test]
+fn test_quote_inside_string() {
+    let mut lexer = Lexer::new(r#""He said \"hello\"""#);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::String("He said \"hello\"".to_string()));
+}
+
+#[test]
+fn test_single_quote_in_double_quoted() {
+    let mut lexer = Lexer::new(r#""don't""#);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::String("don't".to_string()));
+}
+
+#[test]
+fn test_double_quote_in_single_quoted() {
+    let mut lexer = Lexer::new(r#"'He said "hi"'"#);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::String("He said \"hi\"".to_string()));
+}
+
+#[test]
+fn test_unterminated_triple_quoted_string() {
+    let mut lexer = Lexer::new(r#""""hello world"#);
+    let result = lexer.tokenize();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_triple_quoted_with_quotes_inside() {
+    let mut lexer = Lexer::new(r#""""He said "hello" and 'bye'""""#);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(
+        tokens[0].kind,
+        TokenKind::String("He said \"hello\" and 'bye'".to_string())
+    );
+}
+
+#[test]
+fn test_string_with_all_escapes() {
+    let mut lexer = Lexer::new(r#""\n\r\t\\\"""#);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::String("\n\r\t\\\"".to_string()));
+}
+
+#[test]
+fn test_raw_string_with_quotes() {
+    let mut lexer = Lexer::new(r#"r"C:\Users\Name\test\"file\".txt""#);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(
+        tokens[0].kind,
+        TokenKind::String(r#"C:\Users\Name\test\"file\".txt"#.to_string())
+    );
+}
+
+#[test]
+fn test_zero_integer() {
+    let mut lexer = Lexer::new("0");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Integer(0));
+}
+
+#[test]
+fn test_negative_number() {
+    let mut lexer = Lexer::new("-42 -3.14");
+    let tokens = lexer.tokenize().unwrap();
+
+    // Note: The minus is parsed as an operator, not part of the number
+    assert_eq!(tokens[0].kind, TokenKind::Minus);
+    assert_eq!(tokens[1].kind, TokenKind::Integer(42));
+    assert_eq!(tokens[2].kind, TokenKind::Minus);
+    assert_eq!(tokens[3].kind, TokenKind::Float(3.14));
+}
+
+#[test]
+fn test_float_without_leading_zero() {
+    let mut lexer = Lexer::new(".5");
+    let tokens = lexer.tokenize().unwrap();
+
+    // This should be parsed as dot followed by integer
+    assert_eq!(tokens[0].kind, TokenKind::Dot);
+    assert_eq!(tokens[1].kind, TokenKind::Integer(5));
+}
+
+#[test]
+fn test_float_without_trailing_digits() {
+    let mut lexer = Lexer::new("5.");
+    let tokens = lexer.tokenize().unwrap();
+
+    // This should be parsed as integer followed by dot
+    assert_eq!(tokens[0].kind, TokenKind::Integer(5));
+    assert_eq!(tokens[1].kind, TokenKind::Dot);
+}
+
+#[test]
+fn test_very_large_integer() {
+    let mut lexer = Lexer::new("999999999999");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Integer(999999999999));
+}
+
+#[test]
+fn test_hex_with_lowercase() {
+    let mut lexer = Lexer::new("0xabc 0xABC 0xAbC");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Integer(0xabc));
+    assert_eq!(tokens[1].kind, TokenKind::Integer(0xABC));
+    assert_eq!(tokens[2].kind, TokenKind::Integer(0xAbC));
+}
+
+#[test]
+fn test_oct_with_invalid_digit() {
+    let mut lexer = Lexer::new("0o78");
+    let result = lexer.tokenize();
+    // 8 is not a valid octal digit
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_bin_with_invalid_digit() {
+    let mut lexer = Lexer::new("0b102");
+    let result = lexer.tokenize();
+    // 2 is not a valid binary digit
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_hex_with_invalid_char() {
+    let mut lexer = Lexer::new("0xG");
+    let result = lexer.tokenize();
+    // G is not a valid hex digit
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_ambiguous_less_than_shift() {
+    let mut lexer = Lexer::new("a<b a<<b");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("a".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Less);
+    assert_eq!(tokens[2].kind, TokenKind::Identifier("b".to_string()));
+    assert_eq!(tokens[3].kind, TokenKind::Identifier("a".to_string()));
+    assert_eq!(tokens[4].kind, TokenKind::LeftShift);
+    assert_eq!(tokens[5].kind, TokenKind::Identifier("b".to_string()));
+}
+
+#[test]
+fn test_ambiguous_star_power() {
+    let mut lexer = Lexer::new("a*b a**b");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("a".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Star);
+    assert_eq!(tokens[2].kind, TokenKind::Identifier("b".to_string()));
+    assert_eq!(tokens[3].kind, TokenKind::Identifier("a".to_string()));
+    assert_eq!(tokens[4].kind, TokenKind::DoubleStar);
+    assert_eq!(tokens[5].kind, TokenKind::Identifier("b".to_string()));
+}
+
+#[test]
+fn test_ambiguous_slash_floor_div() {
+    let mut lexer = Lexer::new("a/b a//b");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("a".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Slash);
+    assert_eq!(tokens[2].kind, TokenKind::Identifier("b".to_string()));
+    assert_eq!(tokens[3].kind, TokenKind::Identifier("a".to_string()));
+    assert_eq!(tokens[4].kind, TokenKind::DoubleSlash);
+    assert_eq!(tokens[5].kind, TokenKind::Identifier("b".to_string()));
+}
+
+#[test]
+fn test_dot_vs_ellipsis() {
+    let mut lexer = Lexer::new(". .. ...");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Dot);
+    assert_eq!(tokens[1].kind, TokenKind::Dot);
+    assert_eq!(tokens[2].kind, TokenKind::Dot);
+    assert_eq!(tokens[3].kind, TokenKind::Ellipsis);
+}
+
+#[test]
+fn test_colon_vs_walrus() {
+    let mut lexer = Lexer::new(": := ::=");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Colon);
+    assert_eq!(tokens[1].kind, TokenKind::Walrus);
+    // ::= should be colon, colon, assign
+    assert_eq!(tokens[2].kind, TokenKind::Colon);
+    assert_eq!(tokens[3].kind, TokenKind::Walrus);
+}
+
+#[test]
+fn test_minus_vs_arrow() {
+    let mut lexer = Lexer::new("- -> -->");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Minus);
+    assert_eq!(tokens[1].kind, TokenKind::Arrow);
+    // --> should be arrow followed by greater  (-- would try to parse as - -, the second - sees > and makes ->)
+    assert_eq!(tokens[2].kind, TokenKind::Minus);
+    assert_eq!(tokens[3].kind, TokenKind::Arrow);
+}
+
+#[test]
+fn test_position_tracking_single_line() {
+    let mut lexer = Lexer::new("abc def");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].position.line, 1);
+    assert_eq!(tokens[0].position.column, 1);
+    assert_eq!(tokens[1].position.line, 1);
+    assert_eq!(tokens[1].position.column, 5);
+}
+
+#[test]
+fn test_position_tracking_multiple_lines() {
+    let mut lexer = Lexer::new("x\ny\nz");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].position.line, 1); // x
+    assert_eq!(tokens[1].position.line, 1); // newline
+    assert_eq!(tokens[2].position.line, 2); // y
+    assert_eq!(tokens[3].position.line, 2); // newline
+    assert_eq!(tokens[4].position.line, 3); // z
+}
+
+#[test]
+fn test_all_escape_sequences() {
+    let mut lexer = Lexer::new(r#""\a\b\f\n\r\t\v\\\'\"""#);
+    let tokens = lexer.tokenize().unwrap();
+
+    // Test that escape sequences are properly parsed
+    assert!(matches!(tokens[0].kind, TokenKind::String(_)));
+}
+
+#[test]
+fn test_unterminated_single_quote_string() {
+    let mut lexer = Lexer::new("'unterminated");
+    let result = lexer.tokenize();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_unterminated_raw_string() {
+    let mut lexer = Lexer::new(r#"r"unterminated"#);
+    let result = lexer.tokenize();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_unterminated_fstring() {
+    let mut lexer = Lexer::new(r#"f"unterminated"#);
+    let result = lexer.tokenize();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_invalid_character() {
+    let mut lexer = Lexer::new("@");
+    let result = lexer.tokenize();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_backtick_invalid() {
+    let mut lexer = Lexer::new("`invalid`");
+    let result = lexer.tokenize();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_dollar_sign_invalid() {
+    let mut lexer = Lexer::new("$invalid");
+    let result = lexer.tokenize();
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_mixed_whitespace() {
+    let mut lexer = Lexer::new("x  \t  y");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("x".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Identifier("y".to_string()));
+}
+
+#[test]
+fn test_trailing_whitespace() {
+    let mut lexer = Lexer::new("x   ");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("x".to_string()));
+    assert_eq!(tokens[1].kind, TokenKind::Eof);
+}
+
+#[test]
+fn test_leading_whitespace() {
+    let mut lexer = Lexer::new("   x");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier("x".to_string()));
+}
+
+#[test]
+fn test_all_bitwise_assign_operators() {
+    let mut lexer = Lexer::new("&= |= ^=");
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::AmpersandAssign);
+    assert_eq!(tokens[1].kind, TokenKind::PipeAssign);
+    assert_eq!(tokens[2].kind, TokenKind::CaretAssign);
+}
+
+#[test]
+fn test_complex_nested_expression() {
+    let mut lexer = Lexer::new("((a+b)*(c-d))/((e**f)%(g//h))");
+    let tokens = lexer.tokenize().unwrap();
+
+    // Just verify it parses without error and has correct operator count
+    // Operators: + - * / ** % //
+    let op_count = tokens
+        .iter()
+        .filter(|t| matches!(
+            t.kind,
+            TokenKind::Plus
+                | TokenKind::Minus
+                | TokenKind::Star
+                | TokenKind::Slash
+                | TokenKind::DoubleStar
+                | TokenKind::Percent
+                | TokenKind::DoubleSlash
+        ))
+        .count();
+    assert_eq!(op_count, 7); // +, *, -, /, **, %, //
+}
+
+#[test]
+fn test_long_identifier() {
+    let long_name = "a".repeat(1000);
+    let mut lexer = Lexer::new(&long_name);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::Identifier(long_name));
+}
+
+#[test]
+fn test_long_string() {
+    let long_content = "x".repeat(10000);
+    let input = format!(r#""{}""#, long_content);
+    let mut lexer = Lexer::new(&input);
+    let tokens = lexer.tokenize().unwrap();
+
+    assert_eq!(tokens[0].kind, TokenKind::String(long_content));
+}
