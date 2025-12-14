@@ -604,3 +604,145 @@ fn test_parse_chained_function_calls() {
         _ => panic!("Expected function call"),
     }
 }
+
+#[test]
+fn test_parse_subscript_simple() {
+    let module = parse("list[0]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { object, index, .. }) => {
+            // Object should be identifier "list"
+            match **object {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "list"),
+                _ => panic!("Expected identifier as object"),
+            }
+            
+            // Index should be integer 0
+            match **index {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(value, 0),
+                _ => panic!("Expected integer index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
+
+#[test]
+fn test_parse_subscript_negative_index() {
+    let module = parse("array[-1]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { index, .. }) => {
+            // Index should be unary minus operation
+            match **index {
+                Expression::UnaryOp { op: UnaryOperator::Minus, .. } => {},
+                _ => panic!("Expected unary minus for negative index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
+
+#[test]
+fn test_parse_subscript_string_key() {
+    let module = parse("dict[\"key\"]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { object, index, .. }) => {
+            match **object {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "dict"),
+                _ => panic!("Expected identifier"),
+            }
+            
+            match **index {
+                Expression::Literal(Literal::String { ref value, .. }) => assert_eq!(value, "key"),
+                _ => panic!("Expected string index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
+
+#[test]
+fn test_parse_subscript_expression_index() {
+    let module = parse("items[i + 1]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { index, .. }) => {
+            // Index should be binary operation
+            match **index {
+                Expression::BinaryOp { op: BinaryOperator::Add, .. } => {},
+                _ => panic!("Expected addition in index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
+
+#[test]
+fn test_parse_nested_subscripts() {
+    let module = parse("matrix[i][j]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { object, index, .. }) => {
+            // Object should be another subscript
+            match **object {
+                Expression::Subscript { .. } => {},
+                _ => panic!("Expected nested subscript"),
+            }
+            
+            // Index should be identifier "j"
+            match **index {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "j"),
+                _ => panic!("Expected identifier index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
+
+#[test]
+fn test_parse_subscript_after_call() {
+    let module = parse("get_list()[0]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { object, index, .. }) => {
+            // Object should be a function call
+            match **object {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected function call as object"),
+            }
+            
+            match **index {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(value, 0),
+                _ => panic!("Expected integer index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
+
+#[test]
+fn test_parse_call_after_subscript() {
+    let module = parse("funcs[0]()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            // Function should be a subscript
+            match **function {
+                Expression::Subscript { .. } => {},
+                _ => panic!("Expected subscript as function"),
+            }
+            
+            assert_eq!(arguments.len(), 0);
+        }
+        _ => panic!("Expected function call"),
+    }
+}

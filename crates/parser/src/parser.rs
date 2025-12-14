@@ -385,6 +385,21 @@ impl Parser {
                         position: call_pos,
                     };
                 }
+                Some(TokenKind::LeftBracket) => {
+                    // Subscript: obj[index]
+                    self.advance(); // consume '['
+                    let subscript_pos = expr.position().clone();
+                    
+                    let index = self.parse_expression()?;
+                    
+                    self.expect_token(TokenKind::RightBracket, "Expected ']' after subscript index")?;
+                    
+                    expr = Expression::Subscript {
+                        object: Box::new(expr),
+                        index: Box::new(index),
+                        position: subscript_pos,
+                    };
+                }
                 _ => break,
             }
         }
