@@ -48,13 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Tuple literals with proper disambiguation from parenthesized expressions, supporting empty tuples and single-element tuples
     - Dict literals with key-value pairs, supporting empty dicts, trailing commas, nested dicts, expressions as keys/values
     - Set literals with proper disambiguation from dicts (empty braces = dict), supporting trailing commas, expressions as elements
+    - Lambda expressions with parameter lists and expression bodies, enabling functional programming patterns
   - Statement parsing:
     - Assignment statements (x = 5)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 79 tests covering operators, postfix operations, collection literals
-  - **226 total tests, all passing (142 lexer + 79 parser + 5 compound operator tests)**
+  - Parser test suite: 86 tests covering operators, postfix operations, collection literals, lambda expressions
+  - **233 total tests, all passing (142 lexer + 86 parser + 5 compound operator tests)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

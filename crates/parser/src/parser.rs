@@ -135,7 +135,56 @@ impl Parser {
 
     /// Parse an expression with operator precedence
     fn parse_expression(&mut self) -> ParseResult<Expression> {
+        // Check for lambda expression first (lowest precedence)
+        if self.check(&TokenKind::Lambda) {
+            return self.parse_lambda();
+        }
+        
         self.parse_or()
+    }
+
+    /// Parse lambda expression (lambda x, y: expr)
+    fn parse_lambda(&mut self) -> ParseResult<Expression> {
+        let pos = self.current_position();
+        self.expect_token(TokenKind::Lambda, "Expected 'lambda'")?;
+        
+        let mut parameters = Vec::new();
+        
+        // Parse parameters (optional)
+        if !self.check(&TokenKind::Colon) {
+            loop {
+                // Expect identifier for parameter name
+                match self.current_kind() {
+                    Some(TokenKind::Identifier(name)) => {
+                        parameters.push(name.clone());
+                        self.advance();
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(format!(
+                            "Expected parameter name at {}:{}",
+                            pos.line, pos.column
+                        )));
+                    }
+                }
+                
+                // Check for comma (more parameters) or colon (end of parameters)
+                if !self.match_token(&TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        
+        // Expect colon before body
+        self.expect_token(TokenKind::Colon, "Expected ':' after lambda parameters")?;
+        
+        // Parse body expression (but not another lambda to avoid ambiguity)
+        let body = Box::new(self.parse_or()?);
+        
+        Ok(Expression::Lambda {
+            parameters,
+            body,
+            position: pos,
+        })
     }
 
     /// Parse logical OR expression (lowest precedence)

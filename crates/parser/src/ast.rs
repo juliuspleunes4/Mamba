@@ -139,6 +139,12 @@ pub enum Expression {
         elements: Vec<Expression>,
         position: SourcePosition,
     },
+    /// Lambda expression (lambda x, y: x + y)
+    Lambda {
+        parameters: Vec<String>,
+        body: Box<Expression>,
+        position: SourcePosition,
+    },
 }
 
 /// Literal values
@@ -268,6 +274,7 @@ impl Expression {
             Expression::Tuple { position, .. } => position,
             Expression::Dict { position, .. } => position,
             Expression::Set { position, .. } => position,
+            Expression::Lambda { position, .. } => position,
         }
     }
 }

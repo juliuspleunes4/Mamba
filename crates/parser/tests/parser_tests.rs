@@ -1532,3 +1532,142 @@ fn test_set_vs_dict_disambiguation() {
         _ => panic!("Expected dict expression for {{1: 2}}"),
     }
 }
+// ============================================================================
+// Lambda Expression Tests
+// ============================================================================
+
+#[test]
+fn test_lambda_no_params() {
+    let module = parse("lambda: 42\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Lambda { parameters, body, .. }) => {
+            assert_eq!(parameters.len(), 0);
+            
+            match **body {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(value, 42),
+                _ => panic!("Expected integer literal in lambda body"),
+            }
+        }
+        _ => panic!("Expected lambda expression"),
+    }
+}
+
+#[test]
+fn test_lambda_single_param() {
+    let module = parse("lambda x: x + 1\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Lambda { parameters, body, .. }) => {
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0], "x");
+            
+            match **body {
+                Expression::BinaryOp { .. } => {},
+                _ => panic!("Expected binary operation in lambda body"),
+            }
+        }
+        _ => panic!("Expected lambda expression"),
+    }
+}
+
+#[test]
+fn test_lambda_multiple_params() {
+    let module = parse("lambda x, y, z: x + y * z\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Lambda { parameters, body, .. }) => {
+            assert_eq!(parameters.len(), 3);
+            assert_eq!(parameters[0], "x");
+            assert_eq!(parameters[1], "y");
+            assert_eq!(parameters[2], "z");
+            
+            match **body {
+                Expression::BinaryOp { .. } => {},
+                _ => panic!("Expected binary operation in lambda body"),
+            }
+        }
+        _ => panic!("Expected lambda expression"),
+    }
+}
+
+#[test]
+fn test_lambda_with_comparison() {
+    let module = parse("lambda x: x > 0\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Lambda { parameters, body, .. }) => {
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0], "x");
+            
+            match **body {
+                Expression::BinaryOp { op: BinaryOperator::GreaterThan, .. } => {},
+                _ => panic!("Expected comparison in lambda body"),
+            }
+        }
+        _ => panic!("Expected lambda expression"),
+    }
+}
+
+#[test]
+fn test_lambda_with_function_call() {
+    let module = parse("lambda x: func(x)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Lambda { parameters, body, .. }) => {
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0], "x");
+            
+            match **body {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected call in lambda body"),
+            }
+        }
+        _ => panic!("Expected lambda expression"),
+    }
+}
+
+#[test]
+fn test_lambda_in_function_call() {
+    let module = parse("map(lambda x: x * 2, lst)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { arguments, .. }) => {
+            assert_eq!(arguments.len(), 2);
+            
+            // First argument should be lambda
+            match &arguments[0] {
+                Expression::Lambda { parameters, .. } => {
+                    assert_eq!(parameters.len(), 1);
+                    assert_eq!(parameters[0], "x");
+                }
+                _ => panic!("Expected lambda as first argument"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_lambda_with_list() {
+    let module = parse("lambda: [1, 2, 3]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Lambda { parameters, body, .. }) => {
+            assert_eq!(parameters.len(), 0);
+            
+            match **body {
+                Expression::List { ref elements, .. } => assert_eq!(elements.len(), 3),
+                _ => panic!("Expected list in lambda body"),
+            }
+        }
+        _ => panic!("Expected lambda expression"),
+    }
+}
