@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fuzzing infrastructure (cargo-fuzz + proptest)
   - Error handling with position tracking
 - **Phase 2: Parser & AST (In Progress)**
+  - Bug fixes:
+    - Fixed binary operator position tracking: operators now correctly report their own position instead of the right operand's position (added `previous_position` field to Parser)
   - Complete AST node definitions for expressions, statements, and literals
   - Recursive descent parser with operator precedence climbing
   - Expression parsing:
@@ -61,8 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 131 tests covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions
-  - **278 total tests, all passing (142 lexer + 131 parser + 5 compound operator tests)**
+  - Parser test suite: 136 tests (131 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions
+  - **278 total tests, all passing (142 lexer + 136 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

@@ -14,6 +14,7 @@ type ParseResult<T> = Result<T, MambaError>;
 pub struct Parser {
     tokens: Peekable<IntoIter<Token>>,
     current_token: Option<Token>,
+    previous_position: SourcePosition,
 }
 
 impl Parser {
@@ -22,6 +23,7 @@ impl Parser {
         let mut parser = Parser {
             tokens: tokens.into_iter().peekable(),
             current_token: None,
+            previous_position: SourcePosition::new(0, 0, 0),
         };
         parser.advance(); // Load first token
         parser
@@ -49,8 +51,7 @@ impl Parser {
 
     /// Parse a single statement
     fn parse_statement(&mut self) -> ParseResult<Statement> {
-        // For now, only parse expression statements
-        // TODO: Add other statement types (if, while, def, etc.)
+        // TODO: Add support for remaining statement types: if, while, for, def, class, import, etc.
         
         match self.current_kind() {
             Some(TokenKind::Pass) => self.parse_pass(),
@@ -204,9 +205,10 @@ impl Parser {
                         self.advance();
                     }
                     _ => {
+                        let curr_pos = self.current_position();
                         return Err(MambaError::ParseError(format!(
                             "Expected parameter name at {}:{}",
-                            pos.line, pos.column
+                            curr_pos.line, curr_pos.column
                         )));
                     }
                 }
@@ -222,7 +224,7 @@ impl Parser {
         self.expect_token(TokenKind::Colon, "Expected ':' after lambda parameters")?;
         
         // Parse body expression (but not another lambda to avoid ambiguity)
-        let body = Box::new(self.parse_or()?);
+        let body = Box::new(self.parse_conditional()?);
         
         Ok(Expression::Lambda {
             parameters,
@@ -973,6 +975,8 @@ impl Parser {
 
     /// Advance to next token
     fn advance(&mut self) {
+        // Save current position before advancing
+        self.previous_position = self.current_position();
         self.current_token = self.tokens.next();
     }
 
@@ -991,8 +995,7 @@ impl Parser {
 
     /// Get previous token position (after advance)
     fn previous_position(&self) -> SourcePosition {
-        // This is a simplification; ideally we'd track the previous token
-        self.current_position()
+        self.previous_position.clone()
     }
 
     /// Check if we're at end of file
