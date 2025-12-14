@@ -2296,3 +2296,214 @@ fn test_list_comprehension_complex() {
         _ => panic!("Expected list comprehension"),
     }
 }
+
+// ============================================================================
+// Dict Comprehension Tests
+// ============================================================================
+
+#[test]
+fn test_simple_dict_comprehension() {
+    let module = parse("{x: x * 2 for x in items}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::DictComp { key, value, generators, .. }) => {
+            // Check key is identifier 'x'
+            match &**key {
+                Expression::Identifier { name, .. } => {
+                    assert_eq!(name, "x");
+                }
+                _ => panic!("Expected identifier as key"),
+            }
+            
+            // Check value is x * 2
+            match &**value {
+                Expression::BinaryOp { op, .. } => {
+                    assert_eq!(*op, BinaryOperator::Multiply);
+                }
+                _ => panic!("Expected binary operation as value"),
+            }
+            
+            // Check one generator
+            assert_eq!(generators.len(), 1);
+            assert_eq!(generators[0].target, "x");
+        }
+        _ => panic!("Expected dict comprehension"),
+    }
+}
+
+#[test]
+fn test_dict_comprehension_with_condition() {
+    let module = parse("{k: v for k in keys for v in values if k == v}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::DictComp { generators, .. }) => {
+            assert_eq!(generators.len(), 2);
+            assert_eq!(generators[0].target, "k");
+            assert_eq!(generators[1].target, "v");
+            assert_eq!(generators[0].conditions.len(), 0);
+            assert_eq!(generators[1].conditions.len(), 1);
+        }
+        _ => panic!("Expected dict comprehension"),
+    }
+}
+
+#[test]
+fn test_dict_comprehension_with_expressions() {
+    let module = parse("{str(i): i ** 2 for i in range(10)}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::DictComp { key, value, .. }) => {
+            // Key should be function call
+            match &**key {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected function call as key"),
+            }
+            
+            // Value should be power operation
+            match &**value {
+                Expression::BinaryOp { op, .. } => {
+                    assert_eq!(*op, BinaryOperator::Power);
+                }
+                _ => panic!("Expected power operation as value"),
+            }
+        }
+        _ => panic!("Expected dict comprehension"),
+    }
+}
+
+#[test]
+fn test_dict_comprehension_nested_with_condition() {
+    let module = parse("{x: y for x in xs for y in ys if x < y}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::DictComp { generators, .. }) => {
+            assert_eq!(generators.len(), 2);
+            assert_eq!(generators[1].conditions.len(), 1);
+        }
+        _ => panic!("Expected dict comprehension"),
+    }
+}
+
+// ============================================================================
+// Set Comprehension Tests
+// ============================================================================
+
+#[test]
+fn test_simple_set_comprehension() {
+    let module = parse("{x * 2 for x in items}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::SetComp { element, generators, .. }) => {
+            // Check element is x * 2
+            match &**element {
+                Expression::BinaryOp { op, .. } => {
+                    assert_eq!(*op, BinaryOperator::Multiply);
+                }
+                _ => panic!("Expected binary operation as element"),
+            }
+            
+            // Check one generator
+            assert_eq!(generators.len(), 1);
+            assert_eq!(generators[0].target, "x");
+        }
+        _ => panic!("Expected set comprehension"),
+    }
+}
+
+#[test]
+fn test_set_comprehension_with_condition() {
+    let module = parse("{x for x in items if x > 0}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::SetComp { generators, .. }) => {
+            assert_eq!(generators.len(), 1);
+            assert_eq!(generators[0].conditions.len(), 1);
+        }
+        _ => panic!("Expected set comprehension"),
+    }
+}
+
+#[test]
+fn test_set_comprehension_with_multiple_conditions() {
+    let module = parse("{x for x in items if x > 0 if x < 10}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::SetComp { generators, .. }) => {
+            assert_eq!(generators.len(), 1);
+            assert_eq!(generators[0].conditions.len(), 2);
+        }
+        _ => panic!("Expected set comprehension"),
+    }
+}
+
+#[test]
+fn test_set_comprehension_nested_loops() {
+    let module = parse("{x + y for x in xs for y in ys}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::SetComp { element, generators, .. }) => {
+            // Check element is x + y
+            match &**element {
+                Expression::BinaryOp { op, .. } => {
+                    assert_eq!(*op, BinaryOperator::Add);
+                }
+                _ => panic!("Expected binary operation"),
+            }
+            
+            // Check two generators
+            assert_eq!(generators.len(), 2);
+            assert_eq!(generators[0].target, "x");
+            assert_eq!(generators[1].target, "y");
+        }
+        _ => panic!("Expected set comprehension"),
+    }
+}
+
+#[test]
+fn test_set_comprehension_with_function_call() {
+    let module = parse("{abs(x) for x in numbers}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::SetComp { element, .. }) => {
+            match &**element {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected function call as element"),
+            }
+        }
+        _ => panic!("Expected set comprehension"),
+    }
+}
+
+#[test]
+fn test_set_comprehension_complex() {
+    let module = parse("{(x, y) for x in range(5) for y in range(x) if x + y > 3}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::SetComp { element, generators, .. }) => {
+            // Element should be a tuple
+            match &**element {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 2);
+                }
+                _ => panic!("Expected tuple as element"),
+            }
+            
+            // Two generators
+            assert_eq!(generators.len(), 2);
+            
+            // Second generator has one condition
+            assert_eq!(generators[1].conditions.len(), 1);
+        }
+        _ => panic!("Expected set comprehension"),
+    }
+}

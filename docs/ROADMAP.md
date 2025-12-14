@@ -148,8 +148,8 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse walrus operator (:=)
 - [x] Parse ellipsis (...)
 - [x] Parse list comprehensions
-- [ ] Parse dict comprehensions
-- [ ] Parse set comprehensions
+- [x] Parse dict comprehensions
+- [x] Parse set comprehensions
 - [ ] Parse generator expressions
 
 ### 2.3 Statement Parsing

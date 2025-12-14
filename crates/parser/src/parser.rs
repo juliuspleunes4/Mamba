@@ -691,7 +691,7 @@ impl Parser {
                 })
             }
             Some(TokenKind::LeftBrace) => {
-                // Dict or Set literal: {key: value, ...} or {elem, ...}
+                // Dict, Set, or comprehension: {key: value} or {elem} or comprehensions
                 // Empty braces {} always means empty dict
                 let pos = self.current_position();
                 self.advance(); // consume '{'
@@ -710,10 +710,24 @@ impl Parser {
 
                 // Check if it's a dict (has colon) or set (has comma or end)
                 if self.match_token(&TokenKind::Colon) {
-                    // It's a dict
-                    let mut pairs = Vec::new();
+                    // Dict or dict comprehension
                     let first_value = self.parse_expression()?;
-                    pairs.push((first_expr, first_value));
+                    
+                    // Check for dict comprehension
+                    if self.check(&TokenKind::For) {
+                        let generators = self.parse_comprehension_generators()?;
+                        self.expect_token(TokenKind::RightBrace, "Expected '}' after dict comprehension")?;
+                        
+                        return Ok(Expression::DictComp {
+                            key: Box::new(first_expr),
+                            value: Box::new(first_value),
+                            generators,
+                            position: pos,
+                        });
+                    }
+                    
+                    // Regular dict
+                    let mut pairs = vec![(first_expr, first_value)];
 
                     // Parse remaining pairs
                     while self.match_token(&TokenKind::Comma) {
@@ -735,7 +749,21 @@ impl Parser {
                         position: pos,
                     })
                 } else {
-                    // It's a set
+                    // Set or set comprehension
+                    
+                    // Check for set comprehension
+                    if self.check(&TokenKind::For) {
+                        let generators = self.parse_comprehension_generators()?;
+                        self.expect_token(TokenKind::RightBrace, "Expected '}' after set comprehension")?;
+                        
+                        return Ok(Expression::SetComp {
+                            element: Box::new(first_expr),
+                            generators,
+                            position: pos,
+                        });
+                    }
+                    
+                    // Regular set
                     let mut elements = vec![first_expr];
 
                     // Parse remaining elements
