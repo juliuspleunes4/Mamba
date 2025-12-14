@@ -185,9 +185,9 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 2.5 Function & Class Parsing
 
-- [ ] Parse function definitions (def)
-- [ ] Parse function parameters
-- [ ] Parse default parameter values
+- [x] Parse function definitions (def)
+- [x] Parse function parameters
+- [x] Parse default parameter values
 - [ ] Parse keyword-only parameters (after *)
 - [ ] Parse positional-only parameters (before /)
 - [ ] Parse *args (variadic parameters)

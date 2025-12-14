@@ -1527,6 +1527,234 @@ fn test_parse_for_with_break_continue() {
 }
 
 // ============================================================================
+// Function Definition Tests
+// ============================================================================
+
+#[test]
+fn test_parse_function_no_params() {
+    let result = parse("def foo():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, body, .. } => {
+            assert_eq!(name, "foo");
+            assert_eq!(parameters.len(), 0);
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::Pass { .. } => {},
+                _ => panic!("Expected pass statement in body"),
+            }
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_single_param() {
+    let result = parse("def add(x):\n    return x\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, body, .. } => {
+            assert_eq!(name, "add");
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0].name, "x");
+            assert!(parameters[0].default.is_none());
+            assert_eq!(body.len(), 1);
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_multiple_params() {
+    let result = parse("def add(x, y, z):\n    return x + y + z\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "add");
+            assert_eq!(parameters.len(), 3);
+            assert_eq!(parameters[0].name, "x");
+            assert_eq!(parameters[1].name, "y");
+            assert_eq!(parameters[2].name, "z");
+            assert!(parameters[0].default.is_none());
+            assert!(parameters[1].default.is_none());
+            assert!(parameters[2].default.is_none());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_default_param() {
+    let result = parse("def greet(name, greeting='Hello'):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "greet");
+            assert_eq!(parameters.len(), 2);
+            assert_eq!(parameters[0].name, "name");
+            assert!(parameters[0].default.is_none());
+            assert_eq!(parameters[1].name, "greeting");
+            assert!(parameters[1].default.is_some());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_all_defaults() {
+    let result = parse("def func(a=1, b=2, c=3):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert!(parameters[0].default.is_some());
+            assert!(parameters[1].default.is_some());
+            assert!(parameters[2].default.is_some());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_trailing_comma() {
+    let result = parse("def func(a, b,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 2);
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_multiline_body() {
+    let result = parse("def compute():\n    x = 1\n    y = 2\n    return x + y\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { body, .. } => {
+            assert_eq!(body.len(), 3);
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_nested_function() {
+    let result = parse("def outer():\n    def inner():\n        pass\n    return inner\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, body, .. } => {
+            assert_eq!(name, "outer");
+            assert_eq!(body.len(), 2);
+            match &body[0] {
+                Statement::FunctionDef { name, .. } => {
+                    assert_eq!(name, "inner");
+                }
+                _ => panic!("Expected nested function definition"),
+            }
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_complex_defaults() {
+    let result = parse("def func(a=1+2, b=[1,2,3], c={'x': 1}):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert!(parameters[0].default.is_some());
+            assert!(parameters[1].default.is_some());
+            assert!(parameters[2].default.is_some());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_if_body() {
+    let result = parse("def check(x):\n    if x > 0:\n        return True\n    return False\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { body, .. } => {
+            assert_eq!(body.len(), 2);
+            match &body[0] {
+                Statement::If { .. } => {},
+                _ => panic!("Expected if statement"),
+            }
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+// Error cases
+
+#[test]
+fn test_parse_function_missing_name() {
+    let result = parse("def ():\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_parens() {
+    let result = parse("def foo:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_colon() {
+    let result = parse("def foo()\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_body() {
+    let result = parse("def foo():\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_invalid_param_name() {
+    let result = parse("def foo(123):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_closing_paren() {
+    let result = parse("def foo(x:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_invalid_default() {
+    let result = parse("def foo(x=):\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 

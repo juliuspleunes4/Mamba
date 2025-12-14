@@ -68,6 +68,7 @@ impl Parser {
             Some(TokenKind::If) => self.parse_if(),
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
+            Some(TokenKind::Def) => self.parse_function_def(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -776,6 +777,124 @@ impl Parser {
         } else {
             Ok(first)
         }
+    }
+
+    /// Parse function definition (def name(params): body)
+    fn parse_function_def(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'def'
+        
+        // Parse function name
+        let name = match self.current_kind() {
+            Some(TokenKind::Identifier(n)) => {
+                let func_name = n.clone();
+                self.advance();
+                func_name
+            }
+            _ => {
+                return Err(MambaError::ParseError(
+                    format!("Expected function name after 'def' at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+        };
+        
+        // Expect opening parenthesis
+        if !self.match_token(&TokenKind::LeftParen) {
+            return Err(MambaError::ParseError(
+                format!("Expected '(' after function name at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse parameter list
+        let parameters = self.parse_parameter_list()?;
+        
+        // Expect closing parenthesis
+        if !self.match_token(&TokenKind::RightParen) {
+            return Err(MambaError::ParseError(
+                format!("Expected ')' after parameters at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Expect colon
+        if !self.match_token(&TokenKind::Colon) {
+            return Err(MambaError::ParseError(
+                format!("Expected ':' after function signature at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse body
+        let body = self.parse_block()?;
+        
+        Ok(Statement::FunctionDef {
+            name,
+            parameters,
+            body,
+            position: pos,
+        })
+    }
+
+    /// Parse parameter list inside function definition
+    fn parse_parameter_list(&mut self) -> ParseResult<Vec<Parameter>> {
+        let mut parameters = Vec::new();
+        
+        // Check for empty parameter list
+        if self.check(&TokenKind::RightParen) {
+            return Ok(parameters);
+        }
+        
+        loop {
+            let param_pos = self.current_position();
+            
+            // Parse parameter name
+            let param_name = match self.current_kind() {
+                Some(TokenKind::Identifier(n)) => {
+                    let name = n.clone();
+                    self.advance();
+                    name
+                }
+                _ => {
+                    return Err(MambaError::ParseError(
+                        format!("Expected parameter name at {}:{}", 
+                            self.current_position().line, 
+                            self.current_position().column)
+                    ));
+                }
+            };
+            
+            // Check for default value (=)
+            let default = if self.match_token(&TokenKind::Assign) {
+                Some(self.parse_expression()?)
+            } else {
+                None
+            };
+            
+            parameters.push(Parameter {
+                name: param_name,
+                default,
+                position: param_pos,
+            });
+            
+            // Check for comma (more parameters)
+            if self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma
+                if self.check(&TokenKind::RightParen) {
+                    break;
+                }
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        Ok(parameters)
     }
 
     /// Parse an indented block of statements (INDENT ... DEDENT)
