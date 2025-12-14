@@ -665,6 +665,94 @@ fn test_parse_assert_true() {
 }
 
 #[test]
+fn test_parse_del_single() {
+    let module = parse("del x\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Del { targets, .. } => {
+            assert_eq!(targets.len(), 1);
+            match &targets[0] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier"),
+            }
+        }
+        _ => panic!("Expected del statement"),
+    }
+}
+
+#[test]
+fn test_parse_del_multiple() {
+    let module = parse("del x, y, z\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Del { targets, .. } => {
+            assert_eq!(targets.len(), 3);
+            
+            match &targets[0] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier 'x'"),
+            }
+            match &targets[1] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "y"),
+                _ => panic!("Expected identifier 'y'"),
+            }
+            match &targets[2] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "z"),
+                _ => panic!("Expected identifier 'z'"),
+            }
+        }
+        _ => panic!("Expected del statement"),
+    }
+}
+
+#[test]
+fn test_parse_del_attribute() {
+    let module = parse("del obj.attr\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Del { targets, .. } => {
+            assert_eq!(targets.len(), 1);
+            match &targets[0] {
+                Expression::Attribute { object, attribute, .. } => {
+                    match object.as_ref() {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "obj"),
+                        _ => panic!("Expected identifier"),
+                    }
+                    assert_eq!(attribute, "attr");
+                }
+                _ => panic!("Expected attribute expression"),
+            }
+        }
+        _ => panic!("Expected del statement"),
+    }
+}
+
+#[test]
+fn test_parse_del_subscript() {
+    let module = parse("del list[0]\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Del { targets, .. } => {
+            assert_eq!(targets.len(), 1);
+            match &targets[0] {
+                Expression::Subscript { object, index, .. } => {
+                    match object.as_ref() {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "list"),
+                        _ => panic!("Expected identifier"),
+                    }
+                    match index.as_ref() {
+                        Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 0),
+                        _ => panic!("Expected integer literal"),
+                    }
+                }
+                _ => panic!("Expected subscript expression"),
+            }
+        }
+        _ => panic!("Expected del statement"),
+    }
+}
+
+#[test]
 fn test_parse_pass_statement() {
     let module = parse("pass\n").unwrap();
     

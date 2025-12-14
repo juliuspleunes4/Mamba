@@ -47,6 +47,11 @@ pub enum Statement {
         message: Option<Expression>,
         position: SourcePosition,
     },
+    /// Del statement (del x, del obj.attr, del list[0])
+    Del {
+        targets: Vec<Expression>,
+        position: SourcePosition,
+    },
     /// If statement
     If {
         condition: Expression,
@@ -360,6 +365,7 @@ impl Statement {
             Statement::Continue(position) => position,
             Statement::Return { position, .. } => position,
             Statement::Assert { position, .. } => position,
+            Statement::Del { position, .. } => position,
             Statement::If { position, .. } => position,
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,

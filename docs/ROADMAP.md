@@ -170,7 +170,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [ ] Parse global statement
 - [ ] Parse nonlocal statement
 - [x] Parse assert statement
-- [ ] Parse del statement
+- [x] Parse del statement
 - [ ] Parse raise statement (basic)
 
 ### 2.4 Control Flow Parsing

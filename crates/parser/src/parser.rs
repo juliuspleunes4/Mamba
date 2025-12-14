@@ -59,6 +59,7 @@ impl Parser {
             Some(TokenKind::Continue) => self.parse_continue(),
             Some(TokenKind::Return) => self.parse_return(),
             Some(TokenKind::Assert) => self.parse_assert(),
+            Some(TokenKind::Del) => self.parse_del(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -202,6 +203,29 @@ impl Parser {
         Ok(Statement::Assert {
             condition,
             message,
+            position: pos,
+        })
+    }
+
+    /// Parse del statement (del x or del x, y, z)
+    fn parse_del(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'del'
+        
+        // Parse comma-separated targets
+        let mut targets = vec![self.parse_expression()?];
+        
+        while self.match_token(&TokenKind::Comma) {
+            // Allow trailing comma
+            if self.check(&TokenKind::Newline) || self.is_at_end() {
+                break;
+            }
+            targets.push(self.parse_expression()?);
+        }
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Del {
+            targets,
             position: pos,
         })
     }

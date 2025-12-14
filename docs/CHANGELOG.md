@@ -67,8 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Expression statements
     - Pass, break, continue, return statements
     - Assert statement with optional message (assert condition, "message")
-  - Parser test suite: 146 tests (141 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements
-  - **288 total tests, all passing (142 lexer + 146 parser)**
+    - Del statement for deleting variables, attributes, or subscripts (del x, del obj.attr, del list[0])
+  - Parser test suite: 150 tests (145 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements
+  - **292 total tests, all passing (142 lexer + 150 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
