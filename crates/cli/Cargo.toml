@@ -1,0 +1,24 @@
+[package]
+name = "mamba-cli"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[[bin]]
+name = "mamba"
+path = "src/main.rs"
+
+[dependencies]
+mamba-parser = { path = "../parser" }
+mamba-transpiler = { path = "../transpiler" }
+mamba-compiler = { path = "../compiler" }
+mamba-error = { path = "../error" }
+
+clap = { workspace = true }
+colored = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

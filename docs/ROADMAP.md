@@ -26,13 +26,13 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 0.2 Rust Project Setup
 
-- [ ] Initialize Cargo workspace
-- [ ] Create project directory structure (cli, parser, transpiler, compiler, stdlib, error)
-- [ ] Configure Cargo.toml with dependencies
-- [ ] Set up rustfmt configuration
-- [ ] Set up clippy configuration
-- [ ] Create basic main.rs entry point
-- [ ] Add development dependencies (test frameworks, benchmarking)
+- [x] Initialize Cargo workspace
+- [x] Create project directory structure (cli, parser, transpiler, compiler, stdlib, error)
+- [x] Configure Cargo.toml with dependencies
+- [x] Set up rustfmt configuration
+- [x] Set up clippy configuration
+- [x] Create basic main.rs entry point
+- [x] Add development dependencies (test frameworks, benchmarking)
 
 ### 0.3 Development Tools
 

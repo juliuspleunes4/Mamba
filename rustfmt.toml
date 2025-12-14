@@ -1,0 +1,29 @@
+# Rustfmt configuration for Mamba
+
+edition = "2021"
+max_width = 100
+tab_spaces = 4
+newline_style = "Unix"
+use_small_heuristics = "Default"
+
+# Imports
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+
+# Comments
+wrap_comments = true
+comment_width = 80
+normalize_comments = true
+
+# Functions
+fn_single_line = false
+fn_args_layout = "Tall"
+
+# Formatting
+format_code_in_doc_comments = true
+format_macro_matchers = true
+format_strings = true
+
+# Consistency
+use_field_init_shorthand = true
+use_try_shorthand = true
