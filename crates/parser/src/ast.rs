@@ -134,6 +134,11 @@ pub enum Expression {
         pairs: Vec<(Expression, Expression)>,
         position: SourcePosition,
     },
+    /// Set literal ({1, 2, 3})
+    Set {
+        elements: Vec<Expression>,
+        position: SourcePosition,
+    },
 }
 
 /// Literal values
@@ -262,6 +267,7 @@ impl Expression {
             Expression::List { position, .. } => position,
             Expression::Tuple { position, .. } => position,
             Expression::Dict { position, .. } => position,
+            Expression::Set { position, .. } => position,
         }
     }
 }

@@ -574,42 +574,70 @@ impl Parser {
                 })
             }
             Some(TokenKind::LeftBrace) => {
-                // Dict literal: {key: value, ...}
+                // Dict or Set literal: {key: value, ...} or {elem, ...}
+                // Empty braces {} always means empty dict
                 let pos = self.current_position();
                 self.advance(); // consume '{'
-                let mut pairs = Vec::new();
 
-                // Parse pairs if not empty
-                if !self.check(&TokenKind::RightBrace) {
-                    loop {
-                        // Parse key
-                        let key = self.parse_expression()?;
-                        
-                        // Expect colon
-                        self.expect_token(TokenKind::Colon, "Expected ':' after dict key")?;
-                        
-                        // Parse value
-                        let value = self.parse_expression()?;
-                        
-                        pairs.push((key, value));
-                        
-                        if !self.match_token(&TokenKind::Comma) {
-                            break;
-                        }
-                        
+                // Empty braces = empty dict
+                if self.check(&TokenKind::RightBrace) {
+                    self.advance();
+                    return Ok(Expression::Dict {
+                        pairs: Vec::new(),
+                        position: pos,
+                    });
+                }
+
+                // Parse first expression
+                let first_expr = self.parse_expression()?;
+
+                // Check if it's a dict (has colon) or set (has comma or end)
+                if self.match_token(&TokenKind::Colon) {
+                    // It's a dict
+                    let mut pairs = Vec::new();
+                    let first_value = self.parse_expression()?;
+                    pairs.push((first_expr, first_value));
+
+                    // Parse remaining pairs
+                    while self.match_token(&TokenKind::Comma) {
                         // Allow trailing comma
                         if self.check(&TokenKind::RightBrace) {
                             break;
                         }
-                    }
-                }
 
-                self.expect_token(TokenKind::RightBrace, "Expected '}' after dict pairs")?;
-                
-                Ok(Expression::Dict {
-                    pairs,
-                    position: pos,
-                })
+                        let key = self.parse_expression()?;
+                        self.expect_token(TokenKind::Colon, "Expected ':' after dict key")?;
+                        let value = self.parse_expression()?;
+                        pairs.push((key, value));
+                    }
+
+                    self.expect_token(TokenKind::RightBrace, "Expected '}' after dict pairs")?;
+                    
+                    Ok(Expression::Dict {
+                        pairs,
+                        position: pos,
+                    })
+                } else {
+                    // It's a set
+                    let mut elements = vec![first_expr];
+
+                    // Parse remaining elements
+                    while self.match_token(&TokenKind::Comma) {
+                        // Allow trailing comma
+                        if self.check(&TokenKind::RightBrace) {
+                            break;
+                        }
+
+                        elements.push(self.parse_expression()?);
+                    }
+
+                    self.expect_token(TokenKind::RightBrace, "Expected '}' after set elements")?;
+                    
+                    Ok(Expression::Set {
+                        elements,
+                        position: pos,
+                    })
+                }
             }
             _ => Err(MambaError::ParseError(format!(
                 "Unexpected token at {}:{}: {:?}",

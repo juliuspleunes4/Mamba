@@ -1388,3 +1388,147 @@ fn test_dict_with_subscript() {
         _ => panic!("Expected subscript operation"),
     }
 }
+// ============================================================================
+// Set Expression Tests
+// ============================================================================
+
+#[test]
+fn test_single_element_set() {
+    let module = parse("{1}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Set { elements, .. }) => {
+            assert_eq!(elements.len(), 1);
+            match &elements[0] {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 1),
+                _ => panic!("Expected integer literal"),
+            }
+        }
+        _ => panic!("Expected set expression"),
+    }
+}
+
+#[test]
+fn test_multiple_elements_set() {
+    let module = parse("{1, 2, 3}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Set { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            match &elements[0] {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 1),
+                _ => panic!("Expected integer literal"),
+            }
+            match &elements[1] {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 2),
+                _ => panic!("Expected integer literal"),
+            }
+            match &elements[2] {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 3),
+                _ => panic!("Expected integer literal"),
+            }
+        }
+        _ => panic!("Expected set expression"),
+    }
+}
+
+#[test]
+fn test_set_with_trailing_comma() {
+    let module = parse("{1, 2, 3,}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Set { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+        }
+        _ => panic!("Expected set expression"),
+    }
+}
+
+#[test]
+fn test_set_with_expressions() {
+    let module = parse("{x + 1, y * 2, \"text\"}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Set { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            // First element: x + 1
+            match &elements[0] {
+                Expression::BinaryOp { .. } => {},
+                _ => panic!("Expected binary operation"),
+            }
+            
+            // Second element: y * 2
+            match &elements[1] {
+                Expression::BinaryOp { .. } => {},
+                _ => panic!("Expected binary operation"),
+            }
+            
+            // Third element: "text"
+            match &elements[2] {
+                Expression::Literal(Literal::String { value, .. }) => assert_eq!(value, "text"),
+                _ => panic!("Expected string literal"),
+            }
+        }
+        _ => panic!("Expected set expression"),
+    }
+}
+
+#[test]
+fn test_nested_set() {
+    // Note: In Python, sets can't contain other sets (not hashable)
+    // but we can have a set containing a list
+    let module = parse("{[1, 2], [3, 4]}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Set { elements, .. }) => {
+            assert_eq!(elements.len(), 2);
+            
+            match &elements[0] {
+                Expression::List { elements: inner, .. } => assert_eq!(inner.len(), 2),
+                _ => panic!("Expected list"),
+            }
+            match &elements[1] {
+                Expression::List { elements: inner, .. } => assert_eq!(inner.len(), 2),
+                _ => panic!("Expected list"),
+            }
+        }
+        _ => panic!("Expected set expression"),
+    }
+}
+
+#[test]
+fn test_empty_braces_is_dict() {
+    // In Python, {} is always an empty dict, not an empty set
+    let module = parse("{}\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Dict { pairs, .. }) => {
+            assert_eq!(pairs.len(), 0);
+        }
+        _ => panic!("Expected empty dict, not set"),
+    }
+}
+
+#[test]
+fn test_set_vs_dict_disambiguation() {
+    // Test that {1} is a set but {1: 2} is a dict
+    let set_module = parse("{1}\n").unwrap();
+    match &set_module.statements[0] {
+        Statement::Expression(Expression::Set { .. }) => {},
+        _ => panic!("Expected set expression for {{1}}"),
+    }
+    
+    let dict_module = parse("{1: 2}\n").unwrap();
+    match &dict_module.statements[0] {
+        Statement::Expression(Expression::Dict { .. }) => {},
+        _ => panic!("Expected dict expression for {{1: 2}}"),
+    }
+}
