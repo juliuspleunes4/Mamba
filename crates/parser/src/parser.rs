@@ -492,14 +492,57 @@ impl Parser {
                 })
             }
             Some(TokenKind::LeftParen) => {
+                // Could be: parenthesized expression (x), empty tuple (), or tuple (x,) or (x, y)
+                let pos = self.current_position();
                 self.advance(); // consume '('
-                let expr = self.parse_expression()?;
-                self.expect_token(TokenKind::RightParen, "Expected ')' after expression")?;
-                let pos = expr.position().clone();
-                Ok(Expression::Parenthesized {
-                    expr: Box::new(expr),
-                    position: pos,
-                })
+                
+                // Check for empty tuple
+                if self.check(&TokenKind::RightParen) {
+                    self.advance(); // consume ')'
+                    return Ok(Expression::Tuple {
+                        elements: Vec::new(),
+                        position: pos,
+                    });
+                }
+                
+                // Parse first expression
+                let first_expr = self.parse_expression()?;
+                
+                // Check if it's a tuple (has comma) or parenthesized expression
+                if self.match_token(&TokenKind::Comma) {
+                    // It's a tuple
+                    let mut elements = vec![first_expr];
+                    
+                    // Parse remaining elements if not at closing paren
+                    if !self.check(&TokenKind::RightParen) {
+                        loop {
+                            elements.push(self.parse_expression()?);
+                            
+                            if !self.match_token(&TokenKind::Comma) {
+                                break;
+                            }
+                            
+                            // Allow trailing comma
+                            if self.check(&TokenKind::RightParen) {
+                                break;
+                            }
+                        }
+                    }
+                    
+                    self.expect_token(TokenKind::RightParen, "Expected ')' after tuple elements")?;
+                    
+                    Ok(Expression::Tuple {
+                        elements,
+                        position: pos,
+                    })
+                } else {
+                    // It's a parenthesized expression
+                    self.expect_token(TokenKind::RightParen, "Expected ')' after expression")?;
+                    Ok(Expression::Parenthesized {
+                        expr: Box::new(first_expr),
+                        position: pos,
+                    })
+                }
             }
             Some(TokenKind::LeftBracket) => {
                 // List literal: [1, 2, 3]

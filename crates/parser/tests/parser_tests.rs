@@ -1039,3 +1039,159 @@ fn test_parse_list_subscript_disambiguation() {
         _ => panic!("Expected subscript operation"),
     }
 }
+
+#[test]
+fn test_parse_empty_tuple() {
+    let module = parse("()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Tuple { elements, .. }) => {
+            assert_eq!(elements.len(), 0);
+        }
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_parse_single_element_tuple() {
+    let module = parse("(42,)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Tuple { elements, .. }) => {
+            assert_eq!(elements.len(), 1);
+            
+            match &elements[0] {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 42),
+                _ => panic!("Expected integer element"),
+            }
+        }
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_parse_tuple_multiple_elements() {
+    let module = parse("(1, 2, 3)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Tuple { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            for (i, elem) in elements.iter().enumerate() {
+                match elem {
+                    Expression::Literal(Literal::Integer { value, .. }) => {
+                        assert_eq!(*value, (i + 1) as i64);
+                    }
+                    _ => panic!("Expected integer element"),
+                }
+            }
+        }
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_parse_tuple_trailing_comma() {
+    let module = parse("(1, 2, 3,)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Tuple { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+        }
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_parse_parenthesized_vs_tuple() {
+    // (x) is parenthesized, (x,) is tuple
+    let module1 = parse("(42)\n").unwrap();
+    let module2 = parse("(42,)\n").unwrap();
+    
+    // First should be parenthesized
+    match &module1.statements[0] {
+        Statement::Expression(Expression::Parenthesized { .. }) => {},
+        _ => panic!("Expected parenthesized expression"),
+    }
+    
+    // Second should be tuple
+    match &module2.statements[0] {
+        Statement::Expression(Expression::Tuple { .. }) => {},
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_parse_nested_tuples() {
+    let module = parse("((1, 2), (3, 4))\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Tuple { elements, .. }) => {
+            assert_eq!(elements.len(), 2);
+            
+            // Both elements should be tuples
+            for elem in elements {
+                match elem {
+                    Expression::Tuple { elements: inner_elements, .. } => {
+                        assert_eq!(inner_elements.len(), 2);
+                    }
+                    _ => panic!("Expected nested tuple"),
+                }
+            }
+        }
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_parse_tuple_with_expressions() {
+    let module = parse("(1 + 2, x * y, func())\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Tuple { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            // First should be addition
+            match &elements[0] {
+                Expression::BinaryOp { op: BinaryOperator::Add, .. } => {},
+                _ => panic!("Expected addition"),
+            }
+            
+            // Second should be multiplication
+            match &elements[1] {
+                Expression::BinaryOp { op: BinaryOperator::Multiply, .. } => {},
+                _ => panic!("Expected multiplication"),
+            }
+            
+            // Third should be function call
+            match &elements[2] {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected function call"),
+            }
+        }
+        _ => panic!("Expected tuple expression"),
+    }
+}
+
+#[test]
+fn test_parse_tuple_subscript() {
+    let module = parse("(1, 2, 3)[0]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { object, .. }) => {
+            // Object should be a tuple
+            match **object {
+                Expression::Tuple { .. } => {},
+                _ => panic!("Expected tuple as subscript object"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
