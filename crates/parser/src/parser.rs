@@ -145,12 +145,12 @@ impl Parser {
 
     /// Parse conditional expression (x if condition else y)
     fn parse_conditional(&mut self) -> ParseResult<Expression> {
-        let mut expr = self.parse_or()?;
+        let mut expr = self.parse_walrus()?;
         
         // Check for 'if' keyword to start conditional
         if self.match_token(&TokenKind::If) {
             let pos = expr.position().clone();
-            let condition = Box::new(self.parse_or()?);
+            let condition = Box::new(self.parse_walrus()?);
             
             // Expect 'else' keyword
             self.expect_token(TokenKind::Else, "Expected 'else' in conditional expression")?;
@@ -163,6 +163,25 @@ impl Parser {
                 false_expr,
                 position: pos,
             };
+        }
+        
+        Ok(expr)
+    }
+
+    /// Parse walrus operator / assignment expression (name := value)
+    fn parse_walrus(&mut self) -> ParseResult<Expression> {
+        let expr = self.parse_or()?;
+        
+        // Check if this is an identifier followed by :=
+        if let Expression::Identifier { name, position } = &expr {
+            if self.match_token(&TokenKind::Walrus) {
+                let value = Box::new(self.parse_or()?);
+                return Ok(Expression::AssignmentExpr {
+                    target: name.clone(),
+                    value,
+                    position: position.clone(),
+                });
+            }
         }
         
         Ok(expr)

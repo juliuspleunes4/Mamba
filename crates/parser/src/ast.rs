@@ -152,6 +152,12 @@ pub enum Expression {
         false_expr: Box<Expression>,
         position: SourcePosition,
     },
+    /// Walrus operator / Assignment expression (name := value)
+    AssignmentExpr {
+        target: String,
+        value: Box<Expression>,
+        position: SourcePosition,
+    },
 }
 
 /// Literal values
@@ -283,6 +289,7 @@ impl Expression {
             Expression::Set { position, .. } => position,
             Expression::Lambda { position, .. } => position,
             Expression::Conditional { position, .. } => position,
+            Expression::AssignmentExpr { position, .. } => position,
         }
     }
 }

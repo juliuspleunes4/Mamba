@@ -1847,3 +1847,135 @@ fn test_conditional_with_function_calls() {
         _ => panic!("Expected conditional expression"),
     }
 }
+
+// ============================================================================
+// Walrus Operator / Assignment Expression Tests
+// ============================================================================
+
+#[test]
+fn test_simple_walrus() {
+    let module = parse("x := 5\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::AssignmentExpr { target, value, .. }) => {
+            assert_eq!(target, "x");
+            
+            match **value {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(value, 5),
+                _ => panic!("Expected integer literal as value"),
+            }
+        }
+        _ => panic!("Expected assignment expression"),
+    }
+}
+
+#[test]
+fn test_walrus_with_expression() {
+    let module = parse("y := x + 10\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::AssignmentExpr { target, value, .. }) => {
+            assert_eq!(target, "y");
+            
+            match **value {
+                Expression::BinaryOp { op: BinaryOperator::Add, .. } => {},
+                _ => panic!("Expected binary operation as value"),
+            }
+        }
+        _ => panic!("Expected assignment expression"),
+    }
+}
+
+#[test]
+fn test_walrus_in_condition() {
+    let module = parse("(n := len(data))\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Parenthesized { expr, .. }) => {
+            match **expr {
+                Expression::AssignmentExpr { ref target, .. } => {
+                    assert_eq!(target, "n");
+                }
+                _ => panic!("Expected assignment expression inside parentheses"),
+            }
+        }
+        _ => panic!("Expected parenthesized expression"),
+    }
+}
+
+#[test]
+fn test_walrus_in_function_call() {
+    let module = parse("func(x := 42)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { arguments, .. }) => {
+            assert_eq!(arguments.len(), 1);
+            
+            match &arguments[0] {
+                Expression::AssignmentExpr { target, .. } => {
+                    assert_eq!(target, "x");
+                }
+                _ => panic!("Expected assignment expression as argument"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_walrus_with_comparison() {
+    let module = parse("result := x > 10\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::AssignmentExpr { target, value, .. }) => {
+            assert_eq!(target, "result");
+            
+            match **value {
+                Expression::BinaryOp { op: BinaryOperator::GreaterThan, .. } => {},
+                _ => panic!("Expected comparison as value"),
+            }
+        }
+        _ => panic!("Expected assignment expression"),
+    }
+}
+
+#[test]
+fn test_walrus_with_list() {
+    let module = parse("items := [1, 2, 3]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::AssignmentExpr { target, value, .. }) => {
+            assert_eq!(target, "items");
+            
+            match **value {
+                Expression::List { ref elements, .. } => assert_eq!(elements.len(), 3),
+                _ => panic!("Expected list as value"),
+            }
+        }
+        _ => panic!("Expected assignment expression"),
+    }
+}
+
+#[test]
+fn test_walrus_with_function_call_value() {
+    let module = parse("val := func()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::AssignmentExpr { target, value, .. }) => {
+            assert_eq!(target, "val");
+            
+            match **value {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected function call as value"),
+            }
+        }
+        _ => panic!("Expected assignment expression"),
+    }
+}
