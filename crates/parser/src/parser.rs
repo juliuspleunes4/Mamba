@@ -400,6 +400,30 @@ impl Parser {
                         position: subscript_pos,
                     };
                 }
+                Some(TokenKind::Dot) => {
+                    // Attribute access: obj.attr
+                    self.advance(); // consume '.'
+                    let attr_pos = expr.position().clone();
+                    
+                    // Expect identifier after dot
+                    match self.current_kind() {
+                        Some(TokenKind::Identifier(name)) => {
+                            let attr_name = name.clone();
+                            self.advance();
+                            
+                            expr = Expression::Attribute {
+                                object: Box::new(expr),
+                                attribute: attr_name,
+                                position: attr_pos,
+                            };
+                        }
+                        _ => {
+                            return Err(MambaError::ParseError(
+                                format!("Expected identifier after '.' at {}", self.current_position())
+                            ));
+                        }
+                    }
+                }
                 _ => break,
             }
         }

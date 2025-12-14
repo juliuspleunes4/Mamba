@@ -746,3 +746,157 @@ fn test_parse_call_after_subscript() {
         _ => panic!("Expected function call"),
     }
 }
+
+#[test]
+fn test_parse_attribute_simple() {
+    let module = parse("obj.attr\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Attribute { object, attribute, .. }) => {
+            // Object should be identifier "obj"
+            match **object {
+                Expression::Identifier { ref name, .. } => assert_eq!(name, "obj"),
+                _ => panic!("Expected identifier as object"),
+            }
+            
+            assert_eq!(attribute, "attr");
+        }
+        _ => panic!("Expected attribute access"),
+    }
+}
+
+#[test]
+fn test_parse_attribute_chained() {
+    let module = parse("obj.x.y.z\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Attribute { object, attribute, .. }) => {
+            // Innermost attribute should be "z"
+            assert_eq!(attribute, "z");
+            
+            // Object should be another attribute (obj.x.y)
+            match **object {
+                Expression::Attribute { ref attribute, .. } => {
+                    assert_eq!(attribute, "y");
+                }
+                _ => panic!("Expected nested attribute access"),
+            }
+        }
+        _ => panic!("Expected attribute access"),
+    }
+}
+
+#[test]
+fn test_parse_method_call() {
+    let module = parse("obj.method()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            // Function should be an attribute access
+            match **function {
+                Expression::Attribute { ref object, ref attribute, .. } => {
+                    match **object {
+                        Expression::Identifier { ref name, .. } => assert_eq!(name, "obj"),
+                        _ => panic!("Expected identifier"),
+                    }
+                    assert_eq!(attribute, "method");
+                }
+                _ => panic!("Expected attribute access as function"),
+            }
+            
+            assert_eq!(arguments.len(), 0);
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_method_call_with_args() {
+    let module = parse("obj.add(1, 2)\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            match **function {
+                Expression::Attribute { ref attribute, .. } => {
+                    assert_eq!(attribute, "add");
+                }
+                _ => panic!("Expected attribute access"),
+            }
+            
+            assert_eq!(arguments.len(), 2);
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_chained_method_calls() {
+    let module = parse("obj.get().process()\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Call { function, arguments, .. }) => {
+            // Outer call to process()
+            assert_eq!(arguments.len(), 0);
+            
+            // Function should be attribute access on a call result
+            match **function {
+                Expression::Attribute { ref object, ref attribute, .. } => {
+                    assert_eq!(attribute, "process");
+                    
+                    // Object should be a call to get()
+                    match **object {
+                        Expression::Call { .. } => {},
+                        _ => panic!("Expected call to get()"),
+                    }
+                }
+                _ => panic!("Expected attribute access"),
+            }
+        }
+        _ => panic!("Expected function call"),
+    }
+}
+
+#[test]
+fn test_parse_attribute_subscript() {
+    let module = parse("obj.list[0]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Subscript { object, index, .. }) => {
+            // Object should be attribute access
+            match **object {
+                Expression::Attribute { ref attribute, .. } => {
+                    assert_eq!(attribute, "list");
+                }
+                _ => panic!("Expected attribute access"),
+            }
+            
+            // Index should be 0
+            match **index {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(value, 0),
+                _ => panic!("Expected integer index"),
+            }
+        }
+        _ => panic!("Expected subscript operation"),
+    }
+}
+
+#[test]
+fn test_parse_complex_postfix_chain() {
+    // obj.get_funcs()[0](arg).result
+    let module = parse("obj.get_funcs()[0](arg).result\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::Attribute { attribute, .. }) => {
+            // Final operation should be accessing .result
+            assert_eq!(attribute, "result");
+        }
+        _ => panic!("Expected attribute access at top level"),
+    }
+}
