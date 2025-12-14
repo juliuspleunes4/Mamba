@@ -136,7 +136,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse bitwise operators (&, |, ^, ~, <<, >>)
 - [x] Parse parenthesized expressions
 - [x] Implement operator precedence
-- [ ] Parse function calls
+- [x] Parse function calls
 - [ ] Parse subscript operations (list[0])
 - [ ] Parse attribute access (obj.attr)
 - [ ] Parse tuple expressions

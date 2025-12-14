@@ -41,13 +41,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - All comparison operators (==, !=, <, >, <=, >=)
     - Membership operators (in, not in)
     - Identity operators (is, is not)
+    - Function calls with arbitrary arguments, including nested calls and trailing commas
   - Statement parsing:
     - Assignment statements (x = 5)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 29 tests including compound operators (not in, is not)
-  - **176 total tests, all passing (142 lexer + 29 parser + 5 compound operator tests)**
+  - Parser test suite: 36 tests including compound operators and function calls
+  - **183 total tests, all passing (142 lexer + 36 parser + 5 compound operator tests)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
