@@ -64,6 +64,7 @@ impl Parser {
             Some(TokenKind::Nonlocal) => self.parse_nonlocal(),
             Some(TokenKind::Raise) => self.parse_raise(),
             Some(TokenKind::Import) => self.parse_import(),
+            Some(TokenKind::From) => self.parse_from_import(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -430,6 +431,121 @@ impl Parser {
         }
         
         Ok(parts.join("."))
+    }
+
+    /// Parse from...import statement (from module import name, from module import *)
+    fn parse_from_import(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'from'
+        
+        // Parse module name (possibly dotted, like os.path)
+        let module = self.parse_dotted_name()?;
+        
+        // Expect 'import' keyword
+        if !self.match_token(&TokenKind::Import) {
+            return Err(MambaError::ParseError(
+                format!("Expected 'import' after module name in from...import statement at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        let mut items = Vec::new();
+        
+        // Check for wildcard import
+        if self.match_token(&TokenKind::Star) {
+            // Wildcard import: from module import *
+            let wildcard_pos = self.previous_position.clone();
+            
+            // Wildcard can't have an alias
+            if self.check(&TokenKind::As) {
+                return Err(MambaError::ParseError(
+                    format!("Wildcard import cannot have an alias at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+            
+            // Wildcard must be alone (no comma-separated names)
+            if self.check(&TokenKind::Comma) {
+                return Err(MambaError::ParseError(
+                    format!("Wildcard import cannot be combined with other imports at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+            
+            items.push(FromImportItem {
+                name: "*".to_string(),
+                alias: None,
+                position: wildcard_pos,
+            });
+        } else {
+            // Named imports: from module import name1, name2, ...
+            loop {
+                let item_pos = self.current_position();
+                
+                // Parse imported name
+                let name = match self.current_kind() {
+                    Some(TokenKind::Identifier(n)) => {
+                        let name_str = n.clone();
+                        self.advance();
+                        name_str
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected identifier after 'import' at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                };
+                
+                // Check for optional 'as' alias
+                let alias = if self.match_token(&TokenKind::As) {
+                    match self.current_kind() {
+                        Some(TokenKind::Identifier(a)) => {
+                            let alias_name = a.clone();
+                            self.advance();
+                            Some(alias_name)
+                        }
+                        _ => {
+                            return Err(MambaError::ParseError(
+                                format!("Expected identifier after 'as' at {}:{}", 
+                                    self.current_position().line, 
+                                    self.current_position().column)
+                            ));
+                        }
+                    }
+                } else {
+                    None
+                };
+                
+                items.push(FromImportItem {
+                    name,
+                    alias,
+                    position: item_pos,
+                });
+                
+                // Check for comma (multiple imports)
+                if self.match_token(&TokenKind::Comma) {
+                    // Allow trailing comma
+                    if self.check(&TokenKind::Newline) || self.is_at_end() {
+                        break;
+                    }
+                    continue;
+                } else {
+                    break;
+                }
+            }
+        }
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::FromImport {
+            module,
+            items,
+            position: pos,
+        })
     }
 
     /// Validate that at most one starred expression appears in unpacking targets

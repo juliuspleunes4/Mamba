@@ -72,12 +72,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Nonlocal statement for declaring nonlocal variables (nonlocal x, y)
     - Raise statement for raising exceptions (raise, raise Exception, raise Exception("msg"))
     - Import statement with dotted module names and aliases (import os, import os.path, import numpy as np)
-  - Parser test suite: 186 tests (181 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements
+    - From...import statement with dotted module names, aliases, and wildcard (from os import path, from os.path import join as j, from os import *)
+  - Parser test suite: 203 tests (198 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements
   - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages
   - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal
-  - **333 total tests, all passing (142 lexer + 186 parser + 5 compound operators)**
+  - **350 total tests, all passing (142 lexer + 203 parser + 5 compound operators)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

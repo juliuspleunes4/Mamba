@@ -1042,6 +1042,166 @@ fn test_parse_import_trailing_comma() {
 }
 
 // ============================================================================
+// From...Import Statement Tests
+// ============================================================================
+
+#[test]
+fn test_parse_from_import_single() {
+    let module = parse("from os import path\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "os");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].name, "path");
+            assert_eq!(items[0].alias, None);
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_multiple() {
+    let module = parse("from os import path, environ, getcwd\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "os");
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0].name, "path");
+            assert_eq!(items[1].name, "environ");
+            assert_eq!(items[2].name, "getcwd");
+            assert!(items.iter().all(|i| i.alias.is_none()));
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_dotted_module() {
+    let module = parse("from os.path import join\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "os.path");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].name, "join");
+            assert_eq!(items[0].alias, None);
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_deeply_dotted_module() {
+    let module = parse("from package.subpackage.module import function\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "package.subpackage.module");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].name, "function");
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_with_alias() {
+    let module = parse("from numpy import array as arr\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "numpy");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].name, "array");
+            assert_eq!(items[0].alias, Some("arr".to_string()));
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_multiple_with_aliases() {
+    let module = parse("from numpy import array as arr, zeros as z\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "numpy");
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0].name, "array");
+            assert_eq!(items[0].alias, Some("arr".to_string()));
+            assert_eq!(items[1].name, "zeros");
+            assert_eq!(items[1].alias, Some("z".to_string()));
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_mixed_aliases() {
+    let module = parse("from os import path, environ as env, getcwd\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "os");
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0].name, "path");
+            assert_eq!(items[0].alias, None);
+            assert_eq!(items[1].name, "environ");
+            assert_eq!(items[1].alias, Some("env".to_string()));
+            assert_eq!(items[2].name, "getcwd");
+            assert_eq!(items[2].alias, None);
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_wildcard() {
+    let module = parse("from os import *\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "os");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].name, "*");
+            assert_eq!(items[0].alias, None);
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_wildcard_dotted_module() {
+    let module = parse("from package.submodule import *\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "package.submodule");
+            assert_eq!(items.len(), 1);
+            assert_eq!(items[0].name, "*");
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+#[test]
+fn test_parse_from_import_trailing_comma() {
+    let module = parse("from os import path, environ,\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::FromImport { module: mod_name, items, .. } => {
+            assert_eq!(mod_name, "os");
+            assert_eq!(items.len(), 2);
+            assert_eq!(items[0].name, "path");
+            assert_eq!(items[1].name, "environ");
+        }
+        _ => panic!("Expected from...import statement"),
+    }
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 
@@ -1186,6 +1346,48 @@ fn test_parse_import_double_dot_error() {
 #[test]
 fn test_parse_import_keyword_as_module_error() {
     let result = parse("import if\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_from_import_missing_import_keyword_error() {
+    let result = parse("from os\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_from_import_missing_name_error() {
+    let result = parse("from os import\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_from_import_missing_alias_after_as_error() {
+    let result = parse("from os import path as\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_from_import_invalid_alias_error() {
+    let result = parse("from os import path as 123\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_from_import_wildcard_with_alias_error() {
+    let result = parse("from os import * as everything\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_from_import_wildcard_with_others_error() {
+    let result = parse("from os import *, path\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_from_import_missing_module_name_error() {
+    let result = parse("from import path\n");
     assert!(result.is_err());
 }
 
