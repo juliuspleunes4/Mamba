@@ -140,7 +140,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse subscript operations (list[0])
 - [x] Parse attribute access (obj.attr)
 - [ ] Parse tuple expressions
-- [ ] Parse list expressions
+- [x] Parse list expressions
 - [ ] Parse dict expressions
 - [ ] Parse set expressions
 - [ ] Parse lambda expressions

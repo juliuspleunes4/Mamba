@@ -44,13 +44,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Function calls with arbitrary arguments, including nested calls and trailing commas
     - Subscript operations with any expression as index, supporting chained subscripts and mixed with calls
     - Attribute access with chaining, enabling method calls and complex postfix expressions
+    - List literals with support for empty lists, trailing commas, nested lists, and arbitrary expressions
   - Statement parsing:
     - Assignment statements (x = 5)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements
-  - Parser test suite: 50 tests covering operators, function calls, subscripts, and attribute access
-  - **197 total tests, all passing (142 lexer + 50 parser + 5 compound operator tests)**
+  - Parser test suite: 57 tests covering operators, postfix operations, and list literals
+  - **204 total tests, all passing (142 lexer + 57 parser + 5 compound operator tests)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
