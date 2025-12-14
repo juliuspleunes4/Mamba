@@ -14,3 +14,8 @@ log = { workspace = true }
 
 [dev-dependencies]
 proptest = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "lexer_benchmarks"
+harness = false

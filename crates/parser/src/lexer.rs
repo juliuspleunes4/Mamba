@@ -381,6 +381,25 @@ impl<'a> Lexer<'a> {
         let start_pos = self.position;
         let mut lexeme = String::new();
         
+        // Python identifier rules:
+        // - Must start with letter (Unicode letter category) or underscore
+        // - Can contain letters, digits (Unicode digit category), or underscores
+        // - We use Rust's Unicode support: is_alphabetic() and is_alphanumeric()
+        
+        // First character must be letter or underscore
+        if let Some(first) = self.current_char {
+            if first.is_alphabetic() || first == '_' {
+                lexeme.push(first);
+                self.advance();
+            } else {
+                return Err(MambaError::SyntaxError(format!(
+                    "Invalid identifier start character '{}' at {}",
+                    first, start_pos
+                )));
+            }
+        }
+        
+        // Subsequent characters can be alphanumeric or underscore
         while let Some(c) = self.current_char {
             if c.is_alphanumeric() || c == '_' {
                 lexeme.push(c);

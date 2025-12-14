@@ -63,7 +63,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Tokenize walrus operator (:=)
 - [x] Tokenize delimiters (parentheses, brackets, braces, commas, colons, semicolons)
 - [x] Tokenize ellipsis (...)
-- [ ] Tokenize indentation (spaces, tabs)
+- [x] Tokenize indentation (spaces, tabs)
 - [x] Handle newlines and statement boundaries
 
 ### 1.2 Literal Tokenization
@@ -87,7 +87,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Support hexadecimal literals (0x...)
 - [x] Support octal literals (0o...)
 - [x] Support binary literals (0b...)
-- [ ] Handle Unicode identifiers
+- [x] Handle Unicode identifiers
 - [x] Implement lookahead for multi-character operators (==, !=, <=, >=, //, **, etc.)
 
 ### 1.4 Lexer Error Handling
@@ -102,9 +102,9 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 ### 1.5 Lexer Testing
 
 - [x] Unit tests for all token types
-- [ ] Test edge cases (empty files, whitespace-only, etc.)
+- [x] Test edge cases (empty files, whitespace-only, etc.)
 - [x] Test error conditions
-- [ ] Create lexer benchmarks
+- [x] Create lexer benchmarks
 - [ ] Add fuzzing tests for robustness
 
 ---
