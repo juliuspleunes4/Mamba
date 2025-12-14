@@ -900,3 +900,142 @@ fn test_parse_complex_postfix_chain() {
         _ => panic!("Expected attribute access at top level"),
     }
 }
+
+#[test]
+fn test_parse_empty_list() {
+    let module = parse("[]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::List { elements, .. }) => {
+            assert_eq!(elements.len(), 0);
+        }
+        _ => panic!("Expected list expression"),
+    }
+}
+
+#[test]
+fn test_parse_list_single_element() {
+    let module = parse("[42]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::List { elements, .. }) => {
+            assert_eq!(elements.len(), 1);
+            
+            match &elements[0] {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 42),
+                _ => panic!("Expected integer element"),
+            }
+        }
+        _ => panic!("Expected list expression"),
+    }
+}
+
+#[test]
+fn test_parse_list_multiple_elements() {
+    let module = parse("[1, 2, 3]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::List { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            for (i, elem) in elements.iter().enumerate() {
+                match elem {
+                    Expression::Literal(Literal::Integer { value, .. }) => {
+                        assert_eq!(*value, (i + 1) as i64);
+                    }
+                    _ => panic!("Expected integer element"),
+                }
+            }
+        }
+        _ => panic!("Expected list expression"),
+    }
+}
+
+#[test]
+fn test_parse_list_trailing_comma() {
+    let module = parse("[1, 2, 3,]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::List { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+        }
+        _ => panic!("Expected list expression"),
+    }
+}
+
+#[test]
+fn test_parse_list_with_expressions() {
+    let module = parse("[1 + 2, x * y, func()]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::List { elements, .. }) => {
+            assert_eq!(elements.len(), 3);
+            
+            // First should be addition
+            match &elements[0] {
+                Expression::BinaryOp { op: BinaryOperator::Add, .. } => {},
+                _ => panic!("Expected addition"),
+            }
+            
+            // Second should be multiplication
+            match &elements[1] {
+                Expression::BinaryOp { op: BinaryOperator::Multiply, .. } => {},
+                _ => panic!("Expected multiplication"),
+            }
+            
+            // Third should be function call
+            match &elements[2] {
+                Expression::Call { .. } => {},
+                _ => panic!("Expected function call"),
+            }
+        }
+        _ => panic!("Expected list expression"),
+    }
+}
+
+#[test]
+fn test_parse_nested_lists() {
+    let module = parse("[[1, 2], [3, 4]]\n").unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Expression(Expression::List { elements, .. }) => {
+            assert_eq!(elements.len(), 2);
+            
+            // Both elements should be lists
+            for elem in elements {
+                match elem {
+                    Expression::List { elements: inner_elements, .. } => {
+                        assert_eq!(inner_elements.len(), 2);
+                    }
+                    _ => panic!("Expected nested list"),
+                }
+            }
+        }
+        _ => panic!("Expected list expression"),
+    }
+}
+
+#[test]
+fn test_parse_list_subscript_disambiguation() {
+    // Make sure list literal [1, 2] is different from subscript arr[1]
+    let module1 = parse("[1, 2]\n").unwrap();
+    let module2 = parse("arr[1]\n").unwrap();
+    
+    // First should be a list
+    match &module1.statements[0] {
+        Statement::Expression(Expression::List { .. }) => {},
+        _ => panic!("Expected list literal"),
+    }
+    
+    // Second should be a subscript
+    match &module2.statements[0] {
+        Statement::Expression(Expression::Subscript { .. }) => {},
+        _ => panic!("Expected subscript operation"),
+    }
+}

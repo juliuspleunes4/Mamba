@@ -501,6 +501,35 @@ impl Parser {
                     position: pos,
                 })
             }
+            Some(TokenKind::LeftBracket) => {
+                // List literal: [1, 2, 3]
+                let pos = self.current_position();
+                self.advance(); // consume '['
+                let mut elements = Vec::new();
+
+                // Parse elements if not empty
+                if !self.check(&TokenKind::RightBracket) {
+                    loop {
+                        elements.push(self.parse_expression()?);
+                        
+                        if !self.match_token(&TokenKind::Comma) {
+                            break;
+                        }
+                        
+                        // Allow trailing comma
+                        if self.check(&TokenKind::RightBracket) {
+                            break;
+                        }
+                    }
+                }
+
+                self.expect_token(TokenKind::RightBracket, "Expected ']' after list elements")?;
+                
+                Ok(Expression::List {
+                    elements,
+                    position: pos,
+                })
+            }
             _ => Err(MambaError::ParseError(format!(
                 "Unexpected token at {}:{}: {:?}",
                 self.current_position().line,
