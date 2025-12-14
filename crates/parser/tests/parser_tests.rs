@@ -781,6 +781,34 @@ fn test_parse_global_multiple() {
 }
 
 #[test]
+fn test_parse_nonlocal_single() {
+    let module = parse("nonlocal x\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Nonlocal { names, .. } => {
+            assert_eq!(names.len(), 1);
+            assert_eq!(names[0], "x");
+        }
+        _ => panic!("Expected nonlocal statement"),
+    }
+}
+
+#[test]
+fn test_parse_nonlocal_multiple() {
+    let module = parse("nonlocal x, y, z\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Nonlocal { names, .. } => {
+            assert_eq!(names.len(), 3);
+            assert_eq!(names[0], "x");
+            assert_eq!(names[1], "y");
+            assert_eq!(names[2], "z");
+        }
+        _ => panic!("Expected nonlocal statement"),
+    }
+}
+
+#[test]
 fn test_parse_pass_statement() {
     let module = parse("pass\n").unwrap();
     

@@ -61,6 +61,7 @@ impl Parser {
             Some(TokenKind::Assert) => self.parse_assert(),
             Some(TokenKind::Del) => self.parse_del(),
             Some(TokenKind::Global) => self.parse_global(),
+            Some(TokenKind::Nonlocal) => self.parse_nonlocal(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -268,6 +269,48 @@ impl Parser {
         
         self.consume_newline_or_eof()?;
         Ok(Statement::Global {
+            names,
+            position: pos,
+        })
+    }
+
+    /// Parse nonlocal statement (nonlocal x, y, z)
+    fn parse_nonlocal(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'nonlocal'
+        
+        // Parse comma-separated identifier names
+        let mut names = Vec::new();
+        
+        loop {
+            match self.current_kind() {
+                Some(TokenKind::Identifier(name)) => {
+                    names.push(name.clone());
+                    self.advance();
+                }
+                _ => {
+                    return Err(MambaError::ParseError(
+                        format!("Expected identifier after 'nonlocal' at {}:{}", 
+                            self.current_position().line, 
+                            self.current_position().column)
+                    ));
+                }
+            }
+            
+            // Check for comma
+            if self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma
+                if self.check(&TokenKind::Newline) || self.is_at_end() {
+                    break;
+                }
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Nonlocal {
             names,
             position: pos,
         })

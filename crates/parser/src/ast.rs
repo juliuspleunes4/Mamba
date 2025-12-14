@@ -57,6 +57,11 @@ pub enum Statement {
         names: Vec<String>,
         position: SourcePosition,
     },
+    /// Nonlocal statement (nonlocal x, y)
+    Nonlocal {
+        names: Vec<String>,
+        position: SourcePosition,
+    },
     /// If statement
     If {
         condition: Expression,
@@ -372,6 +377,7 @@ impl Statement {
             Statement::Assert { position, .. } => position,
             Statement::Del { position, .. } => position,
             Statement::Global { position, .. } => position,
+            Statement::Nonlocal { position, .. } => position,
             Statement::If { position, .. } => position,
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,

@@ -168,7 +168,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [ ] Parse import statements (basic)
 - [ ] Parse from...import statements (basic)
 - [x] Parse global statement
-- [ ] Parse nonlocal statement
+- [x] Parse nonlocal statement
 - [x] Parse assert statement
 - [x] Parse del statement
 - [ ] Parse raise statement (basic)
