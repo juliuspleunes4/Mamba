@@ -62,6 +62,7 @@ impl Parser {
             Some(TokenKind::Del) => self.parse_del(),
             Some(TokenKind::Global) => self.parse_global(),
             Some(TokenKind::Nonlocal) => self.parse_nonlocal(),
+            Some(TokenKind::Raise) => self.parse_raise(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -312,6 +313,27 @@ impl Parser {
         self.consume_newline_or_eof()?;
         Ok(Statement::Nonlocal {
             names,
+            position: pos,
+        })
+    }
+
+    /// Parse raise statement (raise, raise Exception, raise Exception("msg"))
+    fn parse_raise(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'raise'
+        
+        // Check if there's an exception expression
+        let exception = if self.check(&TokenKind::Newline) || self.is_at_end() {
+            // Bare raise (re-raises current exception)
+            None
+        } else {
+            // Parse exception expression
+            Some(self.parse_expression()?)
+        };
+        
+        self.consume_newline_or_eof()?;
+        Ok(Statement::Raise {
+            exception,
             position: pos,
         })
     }

@@ -70,8 +70,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Del statement for deleting variables, attributes, or subscripts (del x, del obj.attr, del list[0])
     - Global statement for declaring global variables (global x, y)
     - Nonlocal statement for declaring nonlocal variables (nonlocal x, y)
-  - Parser test suite: 154 tests (149 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements
-  - **296 total tests, all passing (142 lexer + 154 parser)**
+    - Raise statement for raising exceptions (raise, raise Exception, raise Exception("msg"))
+  - Parser test suite: 158 tests (153 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling
+  - **300 total tests, all passing (142 lexer + 158 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

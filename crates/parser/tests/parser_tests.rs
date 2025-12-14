@@ -809,6 +809,85 @@ fn test_parse_nonlocal_multiple() {
 }
 
 #[test]
+fn test_parse_raise_bare() {
+    let module = parse("raise\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Raise { exception, .. } => {
+            assert!(exception.is_none());
+        }
+        _ => panic!("Expected raise statement"),
+    }
+}
+
+#[test]
+fn test_parse_raise_with_exception() {
+    let module = parse("raise ValueError\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Raise { exception, .. } => {
+            assert!(exception.is_some());
+            match exception.as_ref().unwrap() {
+                Expression::Identifier { name, .. } => {
+                    assert_eq!(name, "ValueError");
+                }
+                _ => panic!("Expected identifier expression"),
+            }
+        }
+        _ => panic!("Expected raise statement"),
+    }
+}
+
+#[test]
+fn test_parse_raise_with_message() {
+    let module = parse("raise ValueError(\"error message\")\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Raise { exception, .. } => {
+            assert!(exception.is_some());
+            match exception.as_ref().unwrap() {
+                Expression::Call { function, arguments, .. } => {
+                    match &**function {
+                        Expression::Identifier { name, .. } => {
+                            assert_eq!(name, "ValueError");
+                        }
+                        _ => panic!("Expected identifier in function position"),
+                    }
+                    assert_eq!(arguments.len(), 1);
+                    match &arguments[0] {
+                        Expression::Literal(Literal::String { value, .. }) => {
+                            assert_eq!(value, "error message");
+                        }
+                        _ => panic!("Expected string literal argument"),
+                    }
+                }
+                _ => panic!("Expected call expression"),
+            }
+        }
+        _ => panic!("Expected raise statement"),
+    }
+}
+
+#[test]
+fn test_parse_raise_with_expression() {
+    let module = parse("raise Exception(\"test\") if x else RuntimeError()\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Raise { exception, .. } => {
+            assert!(exception.is_some());
+            // Verify it's a conditional expression
+            match exception.as_ref().unwrap() {
+                Expression::Conditional { .. } => {
+                    // Expected
+                }
+                _ => panic!("Expected conditional expression"),
+            }
+        }
+        _ => panic!("Expected raise statement"),
+    }
+}
+
+#[test]
 fn test_parse_pass_statement() {
     let module = parse("pass\n").unwrap();
     

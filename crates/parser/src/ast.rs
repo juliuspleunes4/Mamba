@@ -62,6 +62,11 @@ pub enum Statement {
         names: Vec<String>,
         position: SourcePosition,
     },
+    /// Raise statement (raise, raise Exception, raise Exception("msg"))
+    Raise {
+        exception: Option<Expression>,
+        position: SourcePosition,
+    },
     /// If statement
     If {
         condition: Expression,
@@ -378,6 +383,7 @@ impl Statement {
             Statement::Del { position, .. } => position,
             Statement::Global { position, .. } => position,
             Statement::Nonlocal { position, .. } => position,
+            Statement::Raise { position, .. } => position,
             Statement::If { position, .. } => position,
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,
