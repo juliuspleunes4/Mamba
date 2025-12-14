@@ -17,9 +17,9 @@ pub struct Module {
 pub enum Statement {
     /// Expression statement (e.g., function call)
     Expression(Expression),
-    /// Assignment statement (x = 5)
+    /// Assignment statement (x = 5 or x = y = 5)
     Assignment {
-        target: Expression,
+        targets: Vec<Expression>,
         value: Expression,
         position: SourcePosition,
     },

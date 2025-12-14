@@ -60,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Generator expressions ((expr for target in iter if cond)) for lazy evaluation with full comprehension syntax
   - Statement parsing:
     - Assignment statements (x = 5)
+    - Multiple/chained assignment (x = y = z = 5)
     - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
     - Expression statements
     - Pass, break, continue, return statements

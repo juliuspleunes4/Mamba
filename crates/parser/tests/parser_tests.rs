@@ -286,9 +286,12 @@ fn test_parse_assignment() {
     let module = parse("x = 42\n").unwrap();
     
     match &module.statements[0] {
-        Statement::Assignment { target, value, .. } => {
+        Statement::Assignment { targets, value, .. } => {
+            // Should have exactly one target for simple assignment
+            assert_eq!(targets.len(), 1);
+            
             // Check target is identifier
-            match target {
+            match &targets[0] {
                 Expression::Identifier { name, .. } => assert_eq!(name, "x"),
                 _ => panic!("Expected identifier as target"),
             }
@@ -322,6 +325,70 @@ fn test_parse_augmented_assignment() {
             }
         }
         _ => panic!("Expected augmented assignment statement"),
+    }
+}
+
+#[test]
+fn test_parse_multiple_assignment() {
+    let module = parse("x = y = 42\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assignment { targets, value, .. } => {
+            // Should have two targets
+            assert_eq!(targets.len(), 2);
+            
+            // Check first target is 'x'
+            match &targets[0] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "x"),
+                _ => panic!("Expected identifier 'x' as first target"),
+            }
+            
+            // Check second target is 'y'
+            match &targets[1] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "y"),
+                _ => panic!("Expected identifier 'y' as second target"),
+            }
+            
+            // Check value is integer 42
+            match value {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 42),
+                _ => panic!("Expected integer value"),
+            }
+        }
+        _ => panic!("Expected assignment statement"),
+    }
+}
+
+#[test]
+fn test_parse_chained_assignment() {
+    let module = parse("a = b = c = 100\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assignment { targets, value, .. } => {
+            // Should have three targets
+            assert_eq!(targets.len(), 3);
+            
+            // Check targets
+            match &targets[0] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "a"),
+                _ => panic!("Expected identifier 'a'"),
+            }
+            match &targets[1] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "b"),
+                _ => panic!("Expected identifier 'b'"),
+            }
+            match &targets[2] {
+                Expression::Identifier { name, .. } => assert_eq!(name, "c"),
+                _ => panic!("Expected identifier 'c'"),
+            }
+            
+            // Check value
+            match value {
+                Expression::Literal(Literal::Integer { value, .. }) => assert_eq!(*value, 100),
+                _ => panic!("Expected integer value"),
+            }
+        }
+        _ => panic!("Expected assignment statement"),
     }
 }
 

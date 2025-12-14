@@ -156,7 +156,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 - [x] Parse assignment statements (x = 5)
 - [x] Parse augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
-- [ ] Parse multiple assignment (x = y = 5)
+- [x] Parse multiple assignment (x = y = 5)
 - [ ] Parse unpacking assignment (a, b = 1, 2)
 - [ ] Parse tuple unpacking (a, b, c = tuple)
 - [ ] Parse starred assignment (a, *b, c = list)

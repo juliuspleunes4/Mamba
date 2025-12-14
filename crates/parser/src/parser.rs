@@ -62,16 +62,28 @@ impl Parser {
                 // Try to parse as assignment or expression
                 let expr = self.parse_expression()?;
                 
-                // Check for assignment
+                // Check for assignment (including chained assignments like x = y = 5)
                 if self.match_token(&TokenKind::Assign) {
-                    let value = self.parse_expression()?;
-                    self.consume_newline_or_eof()?;
-                    let pos = expr.position().clone();
-                    return Ok(Statement::Assignment {
-                        target: expr,
-                        value,
-                        position: pos,
-                    });
+                    let mut targets = vec![expr];
+                    let pos = targets[0].position().clone();
+                    
+                    // Parse chained assignments: x = y = z = value
+                    loop {
+                        let next_expr = self.parse_expression()?;
+                        
+                        if self.match_token(&TokenKind::Assign) {
+                            // More assignments coming
+                            targets.push(next_expr);
+                        } else {
+                            // This is the final value
+                            self.consume_newline_or_eof()?;
+                            return Ok(Statement::Assignment {
+                                targets,
+                                value: next_expr,
+                                position: pos,
+                            });
+                        }
+                    }
                 }
                 
                 // Check for augmented assignment
