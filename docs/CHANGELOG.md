@@ -30,6 +30,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Throughput: ~3.5M lines/second
   - Fuzzing infrastructure (cargo-fuzz + proptest)
   - Error handling with position tracking
+- **Phase 2: Parser & AST (In Progress)**
+  - Bug fixes:
+    - Fixed binary operator position tracking: operators now correctly report their own position instead of the right operand's position (added `previous_position` field to Parser)
+  - Complete AST node definitions for expressions, statements, and literals
+  - Recursive descent parser with operator precedence climbing
+  - Expression parsing:
+    - All literals (int, float, string, bool, None)
+    - Identifiers and parenthesized expressions
+    - Binary operators with correct precedence (or, and, not, comparison, bitwise, shift, arithmetic, power)
+    - Unary operators (-, +, ~, not)
+    - All comparison operators (==, !=, <, >, <=, >=)
+    - Membership operators (in, not in)
+    - Identity operators (is, is not)
+    - Function calls with arbitrary arguments, including nested calls and trailing commas
+    - Subscript operations with any expression as index, supporting chained subscripts and mixed with calls
+    - Attribute access with chaining, enabling method calls and complex postfix expressions
+    - List literals with support for empty lists, trailing commas, nested lists, and arbitrary expressions
+    - Tuple literals with proper disambiguation from parenthesized expressions, supporting empty tuples and single-element tuples
+    - Dict literals with key-value pairs, supporting empty dicts, trailing commas, nested dicts, expressions as keys/values
+    - Set literals with proper disambiguation from dicts (empty braces = dict), supporting trailing commas, expressions as elements
+    - Lambda expressions with parameter lists and expression bodies, enabling functional programming patterns
+    - Conditional expressions (ternary operator) with proper precedence and chaining support
+    - Walrus operator / assignment expressions (:=) for inline assignment within expressions
+    - Ellipsis literal (...) for use in slicing, type hints, and as placeholder
+    - List comprehensions ([expr for target in iter if cond]) with support for multiple generators and conditions
+    - Dict comprehensions ({key: value for target in iter if cond}) with support for complex key-value expressions
+    - Set comprehensions ({expr for target in iter if cond}) with support for nested loops and conditions
+    - Generator expressions ((expr for target in iter if cond)) for lazy evaluation with full comprehension syntax
+  - Statement parsing:
+    - Assignment statements (x = 5)
+    - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
+    - Expression statements
+    - Pass, break, continue, return statements
+  - Parser test suite: 136 tests (131 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions
+  - **278 total tests, all passing (142 lexer + 136 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

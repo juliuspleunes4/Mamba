@@ -113,58 +113,58 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 2.1 AST Node Definitions
 
-- [ ] Define AST base structure
-- [ ] Create Expression enum (all expression types)
-- [ ] Create Statement enum (all statement types)
-- [ ] Define Literal node
-- [ ] Define Identifier node
-- [ ] Define BinaryOp node
-- [ ] Define UnaryOp node
-- [ ] Define FunctionDef node
-- [ ] Define ClassDef node (future)
-- [ ] Add position tracking to all nodes
+- [x] Define AST base structure
+- [x] Create Expression enum (all expression types)
+- [x] Create Statement enum (all statement types)
+- [x] Define Literal node
+- [x] Define Identifier node
+- [x] Define BinaryOp node
+- [x] Define UnaryOp node
+- [x] Define FunctionDef node
+- [x] Define ClassDef node (future)
+- [x] Add position tracking to all nodes
 
 ### 2.2 Expression Parsing
 
-- [ ] Parse literals (int, float, string, bool, None)
-- [ ] Parse identifiers (variable references)
-- [ ] Parse binary operators (+, -, *, /, //, %, **)
-- [ ] Parse comparison operators (==, !=, <, >, <=, >=)
-- [ ] Parse membership operators (in, not in)
-- [ ] Parse identity operators (is, is not)
-- [ ] Parse logical operators (and, or, not)
-- [ ] Parse bitwise operators (&, |, ^, ~, <<, >>)
-- [ ] Parse parenthesized expressions
-- [ ] Implement operator precedence
-- [ ] Parse function calls
-- [ ] Parse subscript operations (list[0])
-- [ ] Parse attribute access (obj.attr)
-- [ ] Parse tuple expressions
-- [ ] Parse list expressions
-- [ ] Parse dict expressions
-- [ ] Parse set expressions
-- [ ] Parse lambda expressions
-- [ ] Parse conditional expressions (ternary)
-- [ ] Parse walrus operator (:=)
-- [ ] Parse ellipsis (...)
-- [ ] Parse list comprehensions
-- [ ] Parse dict comprehensions
-- [ ] Parse set comprehensions
-- [ ] Parse generator expressions
+- [x] Parse literals (int, float, string, bool, None)
+- [x] Parse identifiers (variable references)
+- [x] Parse binary operators (+, -, *, /, //, %, **)
+- [x] Parse comparison operators (==, !=, <, >, <=, >=)
+- [x] Parse membership operators (in, not in)
+- [x] Parse identity operators (is, is not)
+- [x] Parse logical operators (and, or, not)
+- [x] Parse bitwise operators (&, |, ^, ~, <<, >>)
+- [x] Parse parenthesized expressions
+- [x] Implement operator precedence
+- [x] Parse function calls
+- [x] Parse subscript operations (list[0])
+- [x] Parse attribute access (obj.attr)
+- [x] Parse tuple expressions
+- [x] Parse list expressions
+- [x] Parse dict expressions
+- [x] Parse set expressions
+- [x] Parse lambda expressions
+- [x] Parse conditional expressions (ternary)
+- [x] Parse walrus operator (:=)
+- [x] Parse ellipsis (...)
+- [x] Parse list comprehensions
+- [x] Parse dict comprehensions
+- [x] Parse set comprehensions
+- [x] Parse generator expressions
 
 ### 2.3 Statement Parsing
 
-- [ ] Parse assignment statements (x = 5)
-- [ ] Parse augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
+- [x] Parse assignment statements (x = 5)
+- [x] Parse augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
 - [ ] Parse multiple assignment (x = y = 5)
 - [ ] Parse unpacking assignment (a, b = 1, 2)
 - [ ] Parse tuple unpacking (a, b, c = tuple)
 - [ ] Parse starred assignment (a, *b, c = list)
-- [ ] Parse expression statements
-- [ ] Parse pass statement
-- [ ] Parse break statement
-- [ ] Parse continue statement
-- [ ] Parse return statement
+- [x] Parse expression statements
+- [x] Parse pass statement
+- [x] Parse break statement
+- [x] Parse continue statement
+- [x] Parse return statement
 - [ ] Parse import statements (basic)
 - [ ] Parse from...import statements (basic)
 - [ ] Parse global statement

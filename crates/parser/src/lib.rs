@@ -5,6 +5,5 @@
 
 pub mod lexer;
 pub mod token;
-
-// TODO: Implement parser
-// TODO: Implement AST structures
+pub mod ast;
+pub mod parser;
