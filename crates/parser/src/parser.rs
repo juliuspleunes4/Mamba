@@ -60,11 +60,11 @@ impl Parser {
             Some(TokenKind::Return) => self.parse_return(),
             _ => {
                 // Try to parse as assignment or expression
-                let expr = self.parse_expression()?;
+                let expr = self.parse_assignment_target()?;
                 
                 // Check for comma (tuple without parentheses) - this could be unpacking
                 if self.check(&TokenKind::Comma) {
-                    // Build a tuple from comma-separated expressions
+                    // Build a tuple from comma-separated targets
                     let mut elements = vec![expr];
                     let pos = elements[0].position().clone();
                     
@@ -73,7 +73,7 @@ impl Parser {
                         if self.check(&TokenKind::Assign) || self.check(&TokenKind::Newline) || self.is_at_end() {
                             break;
                         }
-                        elements.push(self.parse_expression()?);
+                        elements.push(self.parse_assignment_target()?);
                     }
                     
                     // Create tuple expression
@@ -180,6 +180,23 @@ impl Parser {
         
         self.consume_newline_or_eof()?;
         Ok(Statement::Return { value, position: pos })
+    }
+
+    /// Parse an assignment target (expression or starred expression)
+    /// Used on the LHS of assignments to handle starred unpacking
+    fn parse_assignment_target(&mut self) -> ParseResult<Expression> {
+        // Check for starred expression (*var)
+        if self.match_token(&TokenKind::Star) {
+            let pos = self.previous_position();
+            let value = Box::new(self.parse_expression()?);
+            return Ok(Expression::Starred {
+                value,
+                position: pos,
+            });
+        }
+        
+        // Otherwise parse regular expression
+        self.parse_expression()
     }
 
     /// Parse expression or implicit tuple (comma-separated expressions)

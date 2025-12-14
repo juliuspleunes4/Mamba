@@ -183,6 +183,11 @@ pub enum Expression {
         generators: Vec<Comprehension>,
         position: SourcePosition,
     },
+    /// Starred expression (*expr) - used in unpacking
+    Starred {
+        value: Box<Expression>,
+        position: SourcePosition,
+    },
 }
 
 /// Comprehension clause (for target in iter [if condition])
@@ -332,6 +337,7 @@ impl Expression {
             Expression::DictComp { position, .. } => position,
             Expression::SetComp { position, .. } => position,
             Expression::GeneratorExpr { position, .. } => position,
+            Expression::Starred { position, .. } => position,
         }
     }
 }

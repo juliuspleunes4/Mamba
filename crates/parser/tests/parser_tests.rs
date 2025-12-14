@@ -479,6 +479,126 @@ fn test_parse_list_unpacking() {
 }
 
 #[test]
+fn test_parse_starred_assignment() {
+    let module = parse("a, *b, c = [1, 2, 3, 4, 5]\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assignment { targets, value, .. } => {
+            // Should have one target (the tuple)
+            assert_eq!(targets.len(), 1);
+            
+            // Check target is a tuple with three elements (a, *b, c)
+            match &targets[0] {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 3);
+                    
+                    // First element: 'a'
+                    match &elements[0] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "a"),
+                        _ => panic!("Expected identifier 'a'"),
+                    }
+                    
+                    // Second element: *b
+                    match &elements[1] {
+                        Expression::Starred { value, .. } => {
+                            match value.as_ref() {
+                                Expression::Identifier { name, .. } => assert_eq!(name, "b"),
+                                _ => panic!("Expected identifier 'b' in starred expression"),
+                            }
+                        }
+                        _ => panic!("Expected starred expression"),
+                    }
+                    
+                    // Third element: 'c'
+                    match &elements[2] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "c"),
+                        _ => panic!("Expected identifier 'c'"),
+                    }
+                }
+                _ => panic!("Expected tuple as target"),
+            }
+            
+            // Check value is a list
+            match value {
+                Expression::List { elements, .. } => {
+                    assert_eq!(elements.len(), 5);
+                }
+                _ => panic!("Expected list as value"),
+            }
+        }
+        _ => panic!("Expected assignment statement"),
+    }
+}
+
+#[test]
+fn test_parse_starred_only_middle() {
+    let module = parse("first, *rest = [1, 2, 3]\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assignment { targets, .. } => {
+            match &targets[0] {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 2);
+                    
+                    // First element
+                    match &elements[0] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "first"),
+                        _ => panic!("Expected identifier 'first'"),
+                    }
+                    
+                    // Second element: *rest
+                    match &elements[1] {
+                        Expression::Starred { value, .. } => {
+                            match value.as_ref() {
+                                Expression::Identifier { name, .. } => assert_eq!(name, "rest"),
+                                _ => panic!("Expected identifier 'rest'"),
+                            }
+                        }
+                        _ => panic!("Expected starred expression"),
+                    }
+                }
+                _ => panic!("Expected tuple as target"),
+            }
+        }
+        _ => panic!("Expected assignment statement"),
+    }
+}
+
+#[test]
+fn test_parse_starred_at_end() {
+    let module = parse("*rest, last = [1, 2, 3]\n").unwrap();
+    
+    match &module.statements[0] {
+        Statement::Assignment { targets, .. } => {
+            match &targets[0] {
+                Expression::Tuple { elements, .. } => {
+                    assert_eq!(elements.len(), 2);
+                    
+                    // First element: *rest
+                    match &elements[0] {
+                        Expression::Starred { value, .. } => {
+                            match value.as_ref() {
+                                Expression::Identifier { name, .. } => assert_eq!(name, "rest"),
+                                _ => panic!("Expected identifier 'rest'"),
+                            }
+                        }
+                        _ => panic!("Expected starred expression"),
+                    }
+                    
+                    // Second element: 'last'
+                    match &elements[1] {
+                        Expression::Identifier { name, .. } => assert_eq!(name, "last"),
+                        _ => panic!("Expected identifier 'last'"),
+                    }
+                }
+                _ => panic!("Expected tuple as target"),
+            }
+        }
+        _ => panic!("Expected assignment statement"),
+    }
+}
+
+#[test]
 fn test_parse_pass_statement() {
     let module = parse("pass\n").unwrap();
     
