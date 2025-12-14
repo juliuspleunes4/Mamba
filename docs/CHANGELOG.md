@@ -30,6 +30,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Throughput: ~3.5M lines/second
   - Fuzzing infrastructure (cargo-fuzz + proptest)
   - Error handling with position tracking
+- **Phase 2: Parser & AST (In Progress)**
+  - Complete AST node definitions for expressions, statements, and literals
+  - Recursive descent parser with operator precedence climbing
+  - Expression parsing:
+    - All literals (int, float, string, bool, None)
+    - Identifiers and parenthesized expressions
+    - Binary operators with correct precedence (or, and, not, comparison, bitwise, shift, arithmetic, power)
+    - Unary operators (-, +, ~, not)
+    - All comparison operators (==, !=, <, >, <=, >=)
+    - Membership operators (in, not in)
+    - Identity operators (is, is not)
+  - Statement parsing:
+    - Assignment statements (x = 5)
+    - Augmented assignment (+=, -=, *=, /=, //=, %=, **=, &=, |=, ^=, >>=, <<=)
+    - Expression statements
+    - Pass, break, continue, return statements
+  - Parser test suite: 29 tests including compound operators (not in, is not)
+  - **176 total tests, all passing (142 lexer + 29 parser + 5 compound operator tests)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
