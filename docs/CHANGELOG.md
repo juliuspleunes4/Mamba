@@ -73,12 +73,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Raise statement for raising exceptions (raise, raise Exception, raise Exception("msg"))
     - Import statement with dotted module names and aliases (import os, import os.path, import numpy as np)
     - From...import statement with dotted module names, aliases, and wildcard (from os import path, from os.path import join as j, from os import *)
-  - Parser test suite: 203 tests (198 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements
+    - Control flow statements:
+      * If/elif/else statements with proper indentation handling and chained elif blocks
+      * While loops with optional else clause (executes if loop completes without break)
+      * For loops with optional else clause, supporting tuple unpacking (for x, y in items)
+  - Parser test suite: 236 tests (231 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for)
   - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages
   - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal
-  - **345 total tests, all passing (142 lexer + 203 parser)**
+  - **378 total tests, all passing (142 lexer + 236 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

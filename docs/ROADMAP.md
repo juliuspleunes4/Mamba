@@ -175,13 +175,13 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 2.4 Control Flow Parsing
 
-- [ ] Parse if statements
-- [ ] Parse if-elif-else chains
-- [ ] Parse while loops
-- [ ] Parse for loops
-- [ ] Parse for-else
-- [ ] Parse while-else
-- [ ] Parse nested control flow
+- [x] Parse if statements
+- [x] Parse if-elif-else chains
+- [x] Parse while loops
+- [x] Parse for loops
+- [x] Parse for-else
+- [x] Parse while-else
+- [x] Parse nested control flow
 
 ### 2.5 Function & Class Parsing
 
