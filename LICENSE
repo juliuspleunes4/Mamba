@@ -173,9 +173,12 @@ http://www.apache.org/licenses/
   incurred by, or claims asserted against, such Contributor by reason
   of your accepting any such warranty or additional liability.
 
-    10. Permission to Use Syntax and Transpiler.
-
-    You are expressly permitted to use the syntax defined in this project, utilize the provided transpiler, and create your own versions or derivatives thereof. This includes, but is not limited to, adapting, modifying, or extending the syntax and transpiler for your own purposes, subject to the terms and conditions of this License.
+  10. Permission to Use Syntax and Transpiler. 
+  You are expressly permitted to use the syntax defined in this project, 
+  utilize the provided transpiler, and create your own versions or derivatives 
+  thereof. This includes, but is not limited to, adapting, modifying, or 
+  extending the syntax and transpiler for your own purposes, 
+  subject to the terms and conditions of this License.
 
    END OF TERMS AND CONDITIONS
 
