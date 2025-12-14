@@ -1,0 +1,11 @@
+[package]
+name = "mamba-stdlib"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+# Future: Runtime dependencies for standard library

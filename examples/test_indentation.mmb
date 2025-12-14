@@ -1,0 +1,27 @@
+# Test comprehensive Python-like code with indentation
+def fibonacci(n):
+    if n <= 1:
+        return n
+    else:
+        return fibonacci(n-1) + fibonacci(n-2)
+
+class Calculator:
+    def add(self, a, b):
+        return a + b
+    
+    def multiply(self, a, b):
+        result = 0
+        for i in range(b):
+            result = result + a
+        return result
+
+# Main code
+x = 10
+while x > 0:
+    print(x)
+    x = x - 1
+
+try:
+    result = fibonacci(5)
+except:
+    pass

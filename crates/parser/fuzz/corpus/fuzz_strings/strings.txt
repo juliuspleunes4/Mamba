@@ -1,0 +1,1 @@
+"hello" 'world' """multiline""" r"raw" f"formatted"

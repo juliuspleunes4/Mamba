@@ -1,0 +1,48 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cli",
+    "crates/parser",
+    "crates/transpiler",
+    "crates/compiler",
+    "crates/stdlib",
+    "crates/error",
+]
+exclude = [
+    "crates/parser/fuzz",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Julius Pleunes"]
+license = "Apache-2.0"
+repository = "https://github.com/juliuspleunes4/mamba"
+homepage = "https://github.com/juliuspleunes4/mamba"
+
+[workspace.dependencies]
+# CLI dependencies
+clap = { version = "4.5", features = ["derive", "cargo"] }
+colored = "2.1"
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging
+env_logger = "0.11"
+log = "0.4"
+
+# Testing
+proptest = "1.4"
+criterion = "0.5"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true

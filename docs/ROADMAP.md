@@ -26,13 +26,13 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 0.2 Rust Project Setup
 
-- [ ] Initialize Cargo workspace
-- [ ] Create project directory structure (cli, parser, transpiler, compiler, stdlib, error)
-- [ ] Configure Cargo.toml with dependencies
-- [ ] Set up rustfmt configuration
-- [ ] Set up clippy configuration
-- [ ] Create basic main.rs entry point
-- [ ] Add development dependencies (test frameworks, benchmarking)
+- [x] Initialize Cargo workspace
+- [x] Create project directory structure (cli, parser, transpiler, compiler, stdlib, error)
+- [x] Configure Cargo.toml with dependencies
+- [x] Set up rustfmt configuration
+- [x] Set up clippy configuration
+- [x] Create basic main.rs entry point
+- [x] Add development dependencies (test frameworks, benchmarking)
 
 ### 0.3 Development Tools
 
@@ -49,63 +49,63 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 1.1 Core Lexer Implementation
 
-- [ ] Define Token enum (all Python token types)
-- [ ] Implement character stream reader
-- [ ] Add line/column position tracking
-- [ ] Create basic tokenizer for keywords
-- [ ] Tokenize arithmetic operators (+, -, *, /, //, %, **)
-- [ ] Tokenize comparison operators (==, !=, <, >, <=, >=)
-- [ ] Tokenize bitwise operators (&, |, ^, ~, <<, >>)
-- [ ] Tokenize assignment operators (=, +=, -=, etc.)
-- [ ] Tokenize logical operators (and, or, not)
-- [ ] Tokenize membership operators (in, not in)
-- [ ] Tokenize identity operators (is, is not)
-- [ ] Tokenize walrus operator (:=)
-- [ ] Tokenize delimiters (parentheses, brackets, braces, commas, colons, semicolons)
-- [ ] Tokenize ellipsis (...)
-- [ ] Tokenize indentation (spaces, tabs)
-- [ ] Handle newlines and statement boundaries
+- [x] Define Token enum (all Python token types)
+- [x] Implement character stream reader
+- [x] Add line/column position tracking
+- [x] Create basic tokenizer for keywords
+- [x] Tokenize arithmetic operators (+, -, *, /, //, %, **)
+- [x] Tokenize comparison operators (==, !=, <, >, <=, >=)
+- [x] Tokenize bitwise operators (&, |, ^, ~, <<, >>)
+- [x] Tokenize assignment operators (=, +=, -=, etc.)
+- [x] Tokenize logical operators (and, or, not)
+- [x] Tokenize membership operators (in, not in)
+- [x] Tokenize identity operators (is, is not)
+- [x] Tokenize walrus operator (:=)
+- [x] Tokenize delimiters (parentheses, brackets, braces, commas, colons, semicolons)
+- [x] Tokenize ellipsis (...)
+- [x] Tokenize indentation (spaces, tabs)
+- [x] Handle newlines and statement boundaries
 
 ### 1.2 Literal Tokenization
 
-- [ ] Tokenize integer literals (decimal)
-- [ ] Tokenize floating-point literals
-- [ ] Tokenize string literals (single quotes)
-- [ ] Tokenize string literals (double quotes)
-- [ ] Handle escape sequences (\n, \t, \\, \', \")
-- [ ] Tokenize raw strings (r"...")
-- [ ] Tokenize f-strings (f"...")
-- [ ] Tokenize boolean literals (True, False)
-- [ ] Tokenize None literal
-- [ ] Support multi-line strings (triple quotes)
+- [x] Tokenize integer literals (decimal)
+- [x] Tokenize floating-point literals
+- [x] Tokenize string literals (single quotes)
+- [x] Tokenize string literals (double quotes)
+- [x] Handle escape sequences (\n, \t, \\, \', \", \0)
+- [x] Tokenize raw strings (r"...")
+- [x] Tokenize f-strings (f"...")
+- [x] Tokenize boolean literals (True, False)
+- [x] Tokenize None literal
+- [x] Support multi-line strings (triple quotes)
 
 ### 1.3 Advanced Lexer Features
 
-- [ ] Tokenize identifiers (variable names, function names)
-- [ ] Validate identifier naming rules
-- [ ] Handle comments (# single-line)
-- [ ] Support hexadecimal literals (0x...)
-- [ ] Support octal literals (0o...)
-- [ ] Support binary literals (0b...)
-- [ ] Handle Unicode identifiers
-- [ ] Implement lookahead for multi-character operators (==, !=, <=, >=, //, **, etc.)
+- [x] Tokenize identifiers (variable names, function names)
+- [x] Validate identifier naming rules
+- [x] Handle comments (# single-line)
+- [x] Support hexadecimal literals (0x...)
+- [x] Support octal literals (0o...)
+- [x] Support binary literals (0b...)
+- [x] Handle Unicode identifiers
+- [x] Implement lookahead for multi-character operators (==, !=, <=, >=, //, **, etc.)
 
 ### 1.4 Lexer Error Handling
 
-- [ ] Detect unterminated strings
-- [ ] Detect invalid escape sequences
-- [ ] Detect invalid numeric literals
-- [ ] Detect invalid characters
-- [ ] Provide clear error messages with position
-- [ ] Handle EOF gracefully
+- [x] Detect unterminated strings
+- [x] Detect invalid escape sequences
+- [x] Detect invalid numeric literals
+- [x] Detect invalid characters
+- [x] Provide clear error messages with position
+- [x] Handle EOF gracefully
 
 ### 1.5 Lexer Testing
 
-- [ ] Unit tests for all token types
-- [ ] Test edge cases (empty files, whitespace-only, etc.)
-- [ ] Test error conditions
-- [ ] Create lexer benchmarks
-- [ ] Add fuzzing tests for robustness
+- [x] Unit tests for all token types
+- [x] Test edge cases (empty files, whitespace-only, etc.)
+- [x] Test error conditions
+- [x] Create lexer benchmarks
+- [x] Add fuzzing tests for robustness
 
 ---
 
