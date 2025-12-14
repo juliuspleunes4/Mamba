@@ -13,8 +13,9 @@ pub struct Lexer<'a> {
     chars: Chars<'a>,
     current_char: Option<char>,
     position: SourcePosition,
-    #[allow(dead_code)] // TODO: Implement indentation handling
     indent_stack: Vec<usize>,
+    at_line_start: bool,
+    pending_dedents: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -29,6 +30,8 @@ impl<'a> Lexer<'a> {
             current_char,
             position: SourcePosition::start(),
             indent_stack: vec![0], // Start with 0 indentation
+            at_line_start: true,
+            pending_dedents: 0,
         }
     }
 
@@ -51,16 +54,45 @@ impl<'a> Lexer<'a> {
 
     /// Get the next token from the source
     pub fn next_token(&mut self) -> LexResult {
+        // Handle pending dedents first
+        if self.pending_dedents > 0 {
+            self.pending_dedents -= 1;
+            let pos = self.position;
+            return Ok(Token::new(TokenKind::Dedent, pos, String::new()));
+        }
+        
+        // Handle indentation at the start of a line
+        if self.at_line_start {
+            return self.handle_indentation();
+        }
+        
         // Skip whitespace (except newlines)
         self.skip_whitespace();
         
         let start_pos = self.position;
         
         match self.current_char {
-            None => Ok(Token::new(TokenKind::Eof, start_pos, String::new())),
+            None => {
+                // Emit any remaining dedents at EOF
+                if self.indent_stack.len() > 1 {
+                    // Calculate how many dedents we need (all levels except base level 0)
+                    let dedents_needed = self.indent_stack.len() - 1;
+                    self.indent_stack.clear();
+                    self.indent_stack.push(0); // Reset to base level
+                    
+                    // Queue all but one dedent
+                    if dedents_needed > 1 {
+                        self.pending_dedents = dedents_needed - 1;
+                    }
+                    
+                    return Ok(Token::new(TokenKind::Dedent, start_pos, String::new()));
+                }
+                Ok(Token::new(TokenKind::Eof, start_pos, String::new()))
+            }
             
             Some('\n') => {
                 self.advance();
+                self.at_line_start = true;
                 Ok(Token::new(TokenKind::Newline, start_pos, "\n".to_string()))
             }
             
@@ -809,5 +841,83 @@ impl<'a> Lexer<'a> {
             "Unterminated f-string at {}",
             start_pos
         )))
+    }
+    
+    /// Handle indentation at the start of a line
+    fn handle_indentation(&mut self) -> LexResult {
+        let start_pos = self.position;
+        
+        // Count leading whitespace
+        let mut indent_level = 0;
+        let mut has_tabs = false;
+        let mut has_spaces = false;
+        
+        while let Some(c) = self.current_char {
+            match c {
+                ' ' => {
+                    has_spaces = true;
+                    indent_level += 1;
+                    self.advance();
+                }
+                '\t' => {
+                    has_tabs = true;
+                    indent_level += 8; // Tab = 8 spaces
+                    self.advance();
+                }
+                _ => break,
+            }
+        }
+        
+        // Check for mixed tabs and spaces
+        if has_tabs && has_spaces {
+            return Err(MambaError::SyntaxError(format!(
+                "Mixed tabs and spaces in indentation at {}",
+                start_pos
+            )));
+        }
+        
+        // Empty lines and comment-only lines don't affect indentation
+        if matches!(self.current_char, Some('\n') | Some('#') | None) {
+            self.at_line_start = false;
+            // For empty lines (newline immediately), emit the newline normally
+            // This will set at_line_start back to true for the next line
+            return self.next_token();
+        }
+        
+        self.at_line_start = false;
+        let current_indent = *self.indent_stack.last().unwrap();
+        
+        if indent_level > current_indent {
+            // Indentation increased - emit INDENT
+            self.indent_stack.push(indent_level);
+            Ok(Token::new(TokenKind::Indent, start_pos, String::new()))
+        } else if indent_level < current_indent {
+            // Indentation decreased - emit DEDENT(s)
+            let mut dedent_count = 0;
+            
+            // Pop until we find matching indentation level
+            while self.indent_stack.len() > 1 && *self.indent_stack.last().unwrap() > indent_level {
+                self.indent_stack.pop();
+                dedent_count += 1;
+            }
+            
+            // Check if we found a matching level
+            if *self.indent_stack.last().unwrap() != indent_level {
+                return Err(MambaError::SyntaxError(format!(
+                    "Inconsistent indentation at {} (expected one of {:?}, got {})",
+                    start_pos, self.indent_stack, indent_level
+                )));
+            }
+            
+            // Emit first DEDENT now, queue the rest
+            if dedent_count > 1 {
+                self.pending_dedents = dedent_count - 1;
+            }
+            
+            Ok(Token::new(TokenKind::Dedent, start_pos, String::new()))
+        } else {
+            // Same indentation level - continue with next token
+            self.next_token()
+        }
     }
 }

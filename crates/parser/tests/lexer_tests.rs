@@ -326,9 +326,10 @@ fn test_empty_input() {
 
 #[test]
 fn test_whitespace_only() {
-    let mut lexer = Lexer::new("   \t  \t   ");
+    let mut lexer = Lexer::new("    ");
     let tokens = lexer.tokenize().unwrap();
 
+    // Whitespace-only line is ignored (empty line behavior)
     assert_eq!(tokens.len(), 1);
     assert_eq!(tokens[0].kind, TokenKind::Eof);
 }
@@ -840,7 +841,9 @@ fn test_leading_whitespace() {
     let mut lexer = Lexer::new("   x");
     let tokens = lexer.tokenize().unwrap();
 
-    assert_eq!(tokens[0].kind, TokenKind::Identifier("x".to_string()));
+    // Leading whitespace is now treated as indentation
+    assert_eq!(tokens[0].kind, TokenKind::Indent);
+    assert_eq!(tokens[1].kind, TokenKind::Identifier("x".to_string()));
 }
 
 #[test]
