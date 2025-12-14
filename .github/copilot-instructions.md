@@ -54,14 +54,16 @@
 ## Developing rules
 
 !CRITICAL:
-
 - Small increments every step. Do not make large changes in one go. 
   If a change is too big, break it down into smaller parts that can be done in separate steps.
+- THOROUGLY test EVERY aspect you implemented. DO NOT just test happy paths, but also edge cases and failure cases.
+- Do NOT create new `.md` files to summarize what changes you made.
+- Do NOT add mock data. Only placeholders marked with TODO comments are allowed.
+
+!IMPORTANT:
 - Use Rust as the programming language.
 - Follow standard Rust coding conventions.
 - Document the code thoroughly with comments.
 - Keep the codebase clean and well organized.
 - Sort the code into different files and packages based on functionality.
 - Mark all changes in `docs/CHANGELOG.md`.
-- Do NOT create new `.md` files to summarize what changes you made.
-- Do NOT add mock data. Only placeholders marked with TODO comments are allowed.
