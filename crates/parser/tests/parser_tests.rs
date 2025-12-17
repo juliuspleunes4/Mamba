@@ -2366,6 +2366,175 @@ fn test_parse_kwonly_duplicate_varargs() {
 }
 
 // ============================================================================
+// Positional-Only Parameters Tests
+// ============================================================================
+
+#[test]
+fn test_parse_posonly_basic() {
+    // Basic: def func(a, /, b)
+    let result = parse("def func(a, /, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_with_defaults() {
+    // Positional-only with defaults: def func(a=1, b=2, /)
+    let result = parse("def func(a=1, b=2, /):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert!(parameters[0].default.is_some());
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::PositionalOnly));
+        assert!(parameters[1].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_mixed_with_regular() {
+    // Mixed: def func(a, b, /, c, d)
+    let result = parse("def func(a, b, /, c, d):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 4);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::Regular));
+        assert_eq!(parameters[3].name, "d");
+        assert!(matches!(parameters[3].kind, ParameterKind::Regular));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_full_combo() {
+    // Full combination: def func(a, /, b, *args, c, **kwargs)
+    let result = parse("def func(a, /, b, *args, c, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 5);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        
+        assert_eq!(parameters[4].name, "kwargs");
+        assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_only() {
+    // Only positional-only: def func(a, b, /)
+    let result = parse("def func(a, b, /):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::PositionalOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_with_kwonly() {
+    // With keyword-only: def func(a, /, b, *, c)
+    let result = parse("def func(a, /, b, *, c):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_trailing_comma() {
+    // Trailing comma: def func(a, /,)
+    let result = parse("def func(a, /,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_duplicate_slash() {
+    // Error: multiple / markers (def func(a, /, b, /, c))
+    let result = parse("def func(a, /, b, /, c):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_posonly_slash_after_star() {
+    // Error: / after * (def func(*args, /))
+    let result = parse("def func(*args, /):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_posonly_slash_after_kwargs() {
+    // Error: / after ** (def func(**kwargs, /))
+    let result = parse("def func(**kwargs, /):\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 

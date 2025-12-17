@@ -924,6 +924,7 @@ impl Parser {
     /// Parse parameter list inside function definition
     fn parse_parameter_list(&mut self) -> ParseResult<Vec<Parameter>> {
         let mut parameters = Vec::new();
+        let mut seen_slash = false;              // Have we seen / marker?
         let mut seen_varargs_or_bare_star = false;
         let mut seen_varkwargs = false;
         let mut seen_default = false;
@@ -937,8 +938,39 @@ impl Parser {
         loop {
             let param_pos = self.current_position();
             
+            // Check for / (positional-only marker)
+            if self.match_token(&TokenKind::Slash) {
+                if seen_slash {
+                    return Err(MambaError::ParseError(
+                        format!("Duplicate '/' parameter at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                if seen_varargs_or_bare_star {
+                    return Err(MambaError::ParseError(
+                        format!("'/' must come before '*' or '*args' at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                if seen_varkwargs {
+                    return Err(MambaError::ParseError(
+                        format!("'/' must come before '**kwargs' at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                
+                // Mark all previous parameters as positional-only
+                for param in &mut parameters {
+                    if matches!(param.kind, ParameterKind::Regular) {
+                        param.kind = ParameterKind::PositionalOnly;
+                    }
+                }
+                
+                seen_slash = true;
+                seen_default = false; // Reset default tracking after /
+            }
             // Check for **kwargs
-            if self.match_token(&TokenKind::DoubleStar) {
+            else if self.match_token(&TokenKind::DoubleStar) {
                 if seen_varkwargs {
                     return Err(MambaError::ParseError(
                         format!("Duplicate **kwargs parameter at {}:{}", 
@@ -1018,7 +1050,7 @@ impl Parser {
                     in_kwonly_section = true; // Parameters after *args are keyword-only
                 }
             }
-            // Regular or keyword-only parameter
+            // Regular, positional-only, or keyword-only parameter
             else {
                 if seen_varkwargs {
                     return Err(MambaError::ParseError(
@@ -1053,6 +1085,7 @@ impl Parser {
                 let kind = if in_kwonly_section {
                     ParameterKind::KwOnly
                 } else {
+                    // Before / or after /: Regular (will be marked PositionalOnly if before /)
                     // Regular parameter validation: no default → default order
                     if default.is_some() {
                         seen_default = true;
@@ -1087,7 +1120,6 @@ impl Parser {
         
         Ok(parameters)
     }
-
     /// Parse an indented block of statements (INDENT ... DEDENT)
     fn parse_block(&mut self) -> ParseResult<Vec<Statement>> {
         // Consume newline after colon

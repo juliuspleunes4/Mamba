@@ -359,6 +359,7 @@ pub enum AugmentedOperator {
 /// Parameter kind (regular, *args, **kwargs, keyword-only)
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParameterKind {
+    PositionalOnly, // before / marker
     Regular,   // x or x=default
     VarArgs,   // *args
     VarKwargs, // **kwargs
