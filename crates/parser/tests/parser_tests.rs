@@ -1543,7 +1543,7 @@ fn test_parse_function_no_params() {
             assert_eq!(parameters.len(), 0);
             assert_eq!(body.len(), 1);
             match &body[0] {
-                Statement::Pass { .. } => {},
+                Statement::Pass(_) => {},
                 _ => panic!("Expected pass statement in body"),
             }
         }
