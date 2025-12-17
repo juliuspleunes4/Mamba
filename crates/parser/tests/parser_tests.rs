@@ -2535,6 +2535,169 @@ fn test_parse_posonly_slash_after_kwargs() {
 }
 
 // ============================================================================
+// Async Function Tests
+// ============================================================================
+
+#[test]
+fn test_parse_async_basic() {
+    // Basic: async def func(): pass
+    let result = parse("async def func():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, is_async, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert!(is_async);
+        assert_eq!(parameters.len(), 0);
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_parameters() {
+    // Async with parameters: async def func(a, b)
+    let result = parse("async def func(a, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { name, is_async, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert!(is_async);
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert_eq!(parameters[1].name, "b");
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_defaults() {
+    // Async with defaults: async def func(a=1, b=2)
+    let result = parse("async def func(a=1, b=2):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 2);
+        assert!(parameters[0].default.is_some());
+        assert!(parameters[1].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_varargs() {
+    // Async with *args: async def func(*args)
+    let result = parse("async def func(*args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "args");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_kwargs() {
+    // Async with **kwargs: async def func(**kwargs)
+    let result = parse("async def func(**kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "kwargs");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_all_param_types() {
+    // Full combination: async def func(a, /, b, *args, c, **kwargs)
+    let result = parse("async def func(a, /, b, *args, c, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 5);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        assert_eq!(parameters[4].name, "kwargs");
+        assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_method_in_class() {
+    // Async method: class X:\n    async def method(self): pass
+    let result = parse("class X:\n    async def method(self):\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::ClassDef { body, .. } = &ast.statements[0] {
+        assert_eq!(body.len(), 1);
+        if let Statement::FunctionDef { name, is_async, .. } = &body[0] {
+            assert_eq!(name, "method");
+            assert!(is_async);
+        } else {
+            panic!("Expected FunctionDef in class body");
+        }
+    } else {
+        panic!("Expected ClassDef");
+    }
+}
+
+#[test]
+fn test_parse_async_without_def_error() {
+    // Error: async without def (async x = 1)
+    let result = parse("async x = 1\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_async_missing_body_error() {
+    // Error: missing body (async def func():)
+    let result = parse("async def func():\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_regular_function_not_async() {
+    // Regular function should have is_async = false
+    let result = parse("def func():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, .. } = &ast.statements[0] {
+        assert!(!is_async);
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 

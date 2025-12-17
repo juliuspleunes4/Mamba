@@ -68,7 +68,23 @@ impl Parser {
             Some(TokenKind::If) => self.parse_if(),
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
-            Some(TokenKind::Def) => self.parse_function_def(),
+            Some(TokenKind::Def) => {
+                self.advance(); // consume 'def'
+                self.parse_function_def(false)
+            }
+            Some(TokenKind::Async) => {
+                // Check if this is async def
+                self.advance(); // consume 'async'
+                if self.match_token(&TokenKind::Def) {
+                    self.parse_function_def(true)
+                } else {
+                    return Err(MambaError::ParseError(
+                        format!("Expected 'def' after 'async' at {}:{}", 
+                            self.current_position().line, 
+                            self.current_position().column)
+                    ));
+                }
+            }
             Some(TokenKind::Class) => self.parse_class_def(),
             _ => {
                 // Try to parse as assignment or expression
@@ -781,9 +797,9 @@ impl Parser {
     }
 
     /// Parse function definition (def name(params): body)
-    fn parse_function_def(&mut self) -> ParseResult<Statement> {
+    fn parse_function_def(&mut self, is_async: bool) -> ParseResult<Statement> {
         let pos = self.current_position();
-        self.advance(); // consume 'def'
+        // 'def' already consumed by caller
         
         // Parse function name
         let name = match self.current_kind() {
@@ -838,6 +854,7 @@ impl Parser {
             name,
             parameters,
             body,
+            is_async,
             position: pos,
         })
     }

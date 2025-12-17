@@ -126,6 +126,7 @@ pub enum Statement {
         name: String,
         parameters: Vec<Parameter>,
         body: Vec<Statement>,
+        is_async: bool,
         position: SourcePosition,
     },
     /// Class definition
