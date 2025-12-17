@@ -77,12 +77,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * If/elif/else statements with proper indentation handling and chained elif blocks
       * While loops with optional else clause (executes if loop completes without break)
       * For loops with optional else clause, supporting tuple unpacking (for x, y in items)
-  - Parser test suite: 236 tests (231 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for)
-  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages
-  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error
+    - Function definitions:
+      * Basic function definitions with def keyword (def foo(): pass)
+      * Async function definitions with async def keyword (async def foo(): pass)
+      * Function parameters (simple, multiple, default values)
+      * Variadic positional parameters (*args)
+      * Variadic keyword parameters (**kwargs)
+      * Keyword-only parameters (after * or *args)
+      * Bare * separator for keyword-only parameters (def func(a, *, b): pass)
+      * Keyword-only parameters with defaults (def func(*, a=1, b=2): pass)
+      * Positional-only parameters (before /)
+      * / separator for positional-only parameters (def func(a, /, b): pass)
+      * Positional-only parameters with defaults (def func(a=1, /, b): pass)
+      * Mixed positional-only, regular, and keyword-only parameters
+      * Full parameter combination support (pos-only → regular → defaults → *args → keyword-only → **kwargs)
+      * Async functions with all parameter types (async def func(a, /, b, *args, c, **kwargs): pass)
+      * Parameter order validation with all parameter types
+      * Nested function definitions
+      * Async methods in classes
+      * Complex default values (expressions, lists, dicts)
+      * Parameter type annotations (x: int, y: str)
+      * Type annotations for all parameter kinds (regular, positional-only, keyword-only, *args, **kwargs)
+      * Generic type annotations (List[int], Optional[str], List[List[int]])
+    - Class definitions:
+      * Basic class definitions with class keyword (class Foo: pass)
+      * Class body with statements and methods
+      * Single inheritance (class Child(Parent): pass)
+      * Multiple inheritance (class Child(Parent1, Parent2): pass)
+      * Inheritance with dotted names (class Child(pkg.Module): pass)
+      * Nested class definitions
+      * Complex class bodies with attributes and methods
+  - Parser test suite: 326 tests (321 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types including positional-only and keyword-only parameters, async function definitions, parameter type annotations, class definitions with inheritance and async methods
+  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations, invalid class names, duplicate * or *args or / parameters, / after * validation, async without def validation
+  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation; positional-only and keyword-only parameter validation; async keyword must be followed by def
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
-  - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal
-  - **378 total tests, all passing (142 lexer + 236 parser)**
+  - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages; clear async syntax error messages
+  - **468 total tests, all passing (142 lexer + 326 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

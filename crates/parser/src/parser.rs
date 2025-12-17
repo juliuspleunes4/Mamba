@@ -68,6 +68,26 @@ impl Parser {
             Some(TokenKind::If) => self.parse_if(),
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
+            Some(TokenKind::Def) => {
+                let pos = self.current_position();
+                self.advance(); // consume 'def'
+                self.parse_function_def(false, pos)
+            }
+            Some(TokenKind::Async) => {
+                // Check if this is async def
+                let pos = self.current_position();
+                self.advance(); // consume 'async'
+                if self.match_token(&TokenKind::Def) {
+                    self.parse_function_def(true, pos)
+                } else {
+                    return Err(MambaError::ParseError(
+                        format!("Expected 'def' after 'async' at {}:{}", 
+                            self.current_position().line, 
+                            self.current_position().column)
+                    ));
+                }
+            }
+            Some(TokenKind::Class) => self.parse_class_def(),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -778,6 +798,370 @@ impl Parser {
         }
     }
 
+    /// Parse function definition (def name(params): body)
+    fn parse_function_def(&mut self, is_async: bool, pos: SourcePosition) -> ParseResult<Statement> {
+        // 'def' already consumed by caller
+        
+        // Parse function name
+        let name = match self.current_kind() {
+            Some(TokenKind::Identifier(n)) => {
+                let func_name = n.clone();
+                self.advance();
+                func_name
+            }
+            _ => {
+                return Err(MambaError::ParseError(
+                    format!("Expected function name after 'def' at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+        };
+        
+        // Expect opening parenthesis
+        if !self.match_token(&TokenKind::LeftParen) {
+            return Err(MambaError::ParseError(
+                format!("Expected '(' after function name at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse parameter list
+        let parameters = self.parse_parameter_list()?;
+        
+        // Expect closing parenthesis
+        if !self.match_token(&TokenKind::RightParen) {
+            return Err(MambaError::ParseError(
+                format!("Expected ')' after parameters at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Expect colon
+        if !self.match_token(&TokenKind::Colon) {
+            return Err(MambaError::ParseError(
+                format!("Expected ':' after function signature at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse body
+        let body = self.parse_block()?;
+        
+        Ok(Statement::FunctionDef {
+            name,
+            parameters,
+            body,
+            is_async,
+            position: pos,
+        })
+    }
+
+    /// Parse class definition (class Name[(bases)]: body)
+    fn parse_class_def(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'class'
+        
+        // Parse class name
+        let name = match self.current_kind() {
+            Some(TokenKind::Identifier(n)) => {
+                let class_name = n.clone();
+                self.advance();
+                class_name
+            }
+            _ => {
+                return Err(MambaError::ParseError(
+                    format!("Expected class name after 'class' at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+        };
+        
+        // Parse optional base classes (inheritance)
+        let bases = if self.match_token(&TokenKind::LeftParen) {
+            let mut base_list = Vec::new();
+            
+            // Check for empty parentheses
+            if !self.check(&TokenKind::RightParen) {
+                loop {
+                    // Parse base class expression (identifier or attribute access)
+                    let base = self.parse_expression()?;
+                    base_list.push(base);
+                    
+                    // Check for comma (more base classes)
+                    if self.match_token(&TokenKind::Comma) {
+                        // Allow trailing comma
+                        if self.check(&TokenKind::RightParen) {
+                            break;
+                        }
+                        continue;
+                    } else {
+                        break;
+                    }
+                }
+            }
+            
+            // Expect closing parenthesis
+            if !self.match_token(&TokenKind::RightParen) {
+                return Err(MambaError::ParseError(
+                    format!("Expected ')' after base classes at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+            
+            base_list
+        } else {
+            Vec::new()
+        };
+        
+        // Expect colon
+        if !self.match_token(&TokenKind::Colon) {
+            return Err(MambaError::ParseError(
+                format!("Expected ':' after class header at {}:{}", 
+                    self.current_position().line, 
+                    self.current_position().column)
+            ));
+        }
+        
+        // Parse body
+        let body = self.parse_block()?;
+        
+        Ok(Statement::ClassDef {
+            name,
+            bases,
+            body,
+            position: pos,
+        })
+    }
+
+    /// Parse parameter list inside function definition
+    fn parse_parameter_list(&mut self) -> ParseResult<Vec<Parameter>> {
+        let mut parameters = Vec::new();
+        let mut seen_slash = false;              // Have we seen / marker?
+        let mut seen_varargs_or_bare_star = false;
+        let mut seen_varkwargs = false;
+        let mut seen_default = false;
+        let mut in_kwonly_section = false;
+        
+        // Check for empty parameter list
+        if self.check(&TokenKind::RightParen) {
+            return Ok(parameters);
+        }
+        
+        loop {
+            let param_pos = self.current_position();
+            
+            // Check for / (positional-only marker)
+            if self.match_token(&TokenKind::Slash) {
+                if seen_slash {
+                    return Err(MambaError::ParseError(
+                        format!("Duplicate '/' parameter at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                if seen_varargs_or_bare_star {
+                    return Err(MambaError::ParseError(
+                        format!("'/' must come before '*' or '*args' at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                if seen_varkwargs {
+                    return Err(MambaError::ParseError(
+                        format!("'/' must come before '**kwargs' at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                
+                // Mark all previous parameters as positional-only
+                for param in &mut parameters {
+                    if matches!(param.kind, ParameterKind::Regular) {
+                        param.kind = ParameterKind::PositionalOnly;
+                    }
+                }
+                
+                seen_slash = true;
+                seen_default = false; // Reset default tracking after /
+            }
+            // Check for **kwargs
+            else if self.match_token(&TokenKind::DoubleStar) {
+                if seen_varkwargs {
+                    return Err(MambaError::ParseError(
+                        format!("Duplicate **kwargs parameter at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                
+                let param_name = match self.current_kind() {
+                    Some(TokenKind::Identifier(n)) => {
+                        let name = n.clone();
+                        self.advance();
+                        name
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected parameter name after '**' at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                };
+                
+                // Check for type annotation (: type)
+                let type_annotation = if self.match_token(&TokenKind::Colon) {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
+                
+                parameters.push(Parameter {
+                    name: param_name,
+                    kind: ParameterKind::VarKwargs,
+                    default: None,
+                    type_annotation,
+                    position: param_pos,
+                });
+                
+                seen_varkwargs = true;
+            }
+            // Check for * (either *args or bare * for keyword-only)
+            else if self.match_token(&TokenKind::Star) {
+                if seen_varargs_or_bare_star {
+                    return Err(MambaError::ParseError(
+                        format!("Duplicate * or *args parameter at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                if seen_varkwargs {
+                    return Err(MambaError::ParseError(
+                        format!("* or *args must come before **kwargs at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                
+                // Check if this is bare * (keyword-only marker) or *args
+                if self.check(&TokenKind::Comma) || self.check(&TokenKind::RightParen) {
+                    // Bare * - marks start of keyword-only parameters
+                    in_kwonly_section = true;
+                    seen_varargs_or_bare_star = true;
+                } else {
+                    // This is *args
+                    let param_name = match self.current_kind() {
+                        Some(TokenKind::Identifier(n)) => {
+                            let name = n.clone();
+                            self.advance();
+                            name
+                        }
+                        _ => {
+                            return Err(MambaError::ParseError(
+                                format!("Expected parameter name after '*' at {}:{}", 
+                                    self.current_position().line, 
+                                    self.current_position().column)
+                            ));
+                        }
+                    };
+                    
+                    // Check for type annotation (: type)
+                    let type_annotation = if self.match_token(&TokenKind::Colon) {
+                        Some(self.parse_expression()?)
+                    } else {
+                        None
+                    };
+                    
+                    parameters.push(Parameter {
+                        name: param_name,
+                        kind: ParameterKind::VarArgs,
+                        default: None,
+                        type_annotation,
+                        position: param_pos,
+                    });
+                    
+                    seen_varargs_or_bare_star = true;
+                    in_kwonly_section = true; // Parameters after *args are keyword-only
+                }
+            }
+            // Regular, positional-only, or keyword-only parameter
+            else {
+                if seen_varkwargs {
+                    return Err(MambaError::ParseError(
+                        format!("Parameter cannot appear after **kwargs at {}:{}", 
+                            param_pos.line, param_pos.column)
+                    ));
+                }
+                
+                let param_name = match self.current_kind() {
+                    Some(TokenKind::Identifier(n)) => {
+                        let name = n.clone();
+                        self.advance();
+                        name
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected parameter name at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                };
+                
+                // Check for type annotation (: type)
+                let type_annotation = if self.match_token(&TokenKind::Colon) {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
+                
+                // Check for default value (=)
+                let default = if self.match_token(&TokenKind::Assign) {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
+                
+                // Determine parameter kind
+                let kind = if in_kwonly_section {
+                    ParameterKind::KwOnly
+                } else {
+                    // Before / or after /: Regular (will be marked PositionalOnly if before /)
+                    // Regular parameter validation: no default → default order
+                    if default.is_some() {
+                        seen_default = true;
+                    } else if seen_default {
+                        return Err(MambaError::ParseError(
+                            format!("Parameter without default cannot follow parameter with default at {}:{}", 
+                                param_pos.line, param_pos.column)
+                        ));
+                    }
+                    ParameterKind::Regular
+                };
+                
+                parameters.push(Parameter {
+                    name: param_name,
+                    kind,
+                    default,
+                    type_annotation,
+                    position: param_pos,
+                });
+            }
+            
+            // Check for comma (more parameters)
+            if self.match_token(&TokenKind::Comma) {
+                // Allow trailing comma
+                if self.check(&TokenKind::RightParen) {
+                    break;
+                }
+                continue;
+            } else {
+                break;
+            }
+        }
+        
+        Ok(parameters)
+    }
     /// Parse an indented block of statements (INDENT ... DEDENT)
     fn parse_block(&mut self) -> ParseResult<Vec<Statement>> {
         // Consume newline after colon

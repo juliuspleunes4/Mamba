@@ -1527,6 +1527,1177 @@ fn test_parse_for_with_break_continue() {
 }
 
 // ============================================================================
+// Function Definition Tests
+// ============================================================================
+
+#[test]
+fn test_parse_function_no_params() {
+    let result = parse("def foo():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, body, .. } => {
+            assert_eq!(name, "foo");
+            assert_eq!(parameters.len(), 0);
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::Pass(_) => {},
+                _ => panic!("Expected pass statement in body"),
+            }
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_single_param() {
+    let result = parse("def add(x):\n    return x\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, body, .. } => {
+            assert_eq!(name, "add");
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0].name, "x");
+            assert!(parameters[0].default.is_none());
+            assert_eq!(body.len(), 1);
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_multiple_params() {
+    let result = parse("def add(x, y, z):\n    return x + y + z\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "add");
+            assert_eq!(parameters.len(), 3);
+            assert_eq!(parameters[0].name, "x");
+            assert_eq!(parameters[1].name, "y");
+            assert_eq!(parameters[2].name, "z");
+            assert!(parameters[0].default.is_none());
+            assert!(parameters[1].default.is_none());
+            assert!(parameters[2].default.is_none());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_default_param() {
+    let result = parse("def greet(name, greeting='Hello'):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "greet");
+            assert_eq!(parameters.len(), 2);
+            assert_eq!(parameters[0].name, "name");
+            assert!(parameters[0].default.is_none());
+            assert_eq!(parameters[1].name, "greeting");
+            assert!(parameters[1].default.is_some());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_all_defaults() {
+    let result = parse("def func(a=1, b=2, c=3):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert!(parameters[0].default.is_some());
+            assert!(parameters[1].default.is_some());
+            assert!(parameters[2].default.is_some());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_trailing_comma() {
+    let result = parse("def func(a, b,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 2);
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_multiline_body() {
+    let result = parse("def compute():\n    x = 1\n    y = 2\n    return x + y\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { body, .. } => {
+            assert_eq!(body.len(), 3);
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_nested_function() {
+    let result = parse("def outer():\n    def inner():\n        pass\n    return inner\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, body, .. } => {
+            assert_eq!(name, "outer");
+            assert_eq!(body.len(), 2);
+            match &body[0] {
+                Statement::FunctionDef { name, .. } => {
+                    assert_eq!(name, "inner");
+                }
+                _ => panic!("Expected nested function definition"),
+            }
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_complex_defaults() {
+    let result = parse("def func(a=1+2, b=[1,2,3], c={'x': 1}):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert!(parameters[0].default.is_some());
+            assert!(parameters[1].default.is_some());
+            assert!(parameters[2].default.is_some());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_if_body() {
+    let result = parse("def check(x):\n    if x > 0:\n        return True\n    return False\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { body, .. } => {
+            assert_eq!(body.len(), 2);
+            match &body[0] {
+                Statement::If { .. } => {},
+                _ => panic!("Expected if statement"),
+            }
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+// Error cases
+
+#[test]
+fn test_parse_function_missing_name() {
+    let result = parse("def ():\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_parens() {
+    let result = parse("def foo:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_colon() {
+    let result = parse("def foo()\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_body() {
+    let result = parse("def foo():\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_invalid_param_name() {
+    let result = parse("def foo(123):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_missing_closing_paren() {
+    let result = parse("def foo(x:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_invalid_default() {
+    let result = parse("def foo(x=):\n    pass\n");
+    assert!(result.is_err());
+}
+
+// Variadic parameters tests
+
+#[test]
+fn test_parse_function_with_args_only() {
+    let result = parse("def foo(*args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "foo");
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0].name, "args");
+            assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+            assert!(parameters[0].default.is_none());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_kwargs_only() {
+    let result = parse("def foo(**kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { name, parameters, .. } => {
+            assert_eq!(name, "foo");
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0].name, "kwargs");
+            assert!(matches!(parameters[0].kind, ParameterKind::VarKwargs));
+            assert!(parameters[0].default.is_none());
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_with_args_and_kwargs() {
+    let result = parse("def foo(*args, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 2);
+            assert_eq!(parameters[0].name, "args");
+            assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+            assert_eq!(parameters[1].name, "kwargs");
+            assert!(matches!(parameters[1].kind, ParameterKind::VarKwargs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_regular_and_args() {
+    let result = parse("def foo(x, y, *args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert_eq!(parameters[0].name, "x");
+            assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+            assert_eq!(parameters[1].name, "y");
+            assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+            assert_eq!(parameters[2].name, "args");
+            assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_regular_and_kwargs() {
+    let result = parse("def foo(x, y, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert_eq!(parameters[0].name, "x");
+            assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+            assert_eq!(parameters[1].name, "y");
+            assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+            assert_eq!(parameters[2].name, "kwargs");
+            assert!(matches!(parameters[2].kind, ParameterKind::VarKwargs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_all_parameter_types() {
+    let result = parse("def foo(a, b, c=3, *args, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 5);
+            assert_eq!(parameters[0].name, "a");
+            assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+            assert!(parameters[0].default.is_none());
+            assert_eq!(parameters[1].name, "b");
+            assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+            assert!(parameters[1].default.is_none());
+            assert_eq!(parameters[2].name, "c");
+            assert!(matches!(parameters[2].kind, ParameterKind::Regular));
+            assert!(parameters[2].default.is_some());
+            assert_eq!(parameters[3].name, "args");
+            assert!(matches!(parameters[3].kind, ParameterKind::VarArgs));
+            assert_eq!(parameters[4].name, "kwargs");
+            assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_defaults_before_args() {
+    let result = parse("def foo(x=1, y=2, *args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::FunctionDef { parameters, .. } => {
+            assert_eq!(parameters.len(), 3);
+            assert!(parameters[0].default.is_some());
+            assert!(parameters[1].default.is_some());
+            assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        }
+        _ => panic!("Expected function definition"),
+    }
+}
+
+#[test]
+fn test_parse_function_trailing_comma_after_args() {
+    let result = parse("def foo(*args,):\n    pass\n");
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_parse_function_trailing_comma_after_kwargs() {
+    let result = parse("def foo(**kwargs,):\n    pass\n");
+    assert!(result.is_ok());
+}
+
+// Error tests for variadic parameters
+
+#[test]
+fn test_parse_function_multiple_args_error() {
+    let result = parse("def foo(*args, *more):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_multiple_kwargs_error() {
+    let result = parse("def foo(**kwargs, **more):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_kwargs_before_args_error() {
+    let result = parse("def foo(**kwargs, *args):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_regular_after_args_error() {
+    // This is actually valid Python 3 - parameters after *args are keyword-only
+    // Changed to test **kwargs followed by anything, which is the real error
+    let result = parse("def foo(**kwargs, x):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_regular_after_kwargs_error() {
+    let result = parse("def foo(**kwargs, x):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_default_after_args_error() {
+    // This is actually valid Python 3 - parameters after *args are keyword-only
+    // Changed to test the same as above
+    let result = parse("def foo(**kwargs, x=1):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_function_param_without_default_after_default_error() {
+    let result = parse("def foo(x=1, y):\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// Class Definition Tests
+// ============================================================================
+
+#[test]
+fn test_parse_class_empty() {
+    let result = parse("class Foo:\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, bases, body, .. } => {
+            assert_eq!(name, "Foo");
+            assert_eq!(bases.len(), 0);
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::Pass(_) => {},
+                _ => panic!("Expected pass statement in body"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_with_statements() {
+    let result = parse("class Person:\n    name = 'Unknown'\n    age = 0\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, body, .. } => {
+            assert_eq!(name, "Person");
+            assert_eq!(body.len(), 2);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_with_method() {
+    let result = parse("class Person:\n    def greet(self):\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, body, .. } => {
+            assert_eq!(name, "Person");
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::FunctionDef { name, .. } => {
+                    assert_eq!(name, "greet");
+                }
+                _ => panic!("Expected function definition"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_with_multiple_methods() {
+    let result = parse("class Person:\n    def __init__(self):\n        pass\n    def greet(self):\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { body, .. } => {
+            assert_eq!(body.len(), 2);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_single_inheritance() {
+    let result = parse("class Child(Parent):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, bases, .. } => {
+            assert_eq!(name, "Child");
+            assert_eq!(bases.len(), 1);
+            match &bases[0] {
+                Expression::Identifier { name, .. } => {
+                    assert_eq!(name, "Parent");
+                }
+                _ => panic!("Expected identifier for base class"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_multiple_inheritance() {
+    let result = parse("class Child(Parent1, Parent2, Parent3):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, bases, .. } => {
+            assert_eq!(name, "Child");
+            assert_eq!(bases.len(), 3);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_inheritance_with_dotted_name() {
+    let result = parse("class MyClass(package.module.BaseClass):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { bases, .. } => {
+            assert_eq!(bases.len(), 1);
+            match &bases[0] {
+                Expression::Attribute { .. } => {},
+                _ => panic!("Expected attribute access for dotted base class"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_empty_inheritance_parens() {
+    let result = parse("class Foo():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { bases, .. } => {
+            assert_eq!(bases.len(), 0);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_trailing_comma_in_bases() {
+    let result = parse("class Child(Parent1, Parent2,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { bases, .. } => {
+            assert_eq!(bases.len(), 2);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_nested_class() {
+    let result = parse("class Outer:\n    class Inner:\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { name, body, .. } => {
+            assert_eq!(name, "Outer");
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::ClassDef { name, .. } => {
+                    assert_eq!(name, "Inner");
+                }
+                _ => panic!("Expected nested class definition"),
+            }
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+#[test]
+fn test_parse_class_complex_body() {
+    let result = parse("class Person:\n    name = 'Unknown'\n    def __init__(self, name):\n        self.name = name\n    def greet(self):\n        return self.name\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    match &ast.statements[0] {
+        Statement::ClassDef { body, .. } => {
+            assert_eq!(body.len(), 3);
+        }
+        _ => panic!("Expected class definition"),
+    }
+}
+
+// Error tests for class definitions
+
+#[test]
+fn test_parse_class_missing_name() {
+    let result = parse("class :\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_missing_colon() {
+    let result = parse("class Foo\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_missing_body() {
+    let result = parse("class Foo:\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_keyword_as_name() {
+    let result = parse("class if:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_number_as_name() {
+    let result = parse("class 123:\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_class_missing_closing_paren() {
+    let result = parse("class Child(Parent:\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// Keyword-Only Parameters Tests
+// ============================================================================
+
+#[test]
+fn test_parse_kwonly_bare_star() {
+    // Basic: def func(a, *, b)
+    let result = parse("def func(a, *, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_with_defaults() {
+    // Keyword-only with defaults: def func(a, *, b=1, c=2)
+    let result = parse("def func(a, *, b=1, c=2):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+        assert!(parameters[1].default.is_some());
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+        assert!(parameters[2].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_after_varargs() {
+    // Keyword-only after *args: def func(a, *args, b)
+    let result = parse("def func(a, *args, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert_eq!(parameters[1].name, "args");
+        assert!(matches!(parameters[1].kind, ParameterKind::VarArgs));
+        assert_eq!(parameters[2].name, "b");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_full_combo() {
+    // Full combination: def func(a, b=1, *args, c, d=2, **kwargs)
+    let result = parse("def func(a, b=1, *args, c, d=2, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 6);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert!(parameters[0].default.is_none());
+        
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert!(parameters[1].default.is_some());
+        
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        assert!(parameters[3].default.is_none());
+        
+        assert_eq!(parameters[4].name, "d");
+        assert!(matches!(parameters[4].kind, ParameterKind::KwOnly));
+        assert!(parameters[4].default.is_some());
+        
+        assert_eq!(parameters[5].name, "kwargs");
+        assert!(matches!(parameters[5].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_only() {
+    // Only keyword-only: def func(*, a, b)
+    let result = parse("def func(*, a, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::KwOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_trailing_comma() {
+    // Trailing comma: def func(a, *, b,)
+    let result = parse("def func(a, *, b,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_mixed_defaults() {
+    // Mix of keyword-only with and without defaults: def func(*, a, b=1, c)
+    let result = parse("def func(*, a, b=1, c):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::KwOnly));
+        assert!(parameters[0].default.is_none());
+        
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+        assert!(parameters[1].default.is_some());
+        
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+        assert!(parameters[2].default.is_none());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_duplicate_bare_star() {
+    // Error: multiple bare * (def func(*, a, *, b))
+    let result = parse("def func(*, a, *, b):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_kwonly_varargs_after_bare_star() {
+    // Error: *args after bare * (def func(*, a, *args))
+    let result = parse("def func(*, a, *args):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_kwonly_duplicate_varargs() {
+    // Error: duplicate *args (def func(*args, *more))
+    let result = parse("def func(*args, *more):\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// Positional-Only Parameters Tests
+// ============================================================================
+
+#[test]
+fn test_parse_posonly_basic() {
+    // Basic: def func(a, /, b)
+    let result = parse("def func(a, /, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_with_defaults() {
+    // Positional-only with defaults: def func(a=1, b=2, /)
+    let result = parse("def func(a=1, b=2, /):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert!(parameters[0].default.is_some());
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::PositionalOnly));
+        assert!(parameters[1].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_mixed_with_regular() {
+    // Mixed: def func(a, b, /, c, d)
+    let result = parse("def func(a, b, /, c, d):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 4);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::Regular));
+        assert_eq!(parameters[3].name, "d");
+        assert!(matches!(parameters[3].kind, ParameterKind::Regular));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_full_combo() {
+    // Full combination: def func(a, /, b, *args, c, **kwargs)
+    let result = parse("def func(a, /, b, *args, c, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 5);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        
+        assert_eq!(parameters[4].name, "kwargs");
+        assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_only() {
+    // Only positional-only: def func(a, b, /)
+    let result = parse("def func(a, b, /):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::PositionalOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_with_kwonly() {
+    // With keyword-only: def func(a, /, b, *, c)
+    let result = parse("def func(a, /, b, *, c):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_trailing_comma() {
+    // Trailing comma: def func(a, /,)
+    let result = parse("def func(a, /,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_posonly_duplicate_slash() {
+    // Error: multiple / markers (def func(a, /, b, /, c))
+    let result = parse("def func(a, /, b, /, c):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_posonly_slash_after_star() {
+    // Error: / after * (def func(*args, /))
+    let result = parse("def func(*args, /):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_posonly_slash_after_kwargs() {
+    // Error: / after ** (def func(**kwargs, /))
+    let result = parse("def func(**kwargs, /):\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// Async Function Tests
+// ============================================================================
+
+#[test]
+fn test_parse_async_basic() {
+    // Basic: async def func(): pass
+    let result = parse("async def func():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, is_async, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert!(is_async);
+        assert_eq!(parameters.len(), 0);
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_parameters() {
+    // Async with parameters: async def func(a, b)
+    let result = parse("async def func(a, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { name, is_async, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert!(is_async);
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert_eq!(parameters[1].name, "b");
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_defaults() {
+    // Async with defaults: async def func(a=1, b=2)
+    let result = parse("async def func(a=1, b=2):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 2);
+        assert!(parameters[0].default.is_some());
+        assert!(parameters[1].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_varargs() {
+    // Async with *args: async def func(*args)
+    let result = parse("async def func(*args):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "args");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_with_kwargs() {
+    // Async with **kwargs: async def func(**kwargs)
+    let result = parse("async def func(**kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "kwargs");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_all_param_types() {
+    // Full combination: async def func(a, /, b, *args, c, **kwargs)
+    let result = parse("async def func(a, /, b, *args, c, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, parameters, .. } = &ast.statements[0] {
+        assert!(is_async);
+        assert_eq!(parameters.len(), 5);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        assert_eq!(parameters[4].name, "kwargs");
+        assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_async_method_in_class() {
+    // Async method: class X:\n    async def method(self): pass
+    let result = parse("class X:\n    async def method(self):\n        pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::ClassDef { body, .. } = &ast.statements[0] {
+        assert_eq!(body.len(), 1);
+        if let Statement::FunctionDef { name, is_async, .. } = &body[0] {
+            assert_eq!(name, "method");
+            assert!(is_async);
+        } else {
+            panic!("Expected FunctionDef in class body");
+        }
+    } else {
+        panic!("Expected ClassDef");
+    }
+}
+
+#[test]
+fn test_parse_async_without_def_error() {
+    // Error: async without def (async x = 1)
+    let result = parse("async x = 1\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_async_missing_body_error() {
+    // Error: missing body (async def func():)
+    let result = parse("async def func():\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_regular_function_not_async() {
+    // Regular function should have is_async = false
+    let result = parse("def func():\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { is_async, .. } = &ast.statements[0] {
+        assert!(!is_async);
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+// ============================================================================
 // Negative Tests - Error Handling for New Statements
 // ============================================================================
 
@@ -1546,6 +2717,248 @@ fn test_parse_global_with_keyword_error() {
 fn test_parse_nonlocal_with_number_error() {
     let result = parse("nonlocal 456\n");
     assert!(result.is_err());
+}
+
+// ============================================================================
+// Parameter Type Annotation Tests
+// ============================================================================
+
+#[test]
+fn test_parse_param_type_annotation_single() {
+    let result = parse("def func(x: int):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected identifier type annotation");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_multiple() {
+    let result = parse("def func(x: int, y: str, z: float):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        
+        // Check x: int
+        assert_eq!(parameters[0].name, "x");
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int type annotation for x");
+        }
+        
+        // Check y: str
+        assert_eq!(parameters[1].name, "y");
+        if let Some(Expression::Identifier { name, .. }) = &parameters[1].type_annotation {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str type annotation for y");
+        }
+        
+        // Check z: float
+        assert_eq!(parameters[2].name, "z");
+        if let Some(Expression::Identifier { name, .. }) = &parameters[2].type_annotation {
+            assert_eq!(name, "float");
+        } else {
+            panic!("Expected float type annotation for z");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_with_default() {
+    let result = parse("def func(x: int = 5, y: str = \"hello\"):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        
+        // Check x: int = 5
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        assert!(parameters[0].default.is_some());
+        
+        // Check y: str = "hello"
+        assert_eq!(parameters[1].name, "y");
+        assert!(parameters[1].type_annotation.is_some());
+        assert!(parameters[1].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_varargs() {
+    let result = parse("def func(*args: int):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "args");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+        assert!(parameters[0].type_annotation.is_some());
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int type annotation for *args");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_kwargs() {
+    let result = parse("def func(**kwargs: str):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "kwargs");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarKwargs));
+        assert!(parameters[0].type_annotation.is_some());
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str type annotation for **kwargs");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_all_kinds() {
+    let result = parse("def func(a: int, /, b: str, *args: float, c: bool, **kwargs: dict):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 5);
+        
+        // a: int (positional-only)
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert!(parameters[0].type_annotation.is_some());
+        
+        // b: str (regular)
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert!(parameters[1].type_annotation.is_some());
+        
+        // *args: float
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        assert!(parameters[2].type_annotation.is_some());
+        
+        // c: bool (keyword-only)
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        assert!(parameters[3].type_annotation.is_some());
+        
+        // **kwargs: dict
+        assert_eq!(parameters[4].name, "kwargs");
+        assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+        assert!(parameters[4].type_annotation.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_generic() {
+    let result = parse("def func(x: List[int]):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        // Type annotation is a subscript expression: List[int]
+        if let Some(Expression::Subscript { .. }) = &parameters[0].type_annotation {
+            // Success - generic type parsed correctly
+        } else {
+            panic!("Expected subscript expression for generic type");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_optional() {
+    let result = parse("def func(x: Optional[int]):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_without_type_annotation() {
+    let result = parse("def func(x, y: int, z):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        
+        // x has no type annotation
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_none());
+        
+        // y has type annotation
+        assert_eq!(parameters[1].name, "y");
+        assert!(parameters[1].type_annotation.is_some());
+        
+        // z has no type annotation
+        assert_eq!(parameters[2].name, "z");
+        assert!(parameters[2].type_annotation.is_none());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_complex() {
+    // Test nested generic types like List[List[int]]
+    let result = parse("def func(x: List[List[int]]):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        // Complex nested generic type
+    } else {
+        panic!("Expected FunctionDef");
+    }
 }
 
 #[test]

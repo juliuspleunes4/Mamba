@@ -185,23 +185,25 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 2.5 Function & Class Parsing
 
-- [ ] Parse function definitions (def)
-- [ ] Parse function parameters
-- [ ] Parse default parameter values
-- [ ] Parse keyword-only parameters (after *)
-- [ ] Parse positional-only parameters (before /)
-- [ ] Parse *args (variadic parameters)
-- [ ] Parse **kwargs (keyword parameters)
-- [ ] Parse type hints (basic)
+- [x] Parse function definitions (def)
+- [x] Parse function parameters
+- [x] Parse default parameter values
+- [x] Parse *args (variadic parameters)
+- [x] Parse **kwargs (keyword parameters)
+- [x] Validate parameter order (regular, defaults, *args, **kwargs)
+- [x] Parse keyword-only parameters (after * or *args)
+- [x] Parse positional-only parameters (before /)
+- [x] Parse type hints (basic)
 - [ ] Parse return type annotations
 - [ ] Parse decorators (basic)
-- [ ] Parse async function definitions
-- [ ] Parse class definitions (basic structure)
-- [ ] Parse class methods
-- [ ] Parse class inheritance
-- [ ] Parse multiple inheritance
+- [x] Parse async function definitions
+- [x] Parse class definitions (basic structure)
+- [x] Parse single inheritance
+- [x] Parse multiple inheritance
+- [x] Parse class methods
 - [ ] Parse class decorators
 - [ ] Parse metaclass specification
+- [ ] Parse variable annotations (x: int, x: int = 5)
 
 ### 2.6 Indentation Handling
 

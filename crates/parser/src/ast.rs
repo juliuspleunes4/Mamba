@@ -126,6 +126,14 @@ pub enum Statement {
         name: String,
         parameters: Vec<Parameter>,
         body: Vec<Statement>,
+        is_async: bool,
+        position: SourcePosition,
+    },
+    /// Class definition
+    ClassDef {
+        name: String,
+        bases: Vec<Expression>,
+        body: Vec<Statement>,
         position: SourcePosition,
     },
 }
@@ -349,11 +357,23 @@ pub enum AugmentedOperator {
     RightShift,  // >>=
 }
 
+/// Parameter kind (regular, *args, **kwargs, keyword-only)
+#[derive(Debug, Clone, PartialEq)]
+pub enum ParameterKind {
+    PositionalOnly, // before / marker
+    Regular,   // x or x=default
+    VarArgs,   // *args
+    VarKwargs, // **kwargs
+    KwOnly,    // keyword-only (after * or *args)
+}
+
 /// Function parameter
 #[derive(Debug, Clone, PartialEq)]
 pub struct Parameter {
     pub name: String,
+    pub kind: ParameterKind,
     pub default: Option<Expression>,
+    pub type_annotation: Option<Expression>,
     pub position: SourcePosition,
 }
 
@@ -421,6 +441,7 @@ impl Statement {
             Statement::While { position, .. } => position,
             Statement::For { position, .. } => position,
             Statement::FunctionDef { position, .. } => position,
+            Statement::ClassDef { position, .. } => position,
         }
     }
 }
