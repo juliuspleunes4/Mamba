@@ -1010,10 +1010,18 @@ impl Parser {
                     }
                 };
                 
+                // Check for type annotation (: type)
+                let type_annotation = if self.match_token(&TokenKind::Colon) {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
+                
                 parameters.push(Parameter {
                     name: param_name,
                     kind: ParameterKind::VarKwargs,
                     default: None,
+                    type_annotation,
                     position: param_pos,
                 });
                 
@@ -1056,10 +1064,18 @@ impl Parser {
                         }
                     };
                     
+                    // Check for type annotation (: type)
+                    let type_annotation = if self.match_token(&TokenKind::Colon) {
+                        Some(self.parse_expression()?)
+                    } else {
+                        None
+                    };
+                    
                     parameters.push(Parameter {
                         name: param_name,
                         kind: ParameterKind::VarArgs,
                         default: None,
+                        type_annotation,
                         position: param_pos,
                     });
                     
@@ -1091,6 +1107,13 @@ impl Parser {
                     }
                 };
                 
+                // Check for type annotation (: type)
+                let type_annotation = if self.match_token(&TokenKind::Colon) {
+                    Some(self.parse_expression()?)
+                } else {
+                    None
+                };
+                
                 // Check for default value (=)
                 let default = if self.match_token(&TokenKind::Assign) {
                     Some(self.parse_expression()?)
@@ -1119,6 +1142,7 @@ impl Parser {
                     name: param_name,
                     kind,
                     default,
+                    type_annotation,
                     position: param_pos,
                 });
             }

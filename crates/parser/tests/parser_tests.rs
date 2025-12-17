@@ -2719,6 +2719,248 @@ fn test_parse_nonlocal_with_number_error() {
     assert!(result.is_err());
 }
 
+// ============================================================================
+// Parameter Type Annotation Tests
+// ============================================================================
+
+#[test]
+fn test_parse_param_type_annotation_single() {
+    let result = parse("def func(x: int):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected identifier type annotation");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_multiple() {
+    let result = parse("def func(x: int, y: str, z: float):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        
+        // Check x: int
+        assert_eq!(parameters[0].name, "x");
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int type annotation for x");
+        }
+        
+        // Check y: str
+        assert_eq!(parameters[1].name, "y");
+        if let Some(Expression::Identifier { name, .. }) = &parameters[1].type_annotation {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str type annotation for y");
+        }
+        
+        // Check z: float
+        assert_eq!(parameters[2].name, "z");
+        if let Some(Expression::Identifier { name, .. }) = &parameters[2].type_annotation {
+            assert_eq!(name, "float");
+        } else {
+            panic!("Expected float type annotation for z");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_with_default() {
+    let result = parse("def func(x: int = 5, y: str = \"hello\"):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        
+        // Check x: int = 5
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        assert!(parameters[0].default.is_some());
+        
+        // Check y: str = "hello"
+        assert_eq!(parameters[1].name, "y");
+        assert!(parameters[1].type_annotation.is_some());
+        assert!(parameters[1].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_varargs() {
+    let result = parse("def func(*args: int):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "args");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarArgs));
+        assert!(parameters[0].type_annotation.is_some());
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int type annotation for *args");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_kwargs() {
+    let result = parse("def func(**kwargs: str):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "kwargs");
+        assert!(matches!(parameters[0].kind, ParameterKind::VarKwargs));
+        assert!(parameters[0].type_annotation.is_some());
+        if let Some(Expression::Identifier { name, .. }) = &parameters[0].type_annotation {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str type annotation for **kwargs");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_all_kinds() {
+    let result = parse("def func(a: int, /, b: str, *args: float, c: bool, **kwargs: dict):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 5);
+        
+        // a: int (positional-only)
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::PositionalOnly));
+        assert!(parameters[0].type_annotation.is_some());
+        
+        // b: str (regular)
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert!(parameters[1].type_annotation.is_some());
+        
+        // *args: float
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        assert!(parameters[2].type_annotation.is_some());
+        
+        // c: bool (keyword-only)
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        assert!(parameters[3].type_annotation.is_some());
+        
+        // **kwargs: dict
+        assert_eq!(parameters[4].name, "kwargs");
+        assert!(matches!(parameters[4].kind, ParameterKind::VarKwargs));
+        assert!(parameters[4].type_annotation.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_generic() {
+    let result = parse("def func(x: List[int]):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        // Type annotation is a subscript expression: List[int]
+        if let Some(Expression::Subscript { .. }) = &parameters[0].type_annotation {
+            // Success - generic type parsed correctly
+        } else {
+            panic!("Expected subscript expression for generic type");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_optional() {
+    let result = parse("def func(x: Optional[int]):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_without_type_annotation() {
+    let result = parse("def func(x, y: int, z):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        
+        // x has no type annotation
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_none());
+        
+        // y has type annotation
+        assert_eq!(parameters[1].name, "y");
+        assert!(parameters[1].type_annotation.is_some());
+        
+        // z has no type annotation
+        assert_eq!(parameters[2].name, "z");
+        assert!(parameters[2].type_annotation.is_none());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_param_type_annotation_complex() {
+    // Test nested generic types like List[List[int]]
+    let result = parse("def func(x: List[List[int]]):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 1);
+        assert_eq!(parameters[0].name, "x");
+        assert!(parameters[0].type_annotation.is_some());
+        // Complex nested generic type
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
 #[test]
 fn test_parse_nonlocal_with_keyword_error() {
     let result = parse("nonlocal while\n");

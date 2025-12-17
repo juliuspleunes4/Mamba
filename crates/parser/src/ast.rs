@@ -373,6 +373,7 @@ pub struct Parameter {
     pub name: String,
     pub kind: ParameterKind,
     pub default: Option<Expression>,
+    pub type_annotation: Option<Expression>,
     pub position: SourcePosition,
 }
 
