@@ -356,12 +356,13 @@ pub enum AugmentedOperator {
     RightShift,  // >>=
 }
 
-/// Parameter kind (regular, *args, **kwargs)
+/// Parameter kind (regular, *args, **kwargs, keyword-only)
 #[derive(Debug, Clone, PartialEq)]
 pub enum ParameterKind {
     Regular,   // x or x=default
     VarArgs,   // *args
     VarKwargs, // **kwargs
+    KwOnly,    // keyword-only (after * or *args)
 }
 
 /// Function parameter

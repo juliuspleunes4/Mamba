@@ -1928,7 +1928,9 @@ fn test_parse_function_kwargs_before_args_error() {
 
 #[test]
 fn test_parse_function_regular_after_args_error() {
-    let result = parse("def foo(*args, x):\n    pass\n");
+    // This is actually valid Python 3 - parameters after *args are keyword-only
+    // Changed to test **kwargs followed by anything, which is the real error
+    let result = parse("def foo(**kwargs, x):\n    pass\n");
     assert!(result.is_err());
 }
 
@@ -1940,7 +1942,9 @@ fn test_parse_function_regular_after_kwargs_error() {
 
 #[test]
 fn test_parse_function_default_after_args_error() {
-    let result = parse("def foo(*args, x=1):\n    pass\n");
+    // This is actually valid Python 3 - parameters after *args are keyword-only
+    // Changed to test the same as above
+    let result = parse("def foo(**kwargs, x=1):\n    pass\n");
     assert!(result.is_err());
 }
 
@@ -2177,6 +2181,187 @@ fn test_parse_class_number_as_name() {
 #[test]
 fn test_parse_class_missing_closing_paren() {
     let result = parse("class Child(Parent:\n    pass\n");
+    assert!(result.is_err());
+}
+
+// ============================================================================
+// Keyword-Only Parameters Tests
+// ============================================================================
+
+#[test]
+fn test_parse_kwonly_bare_star() {
+    // Basic: def func(a, *, b)
+    let result = parse("def func(a, *, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    assert_eq!(ast.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, parameters, .. } = &ast.statements[0] {
+        assert_eq!(name, "func");
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_with_defaults() {
+    // Keyword-only with defaults: def func(a, *, b=1, c=2)
+    let result = parse("def func(a, *, b=1, c=2):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+        assert!(parameters[1].default.is_some());
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+        assert!(parameters[2].default.is_some());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_after_varargs() {
+    // Keyword-only after *args: def func(a, *args, b)
+    let result = parse("def func(a, *args, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert_eq!(parameters[1].name, "args");
+        assert!(matches!(parameters[1].kind, ParameterKind::VarArgs));
+        assert_eq!(parameters[2].name, "b");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_full_combo() {
+    // Full combination: def func(a, b=1, *args, c, d=2, **kwargs)
+    let result = parse("def func(a, b=1, *args, c, d=2, **kwargs):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 6);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert!(parameters[0].default.is_none());
+        
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::Regular));
+        assert!(parameters[1].default.is_some());
+        
+        assert_eq!(parameters[2].name, "args");
+        assert!(matches!(parameters[2].kind, ParameterKind::VarArgs));
+        
+        assert_eq!(parameters[3].name, "c");
+        assert!(matches!(parameters[3].kind, ParameterKind::KwOnly));
+        assert!(parameters[3].default.is_none());
+        
+        assert_eq!(parameters[4].name, "d");
+        assert!(matches!(parameters[4].kind, ParameterKind::KwOnly));
+        assert!(parameters[4].default.is_some());
+        
+        assert_eq!(parameters[5].name, "kwargs");
+        assert!(matches!(parameters[5].kind, ParameterKind::VarKwargs));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_only() {
+    // Only keyword-only: def func(*, a, b)
+    let result = parse("def func(*, a, b):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::KwOnly));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_trailing_comma() {
+    // Trailing comma: def func(a, *, b,)
+    let result = parse("def func(a, *, b,):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 2);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::Regular));
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_mixed_defaults() {
+    // Mix of keyword-only with and without defaults: def func(*, a, b=1, c)
+    let result = parse("def func(*, a, b=1, c):\n    pass\n");
+    assert!(result.is_ok());
+    let ast = result.unwrap();
+    
+    if let Statement::FunctionDef { parameters, .. } = &ast.statements[0] {
+        assert_eq!(parameters.len(), 3);
+        assert_eq!(parameters[0].name, "a");
+        assert!(matches!(parameters[0].kind, ParameterKind::KwOnly));
+        assert!(parameters[0].default.is_none());
+        
+        assert_eq!(parameters[1].name, "b");
+        assert!(matches!(parameters[1].kind, ParameterKind::KwOnly));
+        assert!(parameters[1].default.is_some());
+        
+        assert_eq!(parameters[2].name, "c");
+        assert!(matches!(parameters[2].kind, ParameterKind::KwOnly));
+        assert!(parameters[2].default.is_none());
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_kwonly_duplicate_bare_star() {
+    // Error: multiple bare * (def func(*, a, *, b))
+    let result = parse("def func(*, a, *, b):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_kwonly_varargs_after_bare_star() {
+    // Error: *args after bare * (def func(*, a, *args))
+    let result = parse("def func(*, a, *args):\n    pass\n");
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_kwonly_duplicate_varargs() {
+    // Error: duplicate *args (def func(*args, *more))
+    let result = parse("def func(*args, *more):\n    pass\n");
     assert!(result.is_err());
 }
 

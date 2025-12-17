@@ -82,7 +82,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * Function parameters (simple, multiple, default values)
       * Variadic positional parameters (*args)
       * Variadic keyword parameters (**kwargs)
-      * Parameter order validation (regular → defaults → *args → **kwargs)
+      * Keyword-only parameters (after * or *args)
+      * Bare * separator for keyword-only parameters (def func(a, *, b): pass)
+      * Keyword-only parameters with defaults (def func(*, a=1, b=2): pass)
+      * Mixed keyword-only parameters with and without defaults
+      * Full parameter combination support (regular → defaults → *args → keyword-only → **kwargs)
+      * Parameter order validation with keyword-only support
       * Nested function definitions
       * Complex default values (expressions, lists, dicts)
     - Class definitions:
@@ -93,12 +98,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * Inheritance with dotted names (class Child(pkg.Module): pass)
       * Nested class definitions
       * Complex class bodies with attributes and methods
-  - Parser test suite: 286 tests (281 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types, class definitions with inheritance
-  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations, invalid class names
-  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation
+  - Parser test suite: 296 tests (291 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types including keyword-only parameters, class definitions with inheritance
+  - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations, invalid class names, duplicate * or *args parameters
+  - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation; keyword-only parameter validation
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages
-  - **433 total tests, all passing (142 lexer + 286 parser + 5 compound)**
+  - **443 total tests, all passing (142 lexer + 296 parser + 5 compound)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
