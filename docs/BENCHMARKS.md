@@ -1,8 +1,10 @@
-# Lexer Performance Benchmarks
+# Mamba Performance Benchmarks
 
-Comprehensive benchmark suite for the Mamba lexer measuring tokenization performance across different scenarios.
+Comprehensive benchmark suite for the Mamba parser measuring both lexer (tokenization) and parser (AST construction) performance across different scenarios.
 
-## Benchmark Categories
+## Lexer Benchmarks
+
+### Benchmark Categories
 
 ### Small Files
 Realistic small Python-like code snippets:
@@ -44,8 +46,14 @@ Performance under stress:
 ## Running Benchmarks
 
 ```bash
-# Run all benchmarks
+# Run all benchmarks (lexer + parser)
 cargo bench --package mamba-parser
+
+# Run only lexer benchmarks
+cargo bench --package mamba-parser --bench lexer_benchmarks
+
+# Run only parser benchmarks
+cargo bench --package mamba-parser --bench parser_benchmarks
 
 # Run specific benchmark group
 cargo bench --package mamba-parser -- small_files
@@ -57,7 +65,68 @@ cargo bench --package mamba-parser -- --save-baseline main
 cargo bench --package mamba-parser -- --baseline main
 ```
 
-## Performance Characteristics
+## Parser Benchmarks
+
+### Expression Parsing
+Performance for various expression types:
+- **Simple Literal**: Basic literal parsing
+- **Binary Expression**: Arithmetic with operator precedence
+- **Nested Expression**: Deeply parenthesized expressions
+- **Function Call**: Function calls with arguments
+- **Chained Access**: Attribute/subscript chains
+- **List Literal**: List with 10 elements
+- **Dict Literal**: Dict with 5 key-value pairs
+- **List Comprehension**: Comprehension with filter
+- **Lambda**: Lambda expression parsing
+
+### Statement Parsing
+Performance for statement types:
+- **Assignment**: Simple variable assignment
+- **Multiple Assignment**: Chained assignments (x = y = z)
+- **Tuple Unpacking**: Multiple target unpacking
+- **Augmented Assignment**: += style operators
+- **If Statement**: If/elif/else chain
+- **While Loop**: While with body
+- **For Loop**: For loop with body
+- **Import Statement**: Module imports
+- **From Import**: Selective imports
+
+### Function Definitions
+Performance for function parsing:
+- **Simple Function**: Basic function with no parameters
+- **Function with Params**: Parameters with defaults
+- **All Parameter Types**: Positional-only, keyword-only, *args, **kwargs
+- **With Annotations**: Type-annotated parameters and return
+- **Async Function**: Async function definition
+- **Decorated Function**: Multiple decorators
+
+### Class Definitions
+Performance for class parsing:
+- **Simple Class**: Empty class
+- **Class with Methods**: Class with __init__ and methods
+- **With Inheritance**: Class inheriting from parent
+- **Decorated Class**: Class with decorators
+
+### Medium Files (Realistic Modules)
+Real-world code patterns:
+- **Calculator Module**: ~30 line class with methods
+- **Data Processor**: Functions with type hints and comprehensions
+
+### Large Files (Stress Tests)
+Performance under load:
+- **100 Assignments**: Sequential assignments
+- **50 Functions**: Multiple function definitions
+- **Deep Nesting**: 10 levels of nested if statements
+- **Complex Expressions**: 50 complex arithmetic expressions
+
+### Edge Cases
+Challenging scenarios:
+- **Long Parameter List**: Function with 50 parameters
+- **Long Argument List**: Call with 50 arguments
+- **Deeply Nested Collections**: 10-level nested lists
+- **Complex Comprehension**: Nested comprehension with filter
+
+## Performance Characteristics (Lexer)
 
 ### Key Observations
 
