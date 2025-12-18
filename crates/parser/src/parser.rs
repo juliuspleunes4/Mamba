@@ -648,11 +648,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after if condition at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "if condition"));
         }
         
         // Parse then block
@@ -666,11 +662,7 @@ impl Parser {
             let elif_condition = self.parse_expression()?;
             
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after elif condition at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "elif condition"));
             }
             
             let elif_body = self.parse_block()?;
@@ -680,11 +672,7 @@ impl Parser {
         // Parse optional else block
         let else_block = if self.match_token(&TokenKind::Else) {
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after else at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "'else'"));
             }
             Some(self.parse_block()?)
         } else {
@@ -710,11 +698,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after while condition at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "while condition"));
         }
         
         // Parse body
@@ -723,11 +707,7 @@ impl Parser {
         // Parse optional else block
         let else_block = if self.match_token(&TokenKind::Else) {
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after else at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "'else'"));
             }
             Some(self.parse_block()?)
         } else {
@@ -765,11 +745,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after for clause at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "for clause"));
         }
         
         // Parse body
@@ -778,11 +754,7 @@ impl Parser {
         // Parse optional else block
         let else_block = if self.match_token(&TokenKind::Else) {
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after else at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "'else'"));
             }
             Some(self.parse_block()?)
         } else {
@@ -897,21 +869,13 @@ impl Parser {
                 func_name
             }
             _ => {
-                return Err(MambaError::ParseError(
-                    format!("Expected function name after 'def' at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("function name (identifier)", "'def'"));
             }
         };
         
         // Expect opening parenthesis
         if !self.match_token(&TokenKind::LeftParen) {
-            return Err(MambaError::ParseError(
-                format!("Expected '(' after function name at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("'('", "function name"));
         }
         
         // Parse parameter list
@@ -935,11 +899,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after function signature at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "function signature"));
         }
         
         // Parse body
@@ -1070,11 +1030,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after class header at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "class header"));
         }
         
         // Parse body
@@ -2291,17 +2247,14 @@ impl Parser {
     }
 
     /// Expect a specific token and consume it
+    /// Expect a specific token, consuming it if found or returning error
     fn expect_token(&mut self, kind: TokenKind, error_msg: &str) -> ParseResult<()> {
         if self.check(&kind) {
             self.advance();
             Ok(())
         } else {
-            Err(MambaError::ParseError(format!(
-                "{} at {}:{}",
-                error_msg,
-                self.current_position().line,
-                self.current_position().column
-            )))
+            // Use our error helper to provide context about what was found
+            Err(self.error(error_msg))
         }
     }
 
@@ -2319,6 +2272,142 @@ impl Parser {
             )))
         }
     }
+
+    // ========================================
+    // Error Message Helpers
+    // ========================================
+
+    /// Create a formatted error with current position
+    fn error(&self, message: impl Into<String>) -> MambaError {
+        let pos = self.current_position();
+        MambaError::ParseError(format!("{} at {}:{}", message.into(), pos.line, pos.column))
+    }
+
+    /// Create "Expected X, found Y" error message
+    fn expected(&self, expected: &str) -> MambaError {
+        let pos = self.current_position();
+        let found = self.current_token_string();
+        MambaError::ParseError(format!(
+            "Expected {}, found {} at {}:{}",
+            expected, found, pos.line, pos.column
+        ))
+    }
+
+    /// Create "Expected X after Y" error message
+    fn expected_after(&self, expected: &str, after: &str) -> MambaError {
+        let pos = self.current_position();
+        let found = self.current_token_string();
+        MambaError::ParseError(format!(
+            "Expected {} after {}, found {} at {}:{}",
+            expected, after, found, pos.line, pos.column
+        ))
+    }
+
+    /// Get a human-readable string for the current token
+    fn current_token_string(&self) -> String {
+        match &self.current_token {
+            None => "end of file".to_string(),
+            Some(token) => match &token.kind {
+                TokenKind::Eof => "end of file".to_string(),
+                TokenKind::Newline => "newline".to_string(),
+                TokenKind::Indent => "indent".to_string(),
+                TokenKind::Dedent => "dedent".to_string(),
+                TokenKind::Identifier(name) => format!("identifier '{}'", name),
+                TokenKind::Integer(val) => format!("integer {}", val),
+                TokenKind::Float(val) => format!("float {}", val),
+                TokenKind::String(val) => format!("string \"{}\"", val),
+                TokenKind::LeftParen => "'('".to_string(),
+                TokenKind::RightParen => "')'".to_string(),
+                TokenKind::LeftBracket => "'['".to_string(),
+                TokenKind::RightBracket => "']'".to_string(),
+                TokenKind::LeftBrace => "'{'".to_string(),
+                TokenKind::RightBrace => "'}'".to_string(),
+                TokenKind::Comma => "','".to_string(),
+                TokenKind::Colon => "':'".to_string(),
+                TokenKind::Semicolon => "';'".to_string(),
+                TokenKind::Dot => "'.'".to_string(),
+                TokenKind::Assign => "'='".to_string(),
+                TokenKind::Plus => "'+'".to_string(),
+                TokenKind::Minus => "'-'".to_string(),
+                TokenKind::Star => "'*'".to_string(),
+                TokenKind::Slash => "'/'".to_string(),
+                TokenKind::Percent => "'%'".to_string(),
+                TokenKind::DoubleSlash => "'//'".to_string(),
+                TokenKind::DoubleStar => "'**'".to_string(),
+                TokenKind::Equal => "'=='".to_string(),
+                TokenKind::NotEqual => "'!='".to_string(),
+                TokenKind::Less => "'<'".to_string(),
+                TokenKind::LessEqual => "'<='".to_string(),
+                TokenKind::Greater => "'>'".to_string(),
+                TokenKind::GreaterEqual => "'>='".to_string(),
+                TokenKind::Ampersand => "'&'".to_string(),
+                TokenKind::Pipe => "'|'".to_string(),
+                TokenKind::Caret => "'^'".to_string(),
+                TokenKind::Tilde => "'~'".to_string(),
+                TokenKind::LeftShift => "'<<'".to_string(),
+                TokenKind::RightShift => "'>>'".to_string(),
+                TokenKind::PlusAssign => "'+='".to_string(),
+                TokenKind::MinusAssign => "'-='".to_string(),
+                TokenKind::StarAssign => "'*='".to_string(),
+                TokenKind::SlashAssign => "'/='".to_string(),
+                TokenKind::PercentAssign => "'%='".to_string(),
+                TokenKind::DoubleSlashAssign => "'//='".to_string(),
+                TokenKind::DoubleStarAssign => "'**='".to_string(),
+                TokenKind::AmpersandAssign => "'&='".to_string(),
+                TokenKind::PipeAssign => "'|='".to_string(),
+                TokenKind::CaretAssign => "'^='".to_string(),
+                TokenKind::LeftShiftAssign => "'<<='".to_string(),
+                TokenKind::RightShiftAssign => "'>>='".to_string(),
+                TokenKind::Walrus => "':='".to_string(),
+                TokenKind::Arrow => "'->'".to_string(),
+                TokenKind::At => "'@'".to_string(),
+                TokenKind::Ellipsis => "'...'".to_string(),
+                // Keywords
+                TokenKind::And => "keyword 'and'".to_string(),
+                TokenKind::Or => "keyword 'or'".to_string(),
+                TokenKind::Not => "keyword 'not'".to_string(),
+                TokenKind::In => "keyword 'in'".to_string(),
+                TokenKind::Is => "keyword 'is'".to_string(),
+                TokenKind::If => "keyword 'if'".to_string(),
+                TokenKind::Elif => "keyword 'elif'".to_string(),
+                TokenKind::Else => "keyword 'else'".to_string(),
+                TokenKind::While => "keyword 'while'".to_string(),
+                TokenKind::For => "keyword 'for'".to_string(),
+                TokenKind::Break => "keyword 'break'".to_string(),
+                TokenKind::Continue => "keyword 'continue'".to_string(),
+                TokenKind::Return => "keyword 'return'".to_string(),
+                TokenKind::Def => "keyword 'def'".to_string(),
+                TokenKind::Class => "keyword 'class'".to_string(),
+                TokenKind::Pass => "keyword 'pass'".to_string(),
+                TokenKind::Import => "keyword 'import'".to_string(),
+                TokenKind::From => "keyword 'from'".to_string(),
+                TokenKind::As => "keyword 'as'".to_string(),
+                TokenKind::True => "keyword 'True'".to_string(),
+                TokenKind::False => "keyword 'False'".to_string(),
+                TokenKind::None => "keyword 'None'".to_string(),
+                TokenKind::Lambda => "keyword 'lambda'".to_string(),
+                TokenKind::Assert => "keyword 'assert'".to_string(),
+                TokenKind::Del => "keyword 'del'".to_string(),
+                TokenKind::Global => "keyword 'global'".to_string(),
+                TokenKind::Nonlocal => "keyword 'nonlocal'".to_string(),
+                TokenKind::Raise => "keyword 'raise'".to_string(),
+                TokenKind::Try => "keyword 'try'".to_string(),
+                TokenKind::Except => "keyword 'except'".to_string(),
+                TokenKind::Finally => "keyword 'finally'".to_string(),
+                TokenKind::With => "keyword 'with'".to_string(),
+                TokenKind::Yield => "keyword 'yield'".to_string(),
+                TokenKind::Async => "keyword 'async'".to_string(),
+                TokenKind::Await => "keyword 'await'".to_string(),
+                TokenKind::Match => "keyword 'match'".to_string(),
+                TokenKind::Case => "keyword 'case'".to_string(),
+                TokenKind::Comment(_) => "comment".to_string(),
+            }
+        }
+    }
+
+    // ========================================
+    // Token Manipulation
+    // ========================================
 
     /// Advance to next token
     fn advance(&mut self) {

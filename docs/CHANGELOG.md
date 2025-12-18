@@ -152,6 +152,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages; clear async syntax error messages; clear metaclass specification error messages
   - **566 total tests, all passing (142 lexer + 416 parser + 8 other)**
+- **Phase 2.7: Parser Error Handling (In Progress)**
+  - Error message helper functions:
+    * `error()` - Create formatted error with current position
+    * `expected()` - Generate "Expected X, found Y" messages
+    * `expected_after()` - Generate "Expected X after Y, found Z" messages
+    * `current_token_string()` - Human-readable token descriptions (all TokenKind variants)
+  - Applied helpers throughout parser:
+    * `parse_function_def()` - function header errors
+    * `expect_token()` - general token expectation
+    * `parse_if_statement()` - if/elif/else colon errors (3 locations)
+    * `parse_while_loop()` - while/else colon errors (2 locations)
+    * `parse_for_loop()` - for/else colon errors (2 locations)
+    * `parse_class_def()` - class header colon error
+    * Lambda and dict colons (via expect_token)
+  - Improved error messages:
+    * Clear "Expected ':' after X" messages for all control structures
+    * Better error messages for missing function names after 'def'
+    * Consistent "Expected X, found Y" format with readable token descriptions
+    * Position information in all error messages
+  - Error message test suite:
+    * 16 tests covering various error scenarios
+    * 11 tests passing (improved error messages working)
+    * 5 tests marked ignored (require additional validation logic for future phases)
+  - **577 total tests (142 lexer + 427 parser + 8 other); 572 passing, 5 ignored**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
