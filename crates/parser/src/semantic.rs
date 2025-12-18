@@ -250,9 +250,107 @@ impl SemanticAnalyzer {
     /// Visit an expression and perform semantic analysis
     fn visit_expression(&mut self, expression: &Expression) {
         match expression {
-            // TODO: Identifier - check if variable is defined
-            Expression::Identifier { .. } => {
-                // TODO: Check if name exists in symbol table
+            // Identifier - check if variable is defined
+            Expression::Identifier { name, position } => {
+                if self.symbol_table.lookup(name).is_none() {
+                    self.add_error(SemanticError::UndefinedVariable {
+                        name: name.clone(),
+                        position: position.clone(),
+                    });
+                }
+            }
+
+            // Binary operation - visit both operands
+            Expression::BinaryOp { left, right, .. } => {
+                self.visit_expression(left);
+                self.visit_expression(right);
+            }
+
+            // Unary operation - visit operand
+            Expression::UnaryOp { operand, .. } => {
+                self.visit_expression(operand);
+            }
+
+            // Parenthesized expression - visit inner expression
+            Expression::Parenthesized { expr, .. } => {
+                self.visit_expression(expr);
+            }
+
+            // Function call - visit function and all arguments
+            Expression::Call { function, arguments, .. } => {
+                self.visit_expression(function);
+                for arg in arguments {
+                    self.visit_expression(arg);
+                }
+            }
+
+            // Attribute access - visit object
+            Expression::Attribute { object, .. } => {
+                self.visit_expression(object);
+            }
+
+            // Subscript - visit both object and index
+            Expression::Subscript { object, index, .. } => {
+                self.visit_expression(object);
+                self.visit_expression(index);
+            }
+
+            // List - visit all elements
+            Expression::List { elements, .. } => {
+                for element in elements {
+                    self.visit_expression(element);
+                }
+            }
+
+            // Tuple - visit all elements
+            Expression::Tuple { elements, .. } => {
+                for element in elements {
+                    self.visit_expression(element);
+                }
+            }
+
+            // Dict - visit all keys and values
+            Expression::Dict { pairs, .. } => {
+                for (key, value) in pairs {
+                    self.visit_expression(key);
+                    self.visit_expression(value);
+                }
+            }
+
+            // Set - visit all elements
+            Expression::Set { elements, .. } => {
+                for element in elements {
+                    self.visit_expression(element);
+                }
+            }
+
+            // Conditional expression - visit all three parts
+            Expression::Conditional { condition, true_expr, false_expr, .. } => {
+                self.visit_expression(condition);
+                self.visit_expression(true_expr);
+                self.visit_expression(false_expr);
+            }
+
+            // Assignment expression (walrus operator) - declare and visit
+            Expression::AssignmentExpr { target, value, position } => {
+                self.visit_expression(value);
+                // Declare the target variable
+                if let Err(existing) = self.symbol_table.declare(
+                    target.clone(),
+                    SymbolKind::Variable,
+                    position.clone()
+                ) {
+                    self.add_error(SemanticError::Redeclaration {
+                        name: target.clone(),
+                        first_position: existing.position.clone(),
+                        second_position: position.clone(),
+                    });
+                }
+            }
+
+            // Starred expression - visit the value
+            Expression::Starred { value, .. } => {
+                self.visit_expression(value);
             }
 
             // TODO: Lambda - track lambda parameters
@@ -263,10 +361,11 @@ impl SemanticAnalyzer {
                 // TODO: Exit scope
             }
 
-            // TODO: ListComp/SetComp/DictComp - handle comprehension scopes
+            // TODO: ListComp/SetComp/DictComp/GeneratorExpr - handle comprehension scopes
             Expression::ListComp { .. }
             | Expression::SetComp { .. }
-            | Expression::DictComp { .. } => {
+            | Expression::DictComp { .. }
+            | Expression::GeneratorExpr { .. } => {
                 // TODO: Enter new scope
                 // TODO: Visit generators (declare loop variables)
                 // TODO: Visit element/key/value
@@ -275,24 +374,6 @@ impl SemanticAnalyzer {
 
             // Literals - no semantic analysis needed
             Expression::Literal(_) => {}
-
-            // TODO: Compound expressions - visit children
-            Expression::BinaryOp { .. }
-            | Expression::UnaryOp { .. }
-            | Expression::Call { .. }
-            | Expression::Attribute { .. }
-            | Expression::Subscript { .. }
-            | Expression::List { .. }
-            | Expression::Tuple { .. }
-            | Expression::Set { .. }
-            | Expression::Dict { .. }
-            | Expression::Starred { .. }
-            | Expression::Parenthesized { .. }
-            | Expression::Conditional { .. }
-            | Expression::AssignmentExpr { .. }
-            | Expression::GeneratorExpr { .. } => {
-                // TODO: Visit all child expressions
-            }
         }
     }
 
@@ -879,5 +960,189 @@ mod tests {
         
         let table = result.unwrap();
         assert!(table.lookup("empty").is_some());
+    }
+
+    // Variable Usage Detection Tests
+
+    #[test]
+    fn test_undefined_variable_in_expression() {
+        let module = parse("y = x + 1");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Using undefined variable should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "x");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_variable_used_after_definition() {
+        let module = parse("x = 10\ny = x + 5");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Using defined variable should succeed");
+    }
+
+    #[test]
+    fn test_multiple_undefined_variables() {
+        let module = parse("result = a + b + c");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Multiple undefined variables should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 3);
+    }
+
+    #[test]
+    fn test_undefined_in_function_call() {
+        let module = parse("result = foo(x, y)");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Undefined variables in call should fail");
+        
+        let errors = result.unwrap_err();
+        assert!(errors.len() >= 2); // foo, x, y all undefined
+    }
+
+    #[test]
+    fn test_undefined_in_subscript() {
+        let module = parse("value = arr[idx]");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Undefined variables in subscript should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2); // arr and idx
+    }
+
+    #[test]
+    fn test_undefined_in_attribute_access() {
+        let module = parse("value = obj.attr");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Undefined variable in attribute access should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "obj");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_undefined_in_list_literal() {
+        let module = parse("items = [a, b, c]");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Undefined variables in list should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 3);
+    }
+
+    #[test]
+    fn test_undefined_in_dict_literal() {
+        let module = parse("data = {k: v}");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Undefined variables in dict should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2); // k and v
+    }
+
+    #[test]
+    fn test_undefined_in_conditional_expression() {
+        let module = parse("result = x if condition else y");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Undefined variables in conditional should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 3); // x, condition, y
+    }
+
+    #[test]
+    fn test_variable_in_function_scope() {
+        let code = "def foo():\n    x = 10\n    y = x + 5\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Variable defined in function scope should work");
+    }
+
+    #[test]
+    fn test_undefined_in_function_body() {
+        let code = "def foo():\n    y = x + 1\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Undefined variable in function should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "x");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_parameter_usage_in_function() {
+        let code = "def add(a, b):\n    return a + b\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Using parameters should succeed");
+    }
+
+    #[test]
+    fn test_nested_scope_variable_access() {
+        let code = "x = 10\ndef foo():\n    y = x + 5\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Accessing outer scope variable should succeed");
+    }
+
+    #[test]
+    fn test_walrus_operator_declaration() {
+        let code = "if (n := len([1, 2, 3])) > 0:\n    pass\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Walrus operator should declare variable");
+    }
+
+    #[test]
+    fn test_complex_expression_chain() {
+        let code = "x = 1\ny = 2\nz = (x + y) * (x - y) / (x * y)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Complex expression with defined variables should succeed");
+    }
+
+    #[test]
+    fn test_undefined_in_nested_expression() {
+        let module = parse("result = ((a + b) * c) / d");
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Nested undefined variables should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 4); // a, b, c, d
     }
 }

@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Duplicate parameter detection
     - Support for async functions, decorators, return types, default parameters
   - 15 additional function tests (41 total)
+  - Variable usage detection:
+    - Identifier lookup with UndefinedVariable errors
+    - Recursive expression visiting (BinaryOp, UnaryOp, Call, Subscript, Attribute)
+    - Collection expressions (List, Tuple, Dict, Set)
+    - Conditional expressions
+    - Walrus operator (assignment expressions)
+    - Nested scope variable access
+    - Parameter usage in functions
+  - 16 additional usage detection tests (57 total)
 - **Phase 1: Lexer & Tokenization (Complete!)**
   - Full tokenization of Python-compatible syntax
   - Support for all Python operators, keywords, and delimiters
