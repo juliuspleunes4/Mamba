@@ -35,8 +35,9 @@ impl Parser {
         let mut statements = Vec::new();
 
         while !self.is_at_end() {
-            // Skip newlines at module level
-            if self.match_token(&TokenKind::Newline) {
+            // Skip newlines and dedents at module level
+            // Dedents appear after blocks end and shouldn't start new statements
+            if self.match_token(&TokenKind::Newline) || self.match_token(&TokenKind::Dedent) {
                 continue;
             }
             
@@ -51,7 +52,11 @@ impl Parser {
 
     /// Parse a single statement
     fn parse_statement(&mut self) -> ParseResult<Statement> {
-        // TODO: Add support for remaining statement types: if, while, for, def, class, import, etc.
+        // Skip any leading newlines (blank lines)
+        // Note: Do NOT skip DEDENT tokens here, as they signal end of blocks
+        while self.check(&TokenKind::Newline) {
+            self.advance();
+        }
         
         match self.current_kind() {
             Some(TokenKind::Pass) => self.parse_pass(),
@@ -1272,7 +1277,17 @@ impl Parser {
         
         // Parse statements until DEDENT
         let mut statements = Vec::new();
-        while !self.check(&TokenKind::Dedent) && !self.is_at_end() {
+        while !self.is_at_end() {
+            // Skip blank lines within the block
+            while self.check(&TokenKind::Newline) {
+                self.advance();
+            }
+            
+            // Check for DEDENT (end of block)
+            if self.check(&TokenKind::Dedent) {
+                break;
+            }
+            
             statements.push(self.parse_statement()?);
         }
         

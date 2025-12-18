@@ -207,12 +207,14 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 
 ### 2.6 Indentation Handling
 
-- [ ] Implement indentation stack
-- [ ] Generate INDENT tokens
-- [ ] Generate DEDENT tokens
-- [ ] Detect indentation errors
-- [ ] Handle mixed tabs/spaces (error)
-- [ ] Handle inconsistent indentation (error)
+Note: Most indentation features were implemented in Phase 1 (Lexer):
+- [x] Implement indentation stack (Phase 1 - Lexer)
+- [x] Generate INDENT tokens (Phase 1 - Lexer)
+- [x] Generate DEDENT tokens (Phase 1 - Lexer)
+- [x] Detect indentation errors (Phase 1 - Lexer)
+- [x] Handle mixed tabs/spaces (error) (Phase 1 - Lexer)
+- [x] Handle inconsistent indentation (error) (Phase 1 - Lexer)
+- [x] Handle blank lines between statements (Phase 2 - Parser, recently added)
 
 ### 2.7 Parser Error Handling
 

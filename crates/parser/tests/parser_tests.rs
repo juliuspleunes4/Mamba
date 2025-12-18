@@ -6554,3 +6554,178 @@ fn test_parse_stacked_decorators_with_calls() {
     }
 }
 
+// ============================================================================
+// Blank Line Handling Tests
+// ============================================================================
+
+#[test]
+fn test_blank_line_between_statements() {
+    let input = "x = 1\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_multiple_blank_lines_between_statements() {
+    let input = "x = 1\n\n\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_between_functions() {
+    let input = "def foo():\n    pass\n\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+    
+    if let Statement::FunctionDef { name, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+    }
+    if let Statement::FunctionDef { name, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+    }
+}
+
+#[test]
+fn test_two_blank_lines_between_functions() {
+    let input = "def foo():\n    pass\n\n\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_between_classes() {
+    let input = "class Foo:\n    pass\n\nclass Bar:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+    
+    if let Statement::ClassDef { name, .. } = &module.statements[0] {
+        assert_eq!(name, "Foo");
+    }
+    if let Statement::ClassDef { name, .. } = &module.statements[1] {
+        assert_eq!(name, "Bar");
+    }
+}
+
+#[test]
+fn test_blank_lines_between_decorated_functions() {
+    let input = "@decorator1\ndef foo():\n    pass\n\n@decorator2\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+    }
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+        assert_eq!(decorators.len(), 1);
+    }
+}
+
+#[test]
+fn test_blank_lines_mixed_statements() {
+    let input = "x = 1\n\ndef foo():\n    pass\n\nclass Bar:\n    pass\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 4);
+}
+
+#[test]
+fn test_leading_blank_lines() {
+    let input = "\n\nx = 1\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+}
+
+#[test]
+fn test_trailing_blank_lines() {
+    let input = "x = 1\n\n\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+}
+
+#[test]
+fn test_blank_lines_with_if_statements() {
+    let input = "if x:\n    pass\n\nif y:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_with_for_loops() {
+    let input = "for i in range(10):\n    pass\n\nfor j in range(5):\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_with_while_loops() {
+    let input = "while x:\n    pass\n\nwhile y:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_with_imports() {
+    let input = "import foo\n\nimport bar\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+// TODO: implement try/except parsing
+// Note: try/except parsing not yet implemented
+// #[test]
+// fn test_blank_lines_with_try_except() {
+//     let input = "try:\n    pass\nexcept:\n    pass\n\ntry:\n    pass\nexcept:\n    pass\n";
+//     let module = parse(input).unwrap();
+//     assert_eq!(module.statements.len(), 2);
+// }
+
+#[test]
+fn test_pep8_style_spacing() {
+    // PEP 8: Two blank lines between top-level definitions
+    let input = "def foo():\n    pass\n\n\ndef bar():\n    pass\n\n\nclass Baz:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 3);
+}
+
+#[test]
+fn test_blank_lines_preserve_statement_content() {
+    let input = "x = 1\n\ndef foo(a: int, b: str) -> bool:\n    return True\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 3);
+    
+    // Verify the function still has all its details
+    if let Statement::FunctionDef { name, parameters, return_type, .. } = &module.statements[1] {
+        assert_eq!(name, "foo");
+        assert_eq!(parameters.len(), 2);
+        assert!(return_type.is_some());
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_blank_lines_with_annotations() {
+    let input = "x: int = 1\n\ny: str = \"hello\"\n\nz: bool = True\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 3);
+}
+
+#[test]
+fn test_many_consecutive_blank_lines() {
+    let input = "x = 1\n\n\n\n\n\n\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_dont_create_empty_statements() {
+    let input = "\n\n\nx = 1\n\n\ny = 2\n\n\n";
+    let module = parse(input).unwrap();
+    // Should only have 2 statements, not empty ones for blank lines
+    assert_eq!(module.statements.len(), 2);
+}
+
