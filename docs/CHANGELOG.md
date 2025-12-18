@@ -221,6 +221,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Prevention of cascading errors
       - Multiple distinct errors with valid code between them
   - **614 total tests (142 lexer + 464 parser + 8 other); all passing ✅**
+- **Parser Benchmarking**
+  - Parser benchmarks:
+    * Comprehensive benchmark suite with 40+ benchmarks across 7 categories
+    * Expression parsing benchmarks (literals, operators, collections, comprehensions)
+    * Statement parsing benchmarks (assignments, control flow, imports)
+    * Function definition benchmarks (all parameter types, decorators, async)
+    * Class definition benchmarks (methods, inheritance, decorators)
+    * Medium file benchmarks (realistic 20-40 line modules)
+    * Large file stress tests (100+ statements)
+    * Edge case benchmarks (long parameter lists, deep nesting)
+    * Performance characteristics documented in BENCHMARKS.md
+  - Parser throughput: ~1.4M assignments/sec, ~543k functions/sec
+  - Parser overhead: ~300-500ns on top of lexer for simple constructs
+  - Full lexer+parser performance profiled and documented
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
