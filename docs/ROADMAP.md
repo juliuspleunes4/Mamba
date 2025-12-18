@@ -216,7 +216,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [x] Handle inconsistent indentation (error) (Phase 1 - Lexer)
 - [x] Handle blank lines between statements (Phase 2 - Parser, recently added)
 
-### 2.7 Parser Error Handling ✅🔄
+### 2.7 Parser Error Handling
 
 - [x] Detect unexpected tokens
 - [x] Detect missing tokens (e.g., missing colon)
