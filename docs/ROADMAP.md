@@ -245,13 +245,18 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.1 Symbol Table
 
-- [ ] Implement scope management
-- [ ] Track variable declarations
-- [ ] Track function definitions
-- [ ] Detect undefined variables
-- [ ] Detect redeclarations
-- [ ] Handle nested scopes
-- [ ] Implement closure tracking
+- [x] Implement scope management (Module, Function, Class, Block scopes)
+- [x] Track variable declarations (all assignment forms)
+- [x] Track function definitions (with parameters, decorators, type annotations)
+- [x] Detect undefined variables (comprehensive expression visiting)
+- [x] Detect redeclarations (same-scope errors, cross-scope shadowing)
+- [x] Handle nested scopes (functions, classes, control flow)
+- [x] Implement closure tracking (global/nonlocal declarations)
+- [x] Built-in functions and constants support
+- [x] Symbol flags: is_captured, is_global, is_nonlocal
+- [x] Comprehensive test suite: 11 symbol table + 86 semantic analyzer tests
+
+**Completed**: Symbol table with full scope management, semantic analyzer with visitor pattern, undefined variable detection, redeclaration detection, nested scope support including control flow statements and classes, closure tracking with global/nonlocal support.
 
 ### 3.2 Type Inference (Basic)
 

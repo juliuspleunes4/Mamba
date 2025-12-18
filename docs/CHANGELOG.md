@@ -8,21 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.1: Symbol Table (In Progress)**
-  - Core symbol table data structures:
+- **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (97 tests passing)
+  - Complete symbol table implementation with scope hierarchy management
+  - Semantic analyzer with visitor pattern for comprehensive AST analysis
+  - Full variable and function tracking across all scopes
+  - Undefined variable detection with detailed error reporting
+  - Redeclaration detection with proper shadowing support
+  - Nested scope support for functions, classes, and control flow
+  - Closure tracking with global/nonlocal declarations
+  - Built-in functions and constants pre-declared
+  - 97 comprehensive tests (11 symbol table + 86 semantic analyzer)
+  
+  **Core symbol table data structures**:
     - `SymbolKind` enum: Variable, Function, Class, Parameter
-    - `Symbol` struct: tracks name, kind, position, scope
+    - `Symbol` struct: tracks name, kind, position, scope, capture/global/nonlocal flags
     - `ScopeKind` enum: Module, Function, Class, Block
     - `Scope` struct: HashMap-based symbol storage with parent/child tracking
     - `SymbolTable`: manages scope hierarchy with enter/exit/declare/lookup methods
-  - 11 comprehensive unit tests covering:
-    - Scope creation and management
-    - Symbol insertion and lookup
-    - Redeclaration prevention
-    - Nested scope handling
-    - Variable shadowing
-    - Deeply nested scope chains
-  - Semantic analyzer framework:
+  
+  **Semantic analyzer features**:
     - `SemanticAnalyzer` struct with symbol table and error tracking
     - `SemanticError` enum: UndefinedVariable, Redeclaration, InvalidScope
     - AST visitor pattern for statements and expressions
