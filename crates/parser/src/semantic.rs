@@ -1145,4 +1145,143 @@ mod tests {
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 4); // a, b, c, d
     }
+
+    // Redeclaration and Shadowing Tests
+
+    #[test]
+    fn test_shadowing_in_nested_function() {
+        let code = "x = 1\ndef outer():\n    x = 2\n    def inner():\n        x = 3\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Shadowing across nested scopes should succeed");
+    }
+
+    #[test]
+    fn test_parameter_shadows_outer_variable() {
+        let code = "x = 10\ndef foo(x):\n    return x * 2\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Parameter shadowing outer variable should succeed");
+    }
+
+    #[test]
+    fn test_parameter_redeclaration_in_body() {
+        let code = "def foo(x):\n    x = 20\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Redeclaring parameter in function body should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::Redeclaration { name, .. } => {
+                assert_eq!(name, "x");
+            }
+            _ => panic!("Expected Redeclaration error"),
+        }
+    }
+
+    #[test]
+    fn test_nested_function_shadows_parameter() {
+        let code = "def outer(x):\n    def inner():\n        x = 5\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Nested function can shadow outer parameter");
+    }
+
+    #[test]
+    fn test_multiple_redeclarations_in_scope() {
+        let code = "x = 1\nx = 2\nx = 3\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Multiple redeclarations should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2); // Two redeclaration errors
+    }
+
+    #[test]
+    fn test_function_and_variable_name_conflict() {
+        let code = "x = 10\ndef x():\n    pass\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Function with same name as variable should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::Redeclaration { name, .. } => {
+                assert_eq!(name, "x");
+            }
+            _ => panic!("Expected Redeclaration error"),
+        }
+    }
+
+    #[test]
+    fn test_variable_after_function_same_name() {
+        let code = "def foo():\n    pass\nfoo = 10\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Variable with same name as function should fail");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+    }
+
+    #[test]
+    fn test_shadowing_with_annotation() {
+        let code = "x = 10\ndef foo():\n    x: int = 20\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Shadowing with annotation should succeed");
+    }
+
+    #[test]
+    fn test_no_conflict_different_scopes() {
+        let code = "def foo():\n    x = 1\ndef bar():\n    x = 2\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Same variable name in different function scopes should succeed");
+    }
+
+    #[test]
+    fn test_redeclaration_mixed_types() {
+        let code = "x = 10\nx: str = 'hello'\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Redeclaration with different type should fail");
+    }
+
+    #[test]
+    fn test_walrus_redeclaration() {
+        // In Python, walrus operator at module level would redeclare
+        // But in current implementation, it's treated as assignment
+        // This test verifies current behavior - walrus declares in current scope
+        let code = "x = 10\ny = (x := 20)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        // Walrus operator on existing variable - in Python this is allowed
+        // It rebinds the variable, which our current implementation treats as redeclaration
+        assert!(result.is_err(), "Walrus operator redeclaring variable should fail in current implementation");
+        
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::Redeclaration { name, .. } => {
+                assert_eq!(name, "x");
+            }
+            _ => panic!("Expected Redeclaration error"),
+        }
+    }
 }

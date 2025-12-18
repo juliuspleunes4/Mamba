@@ -56,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Nested scope variable access
     - Parameter usage in functions
   - 16 additional usage detection tests (57 total)
+  - Redeclaration detection and shadowing:
+    - Redeclaration errors in same scope (variables, functions, parameters)
+    - Proper shadowing support across nested scopes
+    - Parameter vs body variable conflict detection
+    - Function/variable name conflicts
+    - Mixed type redeclarations
+    - Walrus operator redeclaration handling
+  - 11 additional redeclaration/shadowing tests (68 total)
 - **Phase 1: Lexer & Tokenization (Complete!)**
   - Full tokenization of Python-compatible syntax
   - Support for all Python operators, keywords, and delimiters
