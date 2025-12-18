@@ -194,25 +194,27 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse keyword-only parameters (after * or *args)
 - [x] Parse positional-only parameters (before /)
 - [x] Parse type hints (basic)
-- [ ] Parse return type annotations
-- [ ] Parse decorators (basic)
+- [x] Parse return type annotations
+- [x] Parse decorators (basic)
 - [x] Parse async function definitions
 - [x] Parse class definitions (basic structure)
 - [x] Parse single inheritance
 - [x] Parse multiple inheritance
 - [x] Parse class methods
-- [ ] Parse class decorators
-- [ ] Parse metaclass specification
-- [ ] Parse variable annotations (x: int, x: int = 5)
+- [x] Parse class decorators
+- [x] Parse metaclass specification
+- [x] Parse variable annotations (x: int, x: int = 5)
 
 ### 2.6 Indentation Handling
 
-- [ ] Implement indentation stack
-- [ ] Generate INDENT tokens
-- [ ] Generate DEDENT tokens
-- [ ] Detect indentation errors
-- [ ] Handle mixed tabs/spaces (error)
-- [ ] Handle inconsistent indentation (error)
+Note: Most indentation features were implemented in Phase 1 (Lexer):
+- [x] Implement indentation stack (Phase 1 - Lexer)
+- [x] Generate INDENT tokens (Phase 1 - Lexer)
+- [x] Generate DEDENT tokens (Phase 1 - Lexer)
+- [x] Detect indentation errors (Phase 1 - Lexer)
+- [x] Handle mixed tabs/spaces (error) (Phase 1 - Lexer)
+- [x] Handle inconsistent indentation (error) (Phase 1 - Lexer)
+- [x] Handle blank lines between statements (Phase 2 - Parser, recently added)
 
 ### 2.7 Parser Error Handling
 

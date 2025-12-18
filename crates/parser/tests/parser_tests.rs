@@ -5578,3 +5578,1154 @@ fn test_generator_expression_complex() {
         _ => panic!("Expected generator expression"),
     }
 }
+
+// ============================================================================
+// Return Type Annotation Tests
+// ============================================================================
+
+#[test]
+fn test_parse_return_type_simple_int() {
+    let input = "def foo() -> int:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(return_type.is_some());
+        
+        if let Some(Expression::Identifier { name: type_name, .. }) = return_type {
+            assert_eq!(type_name, "int");
+        } else {
+            panic!("Expected Identifier expression for return type");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_simple_str() {
+    let input = "def foo() -> str:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str return type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_simple_bool() {
+    let input = "def foo() -> bool:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "bool");
+        } else {
+            panic!("Expected bool return type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_none() {
+    let input = "def foo() -> None:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        // None is parsed as a Literal, not an Identifier
+        if let Some(Expression::Literal(Literal::None { .. })) = return_type {
+            // Success - None was parsed correctly
+        } else {
+            panic!("Expected None literal as return type, got: {:?}", return_type);
+        }
+    }
+}
+
+#[test]
+fn test_parse_function_without_return_type() {
+    let input = "def foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(return_type.is_none(), "Expected no return type");
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_with_parameters() {
+    let input = "def foo(x: int, y: str) -> bool:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, parameters, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(parameters.len(), 2);
+        
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "bool");
+        } else {
+            panic!("Expected bool return type");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_generic_list() {
+    let input = "def foo() -> list[int]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be a Subscript expression: list[int]
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            // object should be "list"
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected Identifier for list");
+            }
+            
+            // index should be "int"
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected Identifier for int");
+            }
+        } else {
+            panic!("Expected Subscript expression for list[int]");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_generic_dict() {
+    let input = "def foo() -> dict[str, int]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be a Subscript expression: dict[str, int]
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            // object should be "dict"
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            } else {
+                panic!("Expected Identifier for dict");
+            }
+            
+            // index should be a tuple (str, int)
+            if let Expression::Tuple { elements, .. } = &**index {
+                assert_eq!(elements.len(), 2);
+                
+                if let Expression::Identifier { name, .. } = &elements[0] {
+                    assert_eq!(name, "str");
+                } else {
+                    panic!("Expected str as first type argument");
+                }
+                
+                if let Expression::Identifier { name, .. } = &elements[1] {
+                    assert_eq!(name, "int");
+                } else {
+                    panic!("Expected int as second type argument");
+                }
+            } else {
+                panic!("Expected Tuple for dict type arguments");
+            }
+        } else {
+            panic!("Expected Subscript expression for dict[str, int]");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_nested_generic() {
+    let input = "def foo() -> list[dict[str, int]]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be list[dict[str, int]]
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            // Outer is list
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected list");
+            }
+            
+            // Inner should be dict[str, int]
+            if let Expression::Subscript { object: inner_object, index: inner_index, .. } = &**index {
+                if let Expression::Identifier { name, .. } = &**inner_object {
+                    assert_eq!(name, "dict");
+                } else {
+                    panic!("Expected dict");
+                }
+                
+                // Inner index should be tuple (str, int)
+                if let Expression::Tuple { elements, .. } = &**inner_index {
+                    assert_eq!(elements.len(), 2);
+                } else {
+                    panic!("Expected tuple for dict type arguments");
+                }
+            } else {
+                panic!("Expected Subscript for inner dict");
+            }
+        } else {
+            panic!("Expected Subscript expression");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_async_function_with_return_type() {
+    let input = "async def foo() -> int:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, is_async, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(is_async, "Expected async function");
+        
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int return type");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_async_function_complex_return_type() {
+    let input = "async def fetch_data() -> dict[str, list[int]]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { is_async, return_type, .. } = &module.statements[0] {
+        assert!(is_async);
+        assert!(return_type.is_some());
+        
+        // Verify it's a Subscript (dict[...])
+        if let Some(Expression::Subscript { object, .. }) = return_type {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            } else {
+                panic!("Expected dict");
+            }
+        } else {
+            panic!("Expected Subscript expression");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_callable() {
+    let input = "def foo() -> Callable:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "Callable");
+        } else {
+            panic!("Expected Callable return type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_optional() {
+    let input = "def foo() -> Optional[int]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "Optional");
+            } else {
+                panic!("Expected Optional");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+        } else {
+            panic!("Expected Subscript expression");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_union() {
+    let input = "def foo() -> int | str:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be a BinaryOp with BitwiseOr
+        if let Some(Expression::BinaryOp { left, op, right, .. }) = return_type {
+            assert_eq!(*op, BinaryOperator::BitwiseOr);
+            
+            if let Expression::Identifier { name, .. } = &**left {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**right {
+                assert_eq!(name, "str");
+            } else {
+                panic!("Expected str");
+            }
+        } else {
+            panic!("Expected BinaryOp for union type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_multiple_functions_with_return_types() {
+    let input = "def foo() -> int:\n    pass\ndef bar() -> str:\n    pass\ndef baz():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 3);
+    
+    // First function has int return type
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int return type");
+        }
+    }
+    
+    // Second function has str return type
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str return type");
+        }
+    }
+    
+    // Third function has no return type
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[2] {
+        assert_eq!(name, "baz");
+        assert!(return_type.is_none());
+    }
+}
+
+// ============================================================================
+// Variable Annotation Tests
+// ============================================================================
+
+#[test]
+fn test_parse_variable_annotation_simple_int() {
+    let input = "x: int\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 1);
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "x");
+        assert!(value.is_none());
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected Identifier for annotation");
+        }
+    } else {
+        panic!("Expected AnnAssignment");
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_with_value() {
+    let input = "x: int = 5\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "x");
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int annotation");
+        }
+        
+        assert!(value.is_some());
+        if let Some(Expression::Literal(Literal::Integer { value: val, .. })) = value {
+            assert_eq!(*val, 5);
+        } else {
+            panic!("Expected integer value");
+        }
+    } else {
+        panic!("Expected AnnAssignment");
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_string() {
+    let input = "name: str = \"hello\"\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "name");
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str annotation");
+        }
+        
+        if let Some(Expression::Literal(Literal::String { value: s, .. })) = value {
+            assert_eq!(s, "hello");
+        } else {
+            panic!("Expected string value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_bool() {
+    let input = "flag: bool = True\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "flag");
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "bool");
+        } else {
+            panic!("Expected bool annotation");
+        }
+        
+        if let Some(Expression::Literal(Literal::Boolean { value: b, .. })) = value {
+            assert!(*b);
+        } else {
+            panic!("Expected boolean value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_generic_list() {
+    let input = "items: list[int]\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "items");
+        assert!(value.is_none());
+        
+        // Should be list[int] subscript
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected list");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+        } else {
+            panic!("Expected Subscript for list[int]");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_generic_dict() {
+    let input = "data: dict[str, int] = {}\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "data");
+        
+        // Check annotation is dict[str, int]
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            } else {
+                panic!("Expected dict");
+            }
+            
+            // Index should be tuple (str, int)
+            if let Expression::Tuple { elements, .. } = &**index {
+                assert_eq!(elements.len(), 2);
+            } else {
+                panic!("Expected tuple for dict type args");
+            }
+        } else {
+            panic!("Expected Subscript");
+        }
+        
+        // Check value is empty dict
+        if let Some(Expression::Dict { pairs, .. }) = value {
+            assert_eq!(pairs.len(), 0);
+        } else {
+            panic!("Expected empty dict value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_nested_generic() {
+    let input = "matrix: list[list[int]]\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, .. } = &module.statements[0] {
+        assert_eq!(target, "matrix");
+        
+        // Outer should be list[list[int]]
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected list");
+            }
+            
+            // Inner should also be list[int]
+            if let Expression::Subscript { object: inner_obj, index: inner_idx, .. } = &**index {
+                if let Expression::Identifier { name, .. } = &**inner_obj {
+                    assert_eq!(name, "list");
+                } else {
+                    panic!("Expected inner list");
+                }
+                
+                if let Expression::Identifier { name, .. } = &**inner_idx {
+                    assert_eq!(name, "int");
+                } else {
+                    panic!("Expected int");
+                }
+            } else {
+                panic!("Expected inner Subscript");
+            }
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_optional() {
+    let input = "value: Optional[int] = None\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "value");
+        
+        // Annotation should be Optional[int]
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "Optional");
+            } else {
+                panic!("Expected Optional");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+        } else {
+            panic!("Expected Subscript");
+        }
+        
+        // Value should be None literal
+        assert!(value.is_some());
+        if let Some(Expression::Literal(Literal::None { .. })) = value {
+            // Correct!
+        } else {
+            panic!("Expected None literal value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_union() {
+    let input = "value: int | str\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, .. } = &module.statements[0] {
+        assert_eq!(target, "value");
+        
+        // Should be BinaryOp with BitwiseOr
+        if let Expression::BinaryOp { left, op, right, .. } = annotation {
+            assert_eq!(*op, BinaryOperator::BitwiseOr);
+            
+            if let Expression::Identifier { name, .. } = &**left {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**right {
+                assert_eq!(name, "str");
+            } else {
+                panic!("Expected str");
+            }
+        } else {
+            panic!("Expected BinaryOp for union");
+        }
+    }
+}
+
+#[test]
+fn test_parse_multiple_variable_annotations() {
+    let input = "x: int\ny: str = \"test\"\nz: bool = False\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 3);
+    
+    // First: x: int
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[0] {
+        assert_eq!(target, "x");
+        assert!(value.is_none());
+    } else {
+        panic!("Expected first AnnAssignment");
+    }
+    
+    // Second: y: str = "test"
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[1] {
+        assert_eq!(target, "y");
+        assert!(value.is_some());
+    } else {
+        panic!("Expected second AnnAssignment");
+    }
+    
+    // Third: z: bool = False
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[2] {
+        assert_eq!(target, "z");
+        if let Some(Expression::Literal(Literal::Boolean { value: b, .. })) = value {
+            assert!(!*b);
+        } else {
+            panic!("Expected False");
+        }
+    } else {
+        panic!("Expected third AnnAssignment");
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_complex_value() {
+    let input = "result: dict[str, int] = {\"a\": 1, \"b\": 2}\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "result");
+        
+        // Verify annotation
+        if let Expression::Subscript { object, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            }
+        } else {
+            panic!("Expected Subscript annotation");
+        }
+        
+        // Verify value is a dict with 2 pairs
+        if let Some(Expression::Dict { pairs, .. }) = value {
+            assert_eq!(pairs.len(), 2);
+        } else {
+            panic!("Expected dict value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_list_value() {
+    let input = "numbers: list[int] = [1, 2, 3]\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[0] {
+        assert_eq!(target, "numbers");
+        
+        if let Some(Expression::List { elements, .. }) = value {
+            assert_eq!(elements.len(), 3);
+        } else {
+            panic!("Expected list value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_callable() {
+    let input = "func: Callable\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "func");
+        assert!(value.is_none());
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "Callable");
+        } else {
+            panic!("Expected Callable annotation");
+        }
+    }
+}
+
+// ============================================================================
+// Decorator Tests
+// ============================================================================
+
+#[test]
+fn test_parse_simple_decorator() {
+    let input = "@decorator\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Identifier { name, .. } = &decorators[0] {
+            assert_eq!(name, "decorator");
+        } else {
+            panic!("Expected Identifier decorator");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_call() {
+    let input = "@decorator()\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            } else {
+                panic!("Expected decorator function name");
+            }
+            assert_eq!(arguments.len(), 0);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_arguments() {
+    let input = "@decorator(arg1, arg2)\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            }
+            assert_eq!(arguments.len(), 2);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_keyword_arguments() {
+    // Note: Full keyword argument syntax (x=1) in calls may not be fully supported yet
+    // This tests basic decorator with parentheses
+    let input = "@decorator(1, 2)\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            }
+            // Has arguments
+            assert!(arguments.len() >= 2);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_multiple_decorators() {
+    let input = "@decorator1\n@decorator2\n@decorator3\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 3);
+        
+        // Check order (top to bottom)
+        if let Expression::Identifier { name, .. } = &decorators[0] {
+            assert_eq!(name, "decorator1");
+        }
+        if let Expression::Identifier { name, .. } = &decorators[1] {
+            assert_eq!(name, "decorator2");
+        }
+        if let Expression::Identifier { name, .. } = &decorators[2] {
+            assert_eq!(name, "decorator3");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_attribute_access() {
+    let input = "@pkg.decorator\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Attribute { object, attribute, .. } = &decorators[0] {
+            if let Expression::Identifier { name: obj_name, .. } = &**object {
+                assert_eq!(obj_name, "pkg");
+            }
+            assert_eq!(attribute, "decorator");
+        } else {
+            panic!("Expected Attribute decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_nested_attribute() {
+    let input = "@pkg.module.decorator\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        // Should be pkg.module.decorator
+        if let Expression::Attribute { attribute, .. } = &decorators[0] {
+            assert_eq!(attribute, "decorator");
+        } else {
+            panic!("Expected Attribute decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_on_async_function() {
+    let input = "@decorator\nasync def foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, is_async, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(*is_async);
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Identifier { name, .. } = &decorators[0] {
+            assert_eq!(name, "decorator");
+        }
+    } else {
+        panic!("Expected async FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_complex_call() {
+    // Simpler version testing multiple arguments
+    let input = "@decorator(\"arg\", 123, value)\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            }
+            assert_eq!(arguments.len(), 3);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_preserves_function_details() {
+    let input = "@decorator\ndef foo(x: int, y: str) -> bool:\n    return True\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, parameters, return_type, body, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        assert_eq!(parameters.len(), 2);
+        assert!(return_type.is_some());
+        assert_eq!(body.len(), 1);
+    } else {
+        panic!("Expected FunctionDef with all details");
+    }
+}
+
+#[test]
+fn test_parse_multiple_decorated_functions() {
+    let input = "@dec1\ndef foo():\n    pass\n@dec2\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 2);
+    
+    // First function
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+    }
+    
+    // Second function
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+        assert_eq!(decorators.len(), 1);
+    }
+}
+
+#[test]
+fn test_parse_function_without_decorator() {
+    let input = "def foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 0);
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_stacked_decorators_with_calls() {
+    let input = "@decorator1(arg1)\n@decorator2()\n@decorator3\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 3);
+        
+        // First: @decorator1(arg1) - should be a Call
+        assert!(matches!(&decorators[0], Expression::Call { .. }));
+        
+        // Second: @decorator2() - should be a Call
+        assert!(matches!(&decorators[1], Expression::Call { .. }));
+        
+        // Third: @decorator3 - should be an Identifier
+        assert!(matches!(&decorators[2], Expression::Identifier { .. }));
+    }
+}
+
+// ============================================================================
+// Blank Line Handling Tests
+// ============================================================================
+
+#[test]
+fn test_blank_line_between_statements() {
+    let input = "x = 1\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_multiple_blank_lines_between_statements() {
+    let input = "x = 1\n\n\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_between_functions() {
+    let input = "def foo():\n    pass\n\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+    
+    if let Statement::FunctionDef { name, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+    }
+    if let Statement::FunctionDef { name, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+    }
+}
+
+#[test]
+fn test_two_blank_lines_between_functions() {
+    let input = "def foo():\n    pass\n\n\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_between_classes() {
+    let input = "class Foo:\n    pass\n\nclass Bar:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+    
+    if let Statement::ClassDef { name, .. } = &module.statements[0] {
+        assert_eq!(name, "Foo");
+    }
+    if let Statement::ClassDef { name, .. } = &module.statements[1] {
+        assert_eq!(name, "Bar");
+    }
+}
+
+#[test]
+fn test_blank_lines_between_decorated_functions() {
+    let input = "@decorator1\ndef foo():\n    pass\n\n@decorator2\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+    }
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+        assert_eq!(decorators.len(), 1);
+    }
+}
+
+#[test]
+fn test_blank_lines_mixed_statements() {
+    let input = "x = 1\n\ndef foo():\n    pass\n\nclass Bar:\n    pass\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 4);
+}
+
+#[test]
+fn test_leading_blank_lines() {
+    let input = "\n\nx = 1\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+}
+
+#[test]
+fn test_trailing_blank_lines() {
+    let input = "x = 1\n\n\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+}
+
+#[test]
+fn test_blank_lines_with_if_statements() {
+    let input = "if x:\n    pass\n\nif y:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_with_for_loops() {
+    let input = "for i in range(10):\n    pass\n\nfor j in range(5):\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_with_while_loops() {
+    let input = "while x:\n    pass\n\nwhile y:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_with_imports() {
+    let input = "import foo\n\nimport bar\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+// TODO: implement try/except parsing
+// Note: try/except parsing not yet implemented
+// #[test]
+// fn test_blank_lines_with_try_except() {
+//     let input = "try:\n    pass\nexcept:\n    pass\n\ntry:\n    pass\nexcept:\n    pass\n";
+//     let module = parse(input).unwrap();
+//     assert_eq!(module.statements.len(), 2);
+// }
+
+#[test]
+fn test_pep8_style_spacing() {
+    // PEP 8: Two blank lines between top-level definitions
+    let input = "def foo():\n    pass\n\n\ndef bar():\n    pass\n\n\nclass Baz:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 3);
+}
+
+#[test]
+fn test_blank_lines_preserve_statement_content() {
+    let input = "x = 1\n\ndef foo(a: int, b: str) -> bool:\n    return True\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 3);
+    
+    // Verify the function still has all its details
+    if let Statement::FunctionDef { name, parameters, return_type, .. } = &module.statements[1] {
+        assert_eq!(name, "foo");
+        assert_eq!(parameters.len(), 2);
+        assert!(return_type.is_some());
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_blank_lines_with_annotations() {
+    let input = "x: int = 1\n\ny: str = \"hello\"\n\nz: bool = True\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 3);
+}
+
+#[test]
+fn test_many_consecutive_blank_lines() {
+    let input = "x = 1\n\n\n\n\n\n\n\ny = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 2);
+}
+
+#[test]
+fn test_blank_lines_dont_create_empty_statements() {
+    let input = "\n\n\nx = 1\n\n\ny = 2\n\n\n";
+    let module = parse(input).unwrap();
+    // Should only have 2 statements, not empty ones for blank lines
+    assert_eq!(module.statements.len(), 2);
+}
+

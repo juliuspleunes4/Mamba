@@ -43,6 +43,13 @@ pub enum Statement {
         value: Expression,
         position: SourcePosition,
     },
+    /// Annotated assignment (x: int or x: int = 5)
+    AnnAssignment {
+        target: String,
+        annotation: Expression,
+        value: Option<Expression>,
+        position: SourcePosition,
+    },
     /// Augmented assignment (x += 5)
     AugmentedAssignment {
         target: Expression,
@@ -127,6 +134,8 @@ pub enum Statement {
         parameters: Vec<Parameter>,
         body: Vec<Statement>,
         is_async: bool,
+        return_type: Option<Expression>,
+        decorators: Vec<Expression>,
         position: SourcePosition,
     },
     /// Class definition
@@ -134,6 +143,8 @@ pub enum Statement {
         name: String,
         bases: Vec<Expression>,
         body: Vec<Statement>,
+        decorators: Vec<Expression>,
+        metaclass: Option<Expression>,
         position: SourcePosition,
     },
 }
@@ -425,6 +436,7 @@ impl Statement {
         match self {
             Statement::Expression(expr) => expr.position(),
             Statement::Assignment { position, .. } => position,
+            Statement::AnnAssignment { position, .. } => position,
             Statement::AugmentedAssignment { position, .. } => position,
             Statement::Pass(position) => position,
             Statement::Break(position) => position,

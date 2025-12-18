@@ -35,8 +35,9 @@ impl Parser {
         let mut statements = Vec::new();
 
         while !self.is_at_end() {
-            // Skip newlines at module level
-            if self.match_token(&TokenKind::Newline) {
+            // Skip newlines and dedents at module level
+            // Dedents appear after blocks end and shouldn't start new statements
+            if self.match_token(&TokenKind::Newline) || self.match_token(&TokenKind::Dedent) {
                 continue;
             }
             
@@ -51,7 +52,11 @@ impl Parser {
 
     /// Parse a single statement
     fn parse_statement(&mut self) -> ParseResult<Statement> {
-        // TODO: Add support for remaining statement types: if, while, for, def, class, import, etc.
+        // Skip any leading newlines (blank lines)
+        // Note: Do NOT skip DEDENT tokens here, as they signal end of blocks
+        while self.check(&TokenKind::Newline) {
+            self.advance();
+        }
         
         match self.current_kind() {
             Some(TokenKind::Pass) => self.parse_pass(),
@@ -68,17 +73,53 @@ impl Parser {
             Some(TokenKind::If) => self.parse_if(),
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
+            Some(TokenKind::At) => {
+                // Parse decorators followed by function or class definition
+                let decorators = self.parse_decorators()?;
+                
+                // After decorators, expect def, async def, or class
+                match self.current_kind() {
+                    Some(TokenKind::Def) => {
+                        let pos = self.current_position();
+                        self.advance(); // consume 'def'
+                        self.parse_function_def(false, pos, decorators)
+                    }
+                    Some(TokenKind::Async) => {
+                        let pos = self.current_position();
+                        self.advance(); // consume 'async'
+                        if self.match_token(&TokenKind::Def) {
+                            self.parse_function_def(true, pos, decorators)
+                        } else {
+                            return Err(MambaError::ParseError(
+                                format!("Expected 'def' after 'async' at {}:{}", 
+                                    self.current_position().line, 
+                                    self.current_position().column)
+                            ));
+                        }
+                    }
+                    Some(TokenKind::Class) => {
+                        self.parse_class_def(decorators)
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected function or class definition after decorator at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                }
+            }
             Some(TokenKind::Def) => {
                 let pos = self.current_position();
                 self.advance(); // consume 'def'
-                self.parse_function_def(false, pos)
+                self.parse_function_def(false, pos, Vec::new())
             }
             Some(TokenKind::Async) => {
                 // Check if this is async def
                 let pos = self.current_position();
                 self.advance(); // consume 'async'
                 if self.match_token(&TokenKind::Def) {
-                    self.parse_function_def(true, pos)
+                    self.parse_function_def(true, pos, Vec::new())
                 } else {
                     return Err(MambaError::ParseError(
                         format!("Expected 'def' after 'async' at {}:{}", 
@@ -87,10 +128,34 @@ impl Parser {
                     ));
                 }
             }
-            Some(TokenKind::Class) => self.parse_class_def(),
+            Some(TokenKind::Class) => self.parse_class_def(Vec::new()),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
+                
+                // Check for annotated assignment (x: int or x: int = 5)
+                // Must be a simple identifier followed by colon
+                if let Expression::Identifier { name, position } = &expr {
+                    if self.match_token(&TokenKind::Colon) {
+                        // Parse the annotation
+                        let annotation = self.parse_expression()?;
+                        
+                        // Check for optional value assignment
+                        let value = if self.match_token(&TokenKind::Assign) {
+                            Some(self.parse_expression()?)
+                        } else {
+                            None
+                        };
+                        
+                        self.consume_newline_or_eof()?;
+                        return Ok(Statement::AnnAssignment {
+                            target: name.clone(),
+                            annotation,
+                            value,
+                            position: position.clone(),
+                        });
+                    }
+                }
                 
                 // Check for comma (tuple without parentheses) - this could be unpacking
                 if self.check(&TokenKind::Comma) {
@@ -798,8 +863,30 @@ impl Parser {
         }
     }
 
+    /// Parse decorators (@decorator followed by newline)
+    fn parse_decorators(&mut self) -> ParseResult<Vec<Expression>> {
+        let mut decorators = Vec::new();
+        
+        while self.match_token(&TokenKind::At) {
+            // Parse decorator expression (can be identifier, call, or attribute)
+            let decorator = self.parse_expression()?;
+            decorators.push(decorator);
+            
+            // Expect newline after decorator
+            if !self.match_token(&TokenKind::Newline) {
+                return Err(MambaError::ParseError(
+                    format!("Expected newline after decorator at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+        }
+        
+        Ok(decorators)
+    }
+
     /// Parse function definition (def name(params): body)
-    fn parse_function_def(&mut self, is_async: bool, pos: SourcePosition) -> ParseResult<Statement> {
+    fn parse_function_def(&mut self, is_async: bool, pos: SourcePosition, decorators: Vec<Expression>) -> ParseResult<Statement> {
         // 'def' already consumed by caller
         
         // Parse function name
@@ -839,6 +926,13 @@ impl Parser {
             ));
         }
         
+        // Parse optional return type annotation (-> type)
+        let return_type = if self.match_token(&TokenKind::Arrow) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
             return Err(MambaError::ParseError(
@@ -856,12 +950,14 @@ impl Parser {
             parameters,
             body,
             is_async,
+            return_type,
+            decorators,
             position: pos,
         })
     }
 
     /// Parse class definition (class Name[(bases)]: body)
-    fn parse_class_def(&mut self) -> ParseResult<Statement> {
+    fn parse_class_def(&mut self, decorators: Vec<Expression>) -> ParseResult<Statement> {
         let pos = self.current_position();
         self.advance(); // consume 'class'
         
@@ -881,18 +977,75 @@ impl Parser {
             }
         };
         
-        // Parse optional base classes (inheritance)
-        let bases = if self.match_token(&TokenKind::LeftParen) {
-            let mut base_list = Vec::new();
-            
+        // Parse optional base classes (inheritance) and metaclass
+        let mut bases = Vec::new();
+        let mut metaclass = None;
+        
+        if self.match_token(&TokenKind::LeftParen) {
             // Check for empty parentheses
             if !self.check(&TokenKind::RightParen) {
                 loop {
-                    // Parse base class expression (identifier or attribute access)
-                    let base = self.parse_expression()?;
-                    base_list.push(base);
+                    // Check if this is a keyword argument (metaclass=...)
+                    if let Some(TokenKind::Identifier(name)) = self.current_kind() {
+                        let id_name = name.clone();
+                        
+                        // Peek ahead to see if there's an equals sign
+                        if let Some(next_token) = self.tokens.peek() {
+                            if matches!(next_token.kind, TokenKind::Assign) {
+                                // This is a keyword argument - must be metaclass
+                                self.advance(); // consume identifier
+                                
+                                if id_name != "metaclass" {
+                                    return Err(MambaError::ParseError(
+                                        format!("Invalid keyword argument '{}' in class definition. Only 'metaclass' is allowed at {}:{}", 
+                                            id_name,
+                                            self.current_position().line, 
+                                            self.current_position().column)
+                                    ));
+                                }
+                                
+                                if metaclass.is_some() {
+                                    return Err(MambaError::ParseError(
+                                        format!("Duplicate metaclass specification at {}:{}", 
+                                            self.current_position().line, 
+                                            self.current_position().column)
+                                    ));
+                                }
+                                
+                                self.advance(); // consume '='
+                                
+                                // Parse the metaclass expression
+                                let meta_expr = self.parse_expression()?;
+                                metaclass = Some(meta_expr);
+                                
+                                // After metaclass, we can only have comma or closing paren
+                                if self.match_token(&TokenKind::Comma) {
+                                    // Allow trailing comma
+                                    if self.check(&TokenKind::RightParen) {
+                                        break;
+                                    }
+                                    // Continue to check if next is another keyword arg (for better error)
+                                    continue;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     
-                    // Check for comma (more base classes)
+                    // Not a keyword argument - parse as base class
+                    if metaclass.is_some() {
+                        return Err(MambaError::ParseError(
+                            format!("Base classes must come before metaclass specification at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                    
+                    let base = self.parse_expression()?;
+                    bases.push(base);
+                    
+                    // Check for comma (more base classes or metaclass)
                     if self.match_token(&TokenKind::Comma) {
                         // Allow trailing comma
                         if self.check(&TokenKind::RightParen) {
@@ -913,11 +1066,7 @@ impl Parser {
                         self.current_position().column)
                 ));
             }
-            
-            base_list
-        } else {
-            Vec::new()
-        };
+        }
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
@@ -935,6 +1084,8 @@ impl Parser {
             name,
             bases,
             body,
+            decorators,
+            metaclass,
             position: pos,
         })
     }
@@ -1184,7 +1335,17 @@ impl Parser {
         
         // Parse statements until DEDENT
         let mut statements = Vec::new();
-        while !self.check(&TokenKind::Dedent) && !self.is_at_end() {
+        while !self.is_at_end() {
+            // Skip blank lines within the block
+            while self.check(&TokenKind::Newline) {
+                self.advance();
+            }
+            
+            // Check for DEDENT (end of block)
+            if self.check(&TokenKind::Dedent) {
+                break;
+            }
+            
             statements.push(self.parse_statement()?);
         }
         
@@ -1644,11 +1805,34 @@ impl Parser {
                     };
                 }
                 Some(TokenKind::LeftBracket) => {
-                    // Subscript: obj[index]
+                    // Subscript: obj[index] or obj[a, b, c] (tuple index for type annotations)
                     self.advance(); // consume '['
                     let subscript_pos = expr.position().clone();
                     
-                    let index = self.parse_expression()?;
+                    // Parse first index expression
+                    let first_index = self.parse_expression()?;
+                    
+                    // Check if there are more elements (tuple index, e.g., dict[str, int])
+                    let index = if self.check(&TokenKind::Comma) {
+                        // Multiple elements - create a tuple
+                        let mut elements = vec![first_index];
+                        
+                        while self.match_token(&TokenKind::Comma) {
+                            // Allow trailing comma
+                            if self.check(&TokenKind::RightBracket) {
+                                break;
+                            }
+                            elements.push(self.parse_expression()?);
+                        }
+                        
+                        Expression::Tuple {
+                            elements,
+                            position: subscript_pos.clone(),
+                        }
+                    } else {
+                        // Single element
+                        first_index
+                    };
                     
                     self.expect_token(TokenKind::RightBracket, "Expected ']' after subscript index")?;
                     

@@ -798,10 +798,11 @@ fn test_unterminated_fstring() {
 }
 
 #[test]
-fn test_invalid_character() {
+fn test_at_symbol() {
     let mut lexer = Lexer::new("@");
-    let result = lexer.tokenize();
-    assert!(result.is_err());
+    let tokens = lexer.tokenize().unwrap();
+    assert_eq!(tokens.len(), 2); // @ and EOF
+    assert_eq!(tokens[0].kind, TokenKind::At);
 }
 
 #[test]
