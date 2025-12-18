@@ -151,7 +151,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation; positional-only and keyword-only parameter validation; async keyword must be followed by def
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages; clear async syntax error messages; clear metaclass specification error messages
-  - **566 total tests, all passing (142 lexer + 416 parser + 8 other)**
+  - **577 total tests (142 lexer + 427 parser + 8 other); 572 passing, 5 ignored**
+- **Phase 2.7: Parser Error Handling (In Progress)**
+  - Error message helper functions:
+    * `error()` - Create formatted error with current position
+    * `expected()` - Generate "Expected X, found Y" messages
+    * `expected_after()` - Generate "Expected X after Y, found Z" messages
+    * `current_token_string()` - Human-readable token descriptions (all TokenKind variants)
+  - Applied helpers throughout parser:
+    * `parse_function_def()` - function header errors
+    * `expect_token()` - general token expectation
+    * `parse_if_statement()` - if/elif/else colon errors (3 locations)
+    * `parse_while_loop()` - while/else colon errors (2 locations)
+    * `parse_for_loop()` - for/else colon errors (2 locations)
+    * `parse_class_def()` - class header colon error
+    * `consume_newline_or_eof()` - improved to show what was found
+    * `parse_primary()` - expression parsing errors
+    * Lambda and dict colons (via expect_token)
+  - Validation logic added:
+    * Assignment target validation - rejects literals, operators, function calls, lambdas as assignment targets
+    * Detects invalid assignment targets like `5 = x` with clear error messages
+    * Empty expression detection - `if :` now produces "Expected expression, found ':'" error
+    * Parameter order validation already working (non-default after default rejected)
+  - Improved error messages:
+    * Clear "Expected ':' after X" messages for all control structures
+    * Better error messages for missing function names after 'def'
+    * Consistent "Expected X, found Y" format with readable token descriptions
+    * "Cannot assign to literal/operator/function call" messages
+    * "Expected expression" when expression is missing
+    * Position information in all error messages
+  - Error message test suite:
+    * 16 tests covering various error scenarios
+    * All 16 tests passing (improved error messages and validation working)
+    * Test helper enhanced to catch both lexer and parser errors
+  - Error suggestions for common mistakes:
+    * `error_with_suggestion()` - Append helpful hints to error messages
+    * `suggest_keyword_fix()` - Detects 11 common keyword typos:
+      - `elseif`/`elsif` → "Did you mean 'elif'?"
+      - `define`/`function`/`func` → "Did you mean 'def'?"
+      - `cls` → "Did you mean 'class'?"
+      - `then` → "Remove 'then' (not needed in Mamba syntax)"
+      - `switch` → "Did you mean 'match'?"
+      - `foreach` → "Did you mean 'for'?"
+      - `until` → "Mamba uses 'while not' instead of 'until'"
+      - `unless` → "Mamba uses 'if not' instead of 'unless'"
+    * Context-aware suggestion triggering:
+      - Checks identifier context before suggesting (avoids false positives)
+      - Detects typos in statement-like contexts (followed by colon/identifier)
+      - Suggestions integrated into `expected()` helper for broader coverage
+    * Special handling for 'then' in if statements
+    * Error suggestion test suite: 11 tests covering all keyword typo suggestions
+  - Error recovery and multiple error tracking:
+    * Parser now collects multiple errors instead of stopping at first error
+    * `synchronize()` method skips to safe recovery points:
+      - Newline (statement boundary)
+      - Dedent (block boundary)
+      - Statement keywords (def, class, if, while, for, return, import, etc.)
+    * Panic mode prevents cascading errors
+    * Parser continues after errors, parsing as much valid code as possible
+    * Returns `Result<Module, Vec<MambaError>>` with all collected errors
+    * Separate errors reported when separated by successfully parsed code
+    * Cascading errors suppressed until successful parse
+    * Error recovery test suite: 21 tests covering:
+      - Single and multiple error recovery
+      - Recovery across statement boundaries
+      - Recovery in function and class definitions
+      - Recovery from incomplete syntax
+      - Validation that good code is preserved around errors
+      - Prevention of cascading errors
+      - Multiple distinct errors with valid code between them
+  - **614 total tests (142 lexer + 464 parser + 8 other); all passing ✅**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

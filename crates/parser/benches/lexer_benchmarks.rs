@@ -169,7 +169,7 @@ if True:
 fn bench_medium_files(c: &mut Criterion) {
     let mut group = c.benchmark_group("medium_files");
     
-    // Realistic Python module (~50 lines)
+    // Realistic Mamba module (~50 lines)
     let medium_code = r#"
 # Calculator module
 class Calculator:

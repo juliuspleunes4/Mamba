@@ -63,7 +63,7 @@ fn test_unicode_cyrillic_identifier() {
 
 #[test]
 fn test_unicode_emoji_not_allowed() {
-    // Emojis are not valid identifier characters in Python
+    // Emojis are not valid identifier characters in Mamba
     let mut lexer = Lexer::new("🚀 = 42");
     let result = lexer.tokenize();
     

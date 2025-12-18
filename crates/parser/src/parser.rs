@@ -15,6 +15,8 @@ pub struct Parser {
     tokens: Peekable<IntoIter<Token>>,
     current_token: Option<Token>,
     previous_position: SourcePosition,
+    errors: Vec<MambaError>,
+    panic_mode: bool,  // True when recovering from an error
 }
 
 impl Parser {
@@ -24,13 +26,16 @@ impl Parser {
             tokens: tokens.into_iter().peekable(),
             current_token: None,
             previous_position: SourcePosition::new(0, 0, 0),
+            errors: Vec::new(),
+            panic_mode: false,
         };
         parser.advance(); // Load first token
         parser
     }
 
     /// Parse a complete module (list of statements)
-    pub fn parse(&mut self) -> ParseResult<Module> {
+    /// Returns the parsed module and any errors encountered during parsing
+    pub fn parse(&mut self) -> Result<Module, Vec<MambaError>> {
         let start_pos = self.current_position();
         let mut statements = Vec::new();
 
@@ -41,13 +46,33 @@ impl Parser {
                 continue;
             }
             
-            statements.push(self.parse_statement()?);
+            // Try to parse statement, recover on error
+            match self.parse_statement() {
+                Ok(stmt) => {
+                    statements.push(stmt);
+                    self.panic_mode = false; // Successfully parsed something - exit panic mode
+                }
+                Err(e) => {
+                    // Record error only if not in panic mode (avoid cascading errors)
+                    if !self.panic_mode {
+                        self.errors.push(e);
+                        self.panic_mode = true;
+                    }
+                    // Try to recover to next statement
+                    self.synchronize();
+                }
+            }
         }
 
-        Ok(Module {
-            statements,
-            position: start_pos,
-        })
+        // Return module and errors (if any)
+        if self.errors.is_empty() {
+            Ok(Module {
+                statements,
+                position: start_pos,
+            })
+        } else {
+            Err(std::mem::take(&mut self.errors))
+        }
     }
 
     /// Parse a single statement
@@ -238,6 +263,20 @@ impl Parser {
                 }
                 
                 // Otherwise it's an expression statement
+                // But first, check if we have an identifier that looks like a keyword typo
+                // This catches cases like "elseif x:" where elseif was parsed as identifier
+                if let Expression::Identifier { name, position } = &expr {
+                    if let Some(suggestion) = self.suggest_keyword_fix(name) {
+                        // Check if this looks like a statement keyword context (followed by identifier/colon)
+                        if matches!(self.current_kind(), Some(TokenKind::Identifier(_)) | Some(TokenKind::Colon)) {
+                            return Err(MambaError::ParseError(format!(
+                                "Unexpected identifier '{}' at {}:{}. {}",
+                                name, position.line, position.column, suggestion
+                            )));
+                        }
+                    }
+                }
+                
                 self.consume_newline_or_eof()?;
                 Ok(Statement::Expression(expr))
             }
@@ -646,12 +685,16 @@ impl Parser {
         // Parse condition
         let condition = self.parse_expression()?;
         
-        // Expect colon
+        // Expect colon (check for common 'then' mistake)
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after if condition at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
+            let suggestion = if matches!(self.current_kind(), Some(TokenKind::Identifier(name)) if name == "then") {
+                Some("Remove 'then' (not needed in Mamba syntax)".to_string())
+            } else {
+                None
+            };
+            return Err(self.error_with_suggestion(
+                "Expected ':' after if condition".to_string(),
+                suggestion
             ));
         }
         
@@ -666,11 +709,7 @@ impl Parser {
             let elif_condition = self.parse_expression()?;
             
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after elif condition at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "elif condition"));
             }
             
             let elif_body = self.parse_block()?;
@@ -680,11 +719,7 @@ impl Parser {
         // Parse optional else block
         let else_block = if self.match_token(&TokenKind::Else) {
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after else at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "'else'"));
             }
             Some(self.parse_block()?)
         } else {
@@ -710,11 +745,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after while condition at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "while condition"));
         }
         
         // Parse body
@@ -723,11 +754,7 @@ impl Parser {
         // Parse optional else block
         let else_block = if self.match_token(&TokenKind::Else) {
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after else at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "'else'"));
             }
             Some(self.parse_block()?)
         } else {
@@ -765,11 +792,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after for clause at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "for clause"));
         }
         
         // Parse body
@@ -778,11 +801,7 @@ impl Parser {
         // Parse optional else block
         let else_block = if self.match_token(&TokenKind::Else) {
             if !self.match_token(&TokenKind::Colon) {
-                return Err(MambaError::ParseError(
-                    format!("Expected ':' after else at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("':'", "'else'"));
             }
             Some(self.parse_block()?)
         } else {
@@ -897,21 +916,13 @@ impl Parser {
                 func_name
             }
             _ => {
-                return Err(MambaError::ParseError(
-                    format!("Expected function name after 'def' at {}:{}", 
-                        self.current_position().line, 
-                        self.current_position().column)
-                ));
+                return Err(self.expected_after("function name (identifier)", "'def'"));
             }
         };
         
         // Expect opening parenthesis
         if !self.match_token(&TokenKind::LeftParen) {
-            return Err(MambaError::ParseError(
-                format!("Expected '(' after function name at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("'('", "function name"));
         }
         
         // Parse parameter list
@@ -935,11 +946,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after function signature at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "function signature"));
         }
         
         // Parse body
@@ -1070,11 +1077,7 @@ impl Parser {
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
-            return Err(MambaError::ParseError(
-                format!("Expected ':' after class header at {}:{}", 
-                    self.current_position().line, 
-                    self.current_position().column)
-            ));
+            return Err(self.expected_after("':'", "class header"));
         }
         
         // Parse body
@@ -1385,15 +1388,68 @@ impl Parser {
     /// Validate a single assignment target (checks for multiple starred expressions)
     fn validate_single_target(&self, target: &Expression) -> ParseResult<()> {
         match target {
+            // Valid assignment targets
+            Expression::Identifier { .. } => Ok(()),
+            Expression::Subscript { .. } => Ok(()),
+            Expression::Attribute { .. } => Ok(()),
+            Expression::Starred { value, .. } => {
+                // Starred expressions can only contain valid targets
+                self.validate_single_target(value)
+            }
             Expression::Tuple { elements, .. } => {
+                // Validate each element in tuple unpacking
+                for element in elements {
+                    self.validate_single_target(element)?;
+                }
                 self.validate_unpacking_targets(elements)?;
+                Ok(())
             }
             Expression::List { elements, .. } => {
+                // Validate each element in list unpacking
+                for element in elements {
+                    self.validate_single_target(element)?;
+                }
                 self.validate_unpacking_targets(elements)?;
+                Ok(())
             }
-            _ => {}
+            // Invalid assignment targets
+            Expression::Literal(lit) => {
+                let position = match lit {
+                    Literal::Integer { position, .. } 
+                    | Literal::Float { position, .. }
+                    | Literal::String { position, .. }
+                    | Literal::Boolean { position, .. }
+                    | Literal::None { position }
+                    | Literal::Ellipsis { position } => position,
+                };
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to literal at {}:{}", position.line, position.column)
+                ))
+            }
+            Expression::BinaryOp { position, .. }
+            | Expression::UnaryOp { position, .. } => {
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to operator at {}:{}", position.line, position.column)
+                ))
+            }
+            Expression::Call { position, .. } => {
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to function call at {}:{}", position.line, position.column)
+                ))
+            }
+            Expression::Lambda { position, .. } => {
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to lambda at {}:{}", position.line, position.column)
+                ))
+            }
+            _ => {
+                // For other expression types, reject as invalid assignment target
+                Err(MambaError::ParseError(
+                    format!("Invalid assignment target at {}:{}", 
+                        target.position().line, target.position().column)
+                ))
+            }
         }
-        Ok(())
     }
 
     /// Count starred expressions in a list of expressions (recursively handles tuples)
@@ -2146,12 +2202,7 @@ impl Parser {
                     })
                 }
             }
-            _ => Err(MambaError::ParseError(format!(
-                "Unexpected token at {}:{}: {:?}",
-                self.current_position().line,
-                self.current_position().column,
-                self.current_token.as_ref().map(|t| &t.kind)
-            ))),
+            _ => Err(self.expected("expression")),
         }
     }
 
@@ -2296,12 +2347,8 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            Err(MambaError::ParseError(format!(
-                "{} at {}:{}",
-                error_msg,
-                self.current_position().line,
-                self.current_position().column
-            )))
+            // Use our error helper to provide context about what was found
+            Err(self.error(error_msg))
         }
     }
 
@@ -2312,13 +2359,235 @@ impl Parser {
         } else if self.match_token(&TokenKind::Newline) {
             Ok(())
         } else {
-            Err(MambaError::ParseError(format!(
-                "Expected newline or end of file at {}:{}",
-                self.current_position().line,
-                self.current_position().column
-            )))
+            Err(self.expected("newline or end of file"))
         }
     }
+
+    // ========================================
+    // Error Message Helpers
+    // ========================================
+
+    /// Create a formatted error with current position
+    fn error(&self, message: impl Into<String>) -> MambaError {
+        let pos = self.current_position();
+        MambaError::ParseError(format!("{} at {}:{}", message.into(), pos.line, pos.column))
+    }
+
+    /// Create "Expected X, found Y" error message
+    fn expected(&self, expected: &str) -> MambaError {
+        let pos = self.current_position();
+        let found = self.current_token_string();
+        
+        // Check if the found token is a common keyword typo
+        let suggestion = if let Some(TokenKind::Identifier(name)) = self.current_kind() {
+            self.suggest_keyword_fix(name)
+        } else {
+            None
+        };
+        
+        let base_msg = format!(
+            "Expected {}, found {} at {}:{}",
+            expected, found, pos.line, pos.column
+        );
+        
+        if let Some(suggestion_text) = suggestion {
+            MambaError::ParseError(format!("{}. {}", base_msg, suggestion_text))
+        } else {
+            MambaError::ParseError(base_msg)
+        }
+    }
+
+    /// Create "Expected X after Y" error message
+    fn expected_after(&self, expected: &str, after: &str) -> MambaError {
+        let pos = self.current_position();
+        let found = self.current_token_string();
+        MambaError::ParseError(format!(
+            "Expected {} after {}, found {} at {}:{}",
+            expected, after, found, pos.line, pos.column
+        ))
+    }
+
+    /// Get a human-readable string for the current token
+    fn current_token_string(&self) -> String {
+        match &self.current_token {
+            None => "end of file".to_string(),
+            Some(token) => match &token.kind {
+                TokenKind::Eof => "end of file".to_string(),
+                TokenKind::Newline => "newline".to_string(),
+                TokenKind::Indent => "indent".to_string(),
+                TokenKind::Dedent => "dedent".to_string(),
+                TokenKind::Identifier(name) => format!("identifier '{}'", name),
+                TokenKind::Integer(val) => format!("integer {}", val),
+                TokenKind::Float(val) => format!("float {}", val),
+                TokenKind::String(val) => format!("string \"{}\"", val),
+                TokenKind::LeftParen => "'('".to_string(),
+                TokenKind::RightParen => "')'".to_string(),
+                TokenKind::LeftBracket => "'['".to_string(),
+                TokenKind::RightBracket => "']'".to_string(),
+                TokenKind::LeftBrace => "'{'".to_string(),
+                TokenKind::RightBrace => "'}'".to_string(),
+                TokenKind::Comma => "','".to_string(),
+                TokenKind::Colon => "':'".to_string(),
+                TokenKind::Semicolon => "';'".to_string(),
+                TokenKind::Dot => "'.'".to_string(),
+                TokenKind::Assign => "'='".to_string(),
+                TokenKind::Plus => "'+'".to_string(),
+                TokenKind::Minus => "'-'".to_string(),
+                TokenKind::Star => "'*'".to_string(),
+                TokenKind::Slash => "'/'".to_string(),
+                TokenKind::Percent => "'%'".to_string(),
+                TokenKind::DoubleSlash => "'//'".to_string(),
+                TokenKind::DoubleStar => "'**'".to_string(),
+                TokenKind::Equal => "'=='".to_string(),
+                TokenKind::NotEqual => "'!='".to_string(),
+                TokenKind::Less => "'<'".to_string(),
+                TokenKind::LessEqual => "'<='".to_string(),
+                TokenKind::Greater => "'>'".to_string(),
+                TokenKind::GreaterEqual => "'>='".to_string(),
+                TokenKind::Ampersand => "'&'".to_string(),
+                TokenKind::Pipe => "'|'".to_string(),
+                TokenKind::Caret => "'^'".to_string(),
+                TokenKind::Tilde => "'~'".to_string(),
+                TokenKind::LeftShift => "'<<'".to_string(),
+                TokenKind::RightShift => "'>>'".to_string(),
+                TokenKind::PlusAssign => "'+='".to_string(),
+                TokenKind::MinusAssign => "'-='".to_string(),
+                TokenKind::StarAssign => "'*='".to_string(),
+                TokenKind::SlashAssign => "'/='".to_string(),
+                TokenKind::PercentAssign => "'%='".to_string(),
+                TokenKind::DoubleSlashAssign => "'//='".to_string(),
+                TokenKind::DoubleStarAssign => "'**='".to_string(),
+                TokenKind::AmpersandAssign => "'&='".to_string(),
+                TokenKind::PipeAssign => "'|='".to_string(),
+                TokenKind::CaretAssign => "'^='".to_string(),
+                TokenKind::LeftShiftAssign => "'<<='".to_string(),
+                TokenKind::RightShiftAssign => "'>>='".to_string(),
+                TokenKind::Walrus => "':='".to_string(),
+                TokenKind::Arrow => "'->'".to_string(),
+                TokenKind::At => "'@'".to_string(),
+                TokenKind::Ellipsis => "'...'".to_string(),
+                // Keywords
+                TokenKind::And => "keyword 'and'".to_string(),
+                TokenKind::Or => "keyword 'or'".to_string(),
+                TokenKind::Not => "keyword 'not'".to_string(),
+                TokenKind::In => "keyword 'in'".to_string(),
+                TokenKind::Is => "keyword 'is'".to_string(),
+                TokenKind::If => "keyword 'if'".to_string(),
+                TokenKind::Elif => "keyword 'elif'".to_string(),
+                TokenKind::Else => "keyword 'else'".to_string(),
+                TokenKind::While => "keyword 'while'".to_string(),
+                TokenKind::For => "keyword 'for'".to_string(),
+                TokenKind::Break => "keyword 'break'".to_string(),
+                TokenKind::Continue => "keyword 'continue'".to_string(),
+                TokenKind::Return => "keyword 'return'".to_string(),
+                TokenKind::Def => "keyword 'def'".to_string(),
+                TokenKind::Class => "keyword 'class'".to_string(),
+                TokenKind::Pass => "keyword 'pass'".to_string(),
+                TokenKind::Import => "keyword 'import'".to_string(),
+                TokenKind::From => "keyword 'from'".to_string(),
+                TokenKind::As => "keyword 'as'".to_string(),
+                TokenKind::True => "keyword 'True'".to_string(),
+                TokenKind::False => "keyword 'False'".to_string(),
+                TokenKind::None => "keyword 'None'".to_string(),
+                TokenKind::Lambda => "keyword 'lambda'".to_string(),
+                TokenKind::Assert => "keyword 'assert'".to_string(),
+                TokenKind::Del => "keyword 'del'".to_string(),
+                TokenKind::Global => "keyword 'global'".to_string(),
+                TokenKind::Nonlocal => "keyword 'nonlocal'".to_string(),
+                TokenKind::Raise => "keyword 'raise'".to_string(),
+                TokenKind::Try => "keyword 'try'".to_string(),
+                TokenKind::Except => "keyword 'except'".to_string(),
+                TokenKind::Finally => "keyword 'finally'".to_string(),
+                TokenKind::With => "keyword 'with'".to_string(),
+                TokenKind::Yield => "keyword 'yield'".to_string(),
+                TokenKind::Async => "keyword 'async'".to_string(),
+                TokenKind::Await => "keyword 'await'".to_string(),
+                TokenKind::Match => "keyword 'match'".to_string(),
+                TokenKind::Case => "keyword 'case'".to_string(),
+                TokenKind::Comment(_) => "comment".to_string(),
+            }
+        }
+    }
+
+    /// Create error with optional suggestion
+    fn error_with_suggestion(&self, message: impl Into<String>, suggestion: Option<String>) -> MambaError {
+        let pos = self.current_position();
+        let msg = message.into();
+        match suggestion {
+            Some(hint) => MambaError::ParseError(format!("{} at {}:{}. {}", msg, pos.line, pos.column, hint)),
+            None => MambaError::ParseError(format!("{} at {}:{}", msg, pos.line, pos.column)),
+        }
+    }
+
+    /// Detect if current identifier might be a misspelled keyword
+    fn suggest_keyword_fix(&self, identifier: &str) -> Option<String> {
+        match identifier {
+            "elseif" => Some("Did you mean 'elif'?".to_string()),
+            "elsif" => Some("Did you mean 'elif'?".to_string()),
+            "define" => Some("Did you mean 'def'?".to_string()),
+            "function" => Some("Did you mean 'def'?".to_string()),
+            "func" => Some("Did you mean 'def'?".to_string()),
+            "then" => Some("Remove 'then' (not needed in Mamba syntax)".to_string()),
+            "cls" => Some("Did you mean 'class'?".to_string()),
+            "switch" => Some("Did you mean 'match'?".to_string()),
+            "foreach" => Some("Did you mean 'for'?".to_string()),
+            "until" => Some("Mamba uses 'while not' instead of 'until'".to_string()),
+            "unless" => Some("Mamba uses 'if not' instead of 'unless'".to_string()),
+            _ => None,
+        }
+    }
+
+    // ========================================
+    // Error Recovery
+    // ========================================
+
+    /// Synchronize after an error by skipping tokens until we reach a safe recovery point
+    /// Recovery points are:
+    /// - Newline (statement boundary)
+    /// - Dedent (block boundary)
+    /// - Statement-starting keywords (def, class, if, while, for, return, etc.)
+    fn synchronize(&mut self) {
+        self.panic_mode = true;
+
+        while !self.is_at_end() {
+            // Check if current token is a recovery point
+            match self.current_kind() {
+                Some(TokenKind::Newline) => {
+                    // Consume the newline and stop
+                    self.advance();
+                    return;
+                }
+                Some(TokenKind::Dedent) => {
+                    // Stop at dedent (block boundary)
+                    return;
+                }
+                Some(TokenKind::Def)
+                | Some(TokenKind::Class)
+                | Some(TokenKind::If)
+                | Some(TokenKind::While)
+                | Some(TokenKind::For)
+                | Some(TokenKind::Return)
+                | Some(TokenKind::Import)
+                | Some(TokenKind::From)
+                | Some(TokenKind::Raise)
+                | Some(TokenKind::Try)
+                | Some(TokenKind::With)
+                | Some(TokenKind::Async)
+                | Some(TokenKind::At) => {
+                    // Found a statement-starting keyword, stop here
+                    return;
+                }
+                _ => {
+                    // Keep advancing
+                    self.advance();
+                }
+            }
+        }
+    }
+
+    // ========================================
+    // Token Manipulation
+    // ========================================
 
     /// Advance to next token
     fn advance(&mut self) {

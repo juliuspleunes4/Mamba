@@ -218,12 +218,12 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 2.7 Parser Error Handling
 
-- [ ] Detect unexpected tokens
-- [ ] Detect missing tokens (e.g., missing colon)
-- [ ] Provide "expected X, found Y" messages
-- [ ] Add suggestions for common mistakes
-- [ ] Implement error recovery (skip to next statement)
-- [ ] Track multiple errors in single parse
+- [x] Detect unexpected tokens
+- [x] Detect missing tokens (e.g., missing colon)
+- [x] Provide "expected X, found Y" messages
+- [x] Add suggestions for common mistakes (11 keyword typos detected: elseif/elsif, define/function/func, cls, then, switch, foreach, until, unless)
+- [x] Implement error recovery (skip to next statement)
+- [x] Track multiple errors in single parse
 
 ### 2.8 Parser Testing
 
