@@ -10,7 +10,7 @@
 > **Write Python-style code. Ship fast, native executables. No Python. No Rust. No setup.**
 
 <p align="center">
-    <img src="assets/IMG_0196.png" alt="Mamba Logo" width="450"/>
+    <img src="assets/mamba_logo_black_background.png" alt="Mamba Logo" width="450"/>
 </p>
 
 ---
