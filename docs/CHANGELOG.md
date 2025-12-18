@@ -64,6 +64,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Mixed type redeclarations
     - Walrus operator redeclaration handling
   - 11 additional redeclaration/shadowing tests (68 total)
+  - Nested scope support:
+    - Control flow statements (if/while/for) don't create new scopes
+    - Variables in if/while/for blocks persist in enclosing scope
+    - For loop variables accessible after loop
+    - Tuple unpacking in for loops
+    - Class definitions create new scopes (with proper isolation)
+    - Class name declaration and redeclaration detection
+    - Nested classes in functions and methods in classes
+    - Deeply nested scope combinations
+    - If/elif/else, while-else, for-else handling
+    - Built-in functions and constants (print, range, len, str, int, float, bool, list, dict, set, tuple, True, False, None)
+  - 14 additional nested scope tests (82 total)
 - **Phase 1: Lexer & Tokenization (Complete!)**
   - Full tokenization of Python-compatible syntax
   - Support for all Python operators, keywords, and delimiters

@@ -63,8 +63,29 @@ pub struct SemanticAnalyzer {
 impl SemanticAnalyzer {
     /// Create a new semantic analyzer
     pub fn new() -> Self {
+        let mut symbol_table = SymbolTable::new();
+        
+        // Declare built-in functions in the module scope
+        let builtin_pos = SourcePosition::start();
+        let _ = symbol_table.declare("print".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("range".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("len".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("str".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("int".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("float".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("bool".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("list".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("dict".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("set".to_string(), SymbolKind::Function, builtin_pos.clone());
+        let _ = symbol_table.declare("tuple".to_string(), SymbolKind::Function, builtin_pos.clone());
+        
+        // Declare built-in constants
+        let _ = symbol_table.declare("True".to_string(), SymbolKind::Variable, builtin_pos.clone());
+        let _ = symbol_table.declare("False".to_string(), SymbolKind::Variable, builtin_pos.clone());
+        let _ = symbol_table.declare("None".to_string(), SymbolKind::Variable, builtin_pos);
+        
         Self {
-            symbol_table: SymbolTable::new(),
+            symbol_table,
             errors: Vec::new(),
         }
     }
@@ -182,33 +203,96 @@ impl SemanticAnalyzer {
                 self.symbol_table.exit_scope();
             }
 
-            // TODO: ClassDef - track class declarations
-            Statement::ClassDef { .. } => {
-                // TODO: Declare class in current scope
-                // TODO: Enter new class scope
-                // TODO: Visit body
-                // TODO: Exit class scope
+            // ClassDef - track class declarations
+            Statement::ClassDef { name, body, position, .. } => {
+                // Declare class in current scope
+                if let Err(existing) = self.symbol_table.declare(
+                    name.clone(),
+                    SymbolKind::Class,
+                    position.clone()
+                ) {
+                    self.add_error(SemanticError::Redeclaration {
+                        name: name.clone(),
+                        first_position: existing.position.clone(),
+                        second_position: position.clone(),
+                    });
+                }
+
+                // Enter new class scope
+                self.symbol_table.enter_scope(ScopeKind::Class);
+
+                // Analyze class body
+                for statement in body {
+                    self.visit_statement(statement);
+                }
+
+                // Exit class scope
+                self.symbol_table.exit_scope();
             }
 
-            // TODO: If - handle scoped blocks
-            Statement::If { .. } => {
-                // TODO: Visit condition
-                // TODO: Visit body (potentially new scope)
-                // TODO: Visit orelse
+            // If - no new scope in Python, just visit all parts
+            Statement::If { condition, then_block, elif_blocks, else_block, .. } => {
+                // Visit condition
+                self.visit_expression(condition);
+                
+                // Visit then block
+                for statement in then_block {
+                    self.visit_statement(statement);
+                }
+                
+                // Visit elif blocks
+                for (elif_condition, elif_body) in elif_blocks {
+                    self.visit_expression(elif_condition);
+                    for statement in elif_body {
+                        self.visit_statement(statement);
+                    }
+                }
+                
+                // Visit else block
+                if let Some(else_body) = else_block {
+                    for statement in else_body {
+                        self.visit_statement(statement);
+                    }
+                }
             }
 
-            // TODO: While - handle scoped blocks
-            Statement::While { .. } => {
-                // TODO: Visit condition
-                // TODO: Visit body (potentially new scope)
+            // While - no new scope in Python, just visit condition and body
+            Statement::While { condition, body, else_block, .. } => {
+                // Visit condition
+                self.visit_expression(condition);
+                
+                // Visit body
+                for statement in body {
+                    self.visit_statement(statement);
+                }
+                
+                // Visit else block if present
+                if let Some(else_body) = else_block {
+                    for statement in else_body {
+                        self.visit_statement(statement);
+                    }
+                }
             }
 
-            // TODO: For - track loop variable
-            Statement::For { .. } => {
-                // TODO: Visit target
-                // TODO: Visit iter
-                // TODO: Declare loop variable
-                // TODO: Visit body
+            // For - declare loop variable in current scope, no new scope
+            Statement::For { target, iter, body, else_block, position } => {
+                // Visit iterator expression first
+                self.visit_expression(iter);
+                
+                // Declare loop variable(s) in current scope
+                self.extract_and_declare_names(target, position);
+                
+                // Visit body
+                for statement in body {
+                    self.visit_statement(statement);
+                }
+                
+                // Visit else block if present
+                if let Some(else_body) = else_block {
+                    for statement in else_body {
+                        self.visit_statement(statement);
+                    }
+                }
             }
 
             // Expression statement - just visit the expression
@@ -1284,4 +1368,154 @@ mod tests {
             _ => panic!("Expected Redeclaration error"),
         }
     }
+
+    // ==================== Nested Scope Support Tests ====================
+
+    #[test]
+    fn test_if_statement_no_new_scope() {
+        // Variables declared in if blocks should be accessible outside
+        let code = "if True:\n    x = 10\nprint(x)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "If statement should not create new scope");
+    }
+
+    #[test]
+    fn test_while_statement_no_new_scope() {
+        // Variables declared in while blocks should be accessible outside
+        let code = "while False:\n    y = 20\nprint(y)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "While statement should not create new scope");
+    }
+
+    #[test]
+    fn test_for_loop_variable_accessible() {
+        // For loop variable should be accessible after loop
+        let code = "for i in range(10):\n    pass\nprint(i)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "For loop variable should persist after loop");
+    }
+
+    #[test]
+    fn test_for_loop_with_unpacking() {
+        // For loop with tuple unpacking
+        let code = "for x, y in [(1, 2), (3, 4)]:\n    print(x, y)\nprint(x, y)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "For loop unpacked variables should persist");
+    }
+
+    #[test]
+    fn test_nested_if_while_for() {
+        // Variables in deeply nested control flow should all be in same scope
+        let code = "if True:\n    a = 1\n    while True:\n        b = 2\n        for i in range(10):\n            c = 3\nprint(a)\nprint(b)\nprint(c)\nprint(i)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "All variables in nested control flow should be accessible");
+    }
+
+    #[test]
+    fn test_class_basic_scope() {
+        // Class should create its own scope
+        let code = "class MyClass:\n    x = 10\nprint(x)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Class scope should be isolated");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::UndefinedVariable { name, .. } if name == "x")));
+    }
+
+    #[test]
+    fn test_class_declaration() {
+        // Class name should be accessible after declaration
+        let code = "class MyClass:\n    pass\nx = MyClass\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Class name should be accessible");
+    }
+
+    #[test]
+    fn test_class_redeclaration() {
+        // Cannot redeclare class in same scope
+        let code = "class MyClass:\n    pass\nclass MyClass:\n    pass\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Class redeclaration should fail");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::Redeclaration { name, .. } if name == "MyClass")));
+    }
+
+    #[test]
+    fn test_nested_class_in_function() {
+        // Class inside function should have function as parent scope
+        let code = "def outer():\n    x = 10\n    class Inner:\n        y = x\n    return Inner\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Nested class should access function scope");
+    }
+
+    #[test]
+    fn test_function_in_class() {
+        // Function inside class should create nested scopes
+        let code = "class MyClass:\n    def method(self):\n        x = 10\n        return x\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Method in class should work correctly");
+    }
+
+    #[test]
+    fn test_deeply_nested_scopes() {
+        // Test deep nesting: module -> function -> class -> function -> if/for
+        // Note: This test validates scope isolation, not closure behavior (Task 9)
+        let code = "def outer_func():\n    a = 1\n    class InnerClass:\n        b = 2\n        def inner_method():\n            c = 3\n            if True:\n                d = 4\n                for i in range(10):\n                    e = 5\n                    print(c)\n                    print(d)\n                    print(e)\n                    print(i)\n    return InnerClass\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        // Variables c, d, e, i should all be accessible (if/for don't create scopes)
+        // Note: We removed reference to 'a' since closure analysis is Task 9
+        assert!(result.is_ok(), "Variables in nested control flow should be accessible");
+    }
+
+    #[test]
+    fn test_if_elif_else_blocks() {
+        // All branches of if/elif/else should be in same scope
+        let code = "x = 1\nif x == 1:\n    y = 2\nelif x == 2:\n    z = 3\nelse:\n    w = 4\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "If/elif/else should not create scopes");
+    }
+
+    #[test]
+    fn test_while_with_else() {
+        // While with else block
+        let code = "while False:\n    a = 1\nelse:\n    b = 2\nprint(a)\nprint(b)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "While-else should not create scopes");
+    }
+
+    #[test]
+    fn test_for_with_else() {
+        // For with else block
+        let code = "for i in []:\n    a = 1\nelse:\n    b = 2\nprint(i)\nprint(a)\nprint(b)\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "For-else should not create scopes");
+    }
 }
+
