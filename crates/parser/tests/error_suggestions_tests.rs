@@ -11,7 +11,7 @@ fn parse_error(source: &str) -> String {
     let mut parser = Parser::new(tokens);
     match parser.parse() {
         Ok(_) => panic!("Expected error but got success"),
-        Err(e) => e.to_string(),
+        Err(errors) => errors.into_iter().next().unwrap().to_string(), // First parser error
     }
 }
 

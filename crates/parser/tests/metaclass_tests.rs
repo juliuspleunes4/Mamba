@@ -7,7 +7,7 @@ fn parse(input: &str) -> Result<Module, mamba_error::MambaError> {
     let mut lexer = Lexer::new(input);
     let tokens = lexer.tokenize()?;
     let mut parser = Parser::new(tokens);
-    parser.parse()
+    parser.parse().map_err(|errors| errors.into_iter().next().unwrap())
 }
 
 #[test]

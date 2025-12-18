@@ -15,6 +15,8 @@ pub struct Parser {
     tokens: Peekable<IntoIter<Token>>,
     current_token: Option<Token>,
     previous_position: SourcePosition,
+    errors: Vec<MambaError>,
+    panic_mode: bool,  // True when recovering from an error
 }
 
 impl Parser {
@@ -24,13 +26,16 @@ impl Parser {
             tokens: tokens.into_iter().peekable(),
             current_token: None,
             previous_position: SourcePosition::new(0, 0, 0),
+            errors: Vec::new(),
+            panic_mode: false,
         };
         parser.advance(); // Load first token
         parser
     }
 
     /// Parse a complete module (list of statements)
-    pub fn parse(&mut self) -> ParseResult<Module> {
+    /// Returns the parsed module and any errors encountered during parsing
+    pub fn parse(&mut self) -> Result<Module, Vec<MambaError>> {
         let start_pos = self.current_position();
         let mut statements = Vec::new();
 
@@ -41,13 +46,33 @@ impl Parser {
                 continue;
             }
             
-            statements.push(self.parse_statement()?);
+            // Try to parse statement, recover on error
+            match self.parse_statement() {
+                Ok(stmt) => {
+                    statements.push(stmt);
+                    self.panic_mode = false; // Successfully parsed something - exit panic mode
+                }
+                Err(e) => {
+                    // Record error only if not in panic mode (avoid cascading errors)
+                    if !self.panic_mode {
+                        self.errors.push(e);
+                        self.panic_mode = true;
+                    }
+                    // Try to recover to next statement
+                    self.synchronize();
+                }
+            }
         }
 
-        Ok(Module {
-            statements,
-            position: start_pos,
-        })
+        // Return module and errors (if any)
+        if self.errors.is_empty() {
+            Ok(Module {
+                statements,
+                position: start_pos,
+            })
+        } else {
+            Err(std::mem::take(&mut self.errors))
+        }
     }
 
     /// Parse a single statement
@@ -2536,6 +2561,54 @@ impl Parser {
             }
         }
         false
+    }
+
+    // ========================================
+    // Error Recovery
+    // ========================================
+
+    /// Synchronize after an error by skipping tokens until we reach a safe recovery point
+    /// Recovery points are:
+    /// - Newline (statement boundary)
+    /// - Dedent (block boundary)
+    /// - Statement-starting keywords (def, class, if, while, for, return, etc.)
+    fn synchronize(&mut self) {
+        self.panic_mode = true;
+
+        while !self.is_at_end() {
+            // Check if current token is a recovery point
+            match self.current_kind() {
+                Some(TokenKind::Newline) => {
+                    // Consume the newline and stop
+                    self.advance();
+                    return;
+                }
+                Some(TokenKind::Dedent) => {
+                    // Stop at dedent (block boundary)
+                    return;
+                }
+                Some(TokenKind::Def)
+                | Some(TokenKind::Class)
+                | Some(TokenKind::If)
+                | Some(TokenKind::While)
+                | Some(TokenKind::For)
+                | Some(TokenKind::Return)
+                | Some(TokenKind::Import)
+                | Some(TokenKind::From)
+                | Some(TokenKind::Raise)
+                | Some(TokenKind::Try)
+                | Some(TokenKind::With)
+                | Some(TokenKind::Async)
+                | Some(TokenKind::At) => {
+                    // Found a statement-starting keyword, stop here
+                    return;
+                }
+                _ => {
+                    // Keep advancing
+                    self.advance();
+                }
+            }
+        }
     }
 
     // ========================================

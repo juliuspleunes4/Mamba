@@ -222,8 +222,8 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [x] Detect missing tokens (e.g., missing colon)
 - [x] Provide "expected X, found Y" messages
 - [x] Add suggestions for common mistakes (11 keyword typos detected: elseif/elsif, define/function/func, cls, then, switch, foreach, until, unless)
-- [ ] Implement error recovery (skip to next statement)
-- [ ] Track multiple errors in single parse
+- [x] Implement error recovery (skip to next statement)
+- [x] Track multiple errors in single parse
 
 ### 2.8 Parser Testing
 

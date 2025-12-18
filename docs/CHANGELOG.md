@@ -201,7 +201,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Suggestions integrated into `expected()` helper for broader coverage
     * Special handling for 'then' in if statements
     * Error suggestion test suite: 11 tests covering all keyword typo suggestions
-  - **593 total tests (142 lexer + 443 parser + 8 other); all passing ✅**
+  - Error recovery and multiple error tracking:
+    * Parser now collects multiple errors instead of stopping at first error
+    * `synchronize()` method skips to safe recovery points:
+      - Newline (statement boundary)
+      - Dedent (block boundary)
+      - Statement keywords (def, class, if, while, for, return, import, etc.)
+    * Panic mode prevents cascading errors
+    * Parser continues after errors, parsing as much valid code as possible
+    * Returns `Result<Module, Vec<MambaError>>` with all collected errors
+    * Separate errors reported when separated by successfully parsed code
+    * Cascading errors suppressed until successful parse
+    * Error recovery test suite: 21 tests covering:
+      - Single and multiple error recovery
+      - Recovery across statement boundaries
+      - Recovery in function and class definitions
+      - Recovery from incomplete syntax
+      - Validation that good code is preserved around errors
+      - Prevention of cascading errors
+      - Multiple distinct errors with valid code between them
+  - **614 total tests (142 lexer + 464 parser + 8 other); all passing ✅**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
