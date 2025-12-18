@@ -1,14 +1,17 @@
 use mamba_parser::lexer::Lexer;
 use mamba_parser::parser::Parser;
 
-/// Helper to parse and get error message
+/// Helper to parse and get error message (catches both lexer and parser errors)
 fn parse_error(source: &str) -> String {
     let mut lexer = Lexer::new(source);
-    let tokens = lexer.tokenize().unwrap();
+    let tokens = match lexer.tokenize() {
+        Ok(tokens) => tokens,
+        Err(e) => return e.to_string(), // Lexer error
+    };
     let mut parser = Parser::new(tokens);
     match parser.parse() {
         Ok(_) => panic!("Expected error but got success"),
-        Err(e) => e.to_string(),
+        Err(e) => e.to_string(), // Parser error
     }
 }
 
@@ -67,14 +70,13 @@ fn test_invalid_assignment_target() {
 }
 
 #[test]
-#[ignore] // Lexer handles indentation; parser sees result as unexpected token
 fn test_unexpected_dedent() {
     let source = r#"if True:
     x = 1
   y = 2
 "#;
     let err = parse_error(source);
-    // Indentation error
+    // Indentation error (lexer detects inconsistent indentation)
     assert!(err.contains("indent") || err.contains("Dedent") || err.contains("Unexpected"));
 }
 

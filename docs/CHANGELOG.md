@@ -182,9 +182,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     * Position information in all error messages
   - Error message test suite:
     * 16 tests covering various error scenarios
-    * 15 tests passing (improved error messages and validation working)
-    * 1 test ignored (indentation errors handled at lexer level)
-  - **581 total tests (142 lexer + 431 parser + 8 other); 580 passing, 1 ignored**
+    * All 16 tests passing (improved error messages and validation working)
+    * Test helper enhanced to catch both lexer and parser errors
+  - **582 total tests (142 lexer + 432 parser + 8 other); all passing ✅**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
