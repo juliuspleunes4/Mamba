@@ -1928,7 +1928,7 @@ fn test_parse_function_kwargs_before_args_error() {
 
 #[test]
 fn test_parse_function_regular_after_args_error() {
-    // This is actually valid Python 3 - parameters after *args are keyword-only
+    // This is actually valid Python syntax - parameters after *args are keyword-only
     // Changed to test **kwargs followed by anything, which is the real error
     let result = parse("def foo(**kwargs, x):\n    pass\n");
     assert!(result.is_err());
@@ -1942,7 +1942,7 @@ fn test_parse_function_regular_after_kwargs_error() {
 
 #[test]
 fn test_parse_function_default_after_args_error() {
-    // This is actually valid Python 3 - parameters after *args are keyword-only
+    // This is actually valid Python syntax - parameters after *args are keyword-only
     // Changed to test the same as above
     let result = parse("def foo(**kwargs, x=1):\n    pass\n");
     assert!(result.is_err());
@@ -3009,7 +3009,7 @@ fn test_parse_del_literal_error() {
 
 #[test]
 fn test_parse_multiple_starred_in_unpacking_error() {
-    // Python doesn't allow multiple starred expressions in unpacking
+    // Mamba doesn't allow multiple starred expressions in unpacking
     let result = parse("a, *b, *c = [1, 2, 3]\n");
     // This should now be caught as a syntax error by the parser
     assert!(result.is_err(), "Multiple starred expressions should be a syntax error");

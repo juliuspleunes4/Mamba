@@ -2342,7 +2342,6 @@ impl Parser {
     }
 
     /// Expect a specific token and consume it
-    /// Expect a specific token, consuming it if found or returning error
     fn expect_token(&mut self, kind: TokenKind, error_msg: &str) -> ParseResult<()> {
         if self.check(&kind) {
             self.advance();
@@ -2520,17 +2519,6 @@ impl Parser {
         }
     }
 
-    /// Create "Expected X, found Y" error with optional suggestion
-    fn expected_with_suggestion(&self, expected: &str, suggestion: Option<String>) -> MambaError {
-        let pos = self.current_position();
-        let found = self.current_token_string();
-        let base_msg = format!("Expected {}, found {} at {}:{}", expected, found, pos.line, pos.column);
-        match suggestion {
-            Some(hint) => MambaError::ParseError(format!("{}. {}", base_msg, hint)),
-            None => MambaError::ParseError(base_msg),
-        }
-    }
-
     /// Detect if current identifier might be a misspelled keyword
     fn suggest_keyword_fix(&self, identifier: &str) -> Option<String> {
         match identifier {
@@ -2547,20 +2535,6 @@ impl Parser {
             "unless" => Some("Mamba uses 'if not' instead of 'unless'".to_string()),
             _ => None,
         }
-    }
-
-    /// Check if this looks like a Python 2 print statement
-    fn is_python2_print(&self) -> bool {
-        // Check if we have "print" identifier followed by something other than '('
-        if let Some(TokenKind::Identifier(name)) = self.current_kind() {
-            if name == "print" {
-                // Peek ahead to see if next token is NOT a left paren
-                if let Some(next_token) = self.tokens.clone().peek() {
-                    return !matches!(next_token.kind, TokenKind::LeftParen);
-                }
-            }
-        }
-        false
     }
 
     // ========================================

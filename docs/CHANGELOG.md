@@ -190,11 +190,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - `elseif`/`elsif` → "Did you mean 'elif'?"
       - `define`/`function`/`func` → "Did you mean 'def'?"
       - `cls` → "Did you mean 'class'?"
-      - `then` → "Remove 'then' (not needed in Python syntax)"
-      - `switch` → "Did you mean 'match'? (Python 3.10+ pattern matching)"
+      - `then` → "Remove 'then' (not needed in Mamba syntax)"
+      - `switch` → "Did you mean 'match'?"
       - `foreach` → "Did you mean 'for'?"
-      - `until` → "Python uses 'while not' instead of 'until'"
-      - `unless` → "Python uses 'if not' instead of 'unless'"
+      - `until` → "Mamba uses 'while not' instead of 'until'"
+      - `unless` → "Mamba uses 'if not' instead of 'unless'"
     * Context-aware suggestion triggering:
       - Checks identifier context before suggesting (avoids false positives)
       - Detects typos in statement-like contexts (followed by colon/identifier)

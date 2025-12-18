@@ -20,7 +20,7 @@ fn lexer_handles_ascii() {
     });
 }
 
-/// Property: Lexer should handle valid Python identifiers
+/// Property: Lexer should handle valid Mamba identifiers
 #[test]
 fn lexer_handles_identifiers() {
     proptest!(|(input in "[a-zA-Z_][a-zA-Z0-9_]*")| {
