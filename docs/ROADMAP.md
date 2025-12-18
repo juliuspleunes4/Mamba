@@ -195,7 +195,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse positional-only parameters (before /)
 - [x] Parse type hints (basic)
 - [x] Parse return type annotations
-- [ ] Parse decorators (basic)
+- [x] Parse decorators (basic)
 - [x] Parse async function definitions
 - [x] Parse class definitions (basic structure)
 - [x] Parse single inheritance

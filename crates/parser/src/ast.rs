@@ -135,6 +135,7 @@ pub enum Statement {
         body: Vec<Statement>,
         is_async: bool,
         return_type: Option<Expression>,
+        decorators: Vec<Expression>,
         position: SourcePosition,
     },
     /// Class definition

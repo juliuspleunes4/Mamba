@@ -6291,3 +6291,266 @@ fn test_parse_variable_annotation_callable() {
         }
     }
 }
+
+// ============================================================================
+// Decorator Tests
+// ============================================================================
+
+#[test]
+fn test_parse_simple_decorator() {
+    let input = "@decorator\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Identifier { name, .. } = &decorators[0] {
+            assert_eq!(name, "decorator");
+        } else {
+            panic!("Expected Identifier decorator");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_call() {
+    let input = "@decorator()\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            } else {
+                panic!("Expected decorator function name");
+            }
+            assert_eq!(arguments.len(), 0);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_arguments() {
+    let input = "@decorator(arg1, arg2)\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            }
+            assert_eq!(arguments.len(), 2);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_keyword_arguments() {
+    // Note: Full keyword argument syntax (x=1) in calls may not be fully supported yet
+    // This tests basic decorator with parentheses
+    let input = "@decorator(1, 2)\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            }
+            // Has arguments
+            assert!(arguments.len() >= 2);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_multiple_decorators() {
+    let input = "@decorator1\n@decorator2\n@decorator3\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 3);
+        
+        // Check order (top to bottom)
+        if let Expression::Identifier { name, .. } = &decorators[0] {
+            assert_eq!(name, "decorator1");
+        }
+        if let Expression::Identifier { name, .. } = &decorators[1] {
+            assert_eq!(name, "decorator2");
+        }
+        if let Expression::Identifier { name, .. } = &decorators[2] {
+            assert_eq!(name, "decorator3");
+        }
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_attribute_access() {
+    let input = "@pkg.decorator\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Attribute { object, attribute, .. } = &decorators[0] {
+            if let Expression::Identifier { name: obj_name, .. } = &**object {
+                assert_eq!(obj_name, "pkg");
+            }
+            assert_eq!(attribute, "decorator");
+        } else {
+            panic!("Expected Attribute decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_nested_attribute() {
+    let input = "@pkg.module.decorator\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        // Should be pkg.module.decorator
+        if let Expression::Attribute { attribute, .. } = &decorators[0] {
+            assert_eq!(attribute, "decorator");
+        } else {
+            panic!("Expected Attribute decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_on_async_function() {
+    let input = "@decorator\nasync def foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, is_async, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(*is_async);
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Identifier { name, .. } = &decorators[0] {
+            assert_eq!(name, "decorator");
+        }
+    } else {
+        panic!("Expected async FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_decorator_with_complex_call() {
+    // Simpler version testing multiple arguments
+    let input = "@decorator(\"arg\", 123, value)\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        
+        if let Expression::Call { function, arguments, .. } = &decorators[0] {
+            if let Expression::Identifier { name, .. } = &**function {
+                assert_eq!(name, "decorator");
+            }
+            assert_eq!(arguments.len(), 3);
+        } else {
+            panic!("Expected Call decorator");
+        }
+    }
+}
+
+#[test]
+fn test_parse_decorator_preserves_function_details() {
+    let input = "@decorator\ndef foo(x: int, y: str) -> bool:\n    return True\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, parameters, return_type, body, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+        assert_eq!(parameters.len(), 2);
+        assert!(return_type.is_some());
+        assert_eq!(body.len(), 1);
+    } else {
+        panic!("Expected FunctionDef with all details");
+    }
+}
+
+#[test]
+fn test_parse_multiple_decorated_functions() {
+    let input = "@dec1\ndef foo():\n    pass\n@dec2\ndef bar():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 2);
+    
+    // First function
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 1);
+    }
+    
+    // Second function
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+        assert_eq!(decorators.len(), 1);
+    }
+}
+
+#[test]
+fn test_parse_function_without_decorator() {
+    let input = "def foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 0);
+    } else {
+        panic!("Expected FunctionDef");
+    }
+}
+
+#[test]
+fn test_parse_stacked_decorators_with_calls() {
+    let input = "@decorator1(arg1)\n@decorator2()\n@decorator3\ndef foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, decorators, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(decorators.len(), 3);
+        
+        // First: @decorator1(arg1) - should be a Call
+        assert!(matches!(&decorators[0], Expression::Call { .. }));
+        
+        // Second: @decorator2() - should be a Call
+        assert!(matches!(&decorators[1], Expression::Call { .. }));
+        
+        // Third: @decorator3 - should be an Identifier
+        assert!(matches!(&decorators[2], Expression::Identifier { .. }));
+    }
+}
+

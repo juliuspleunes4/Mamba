@@ -157,6 +157,10 @@ impl<'a> Lexer<'a> {
                 Ok(Token::new(TokenKind::Semicolon, start_pos, ";".to_string()))
             }
             Some('.') => self.tokenize_dot(),
+            Some('@') => {
+                self.advance();
+                Ok(Token::new(TokenKind::At, start_pos, "@".to_string()))
+            }
             
             Some(c) => Err(MambaError::SyntaxError(format!(
                 "Unexpected character '{}' at {}",

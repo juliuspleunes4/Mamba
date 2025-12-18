@@ -126,11 +126,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * Optional types (value: Optional[int] = None)
       * Callable types (func: Callable)
       * Complex values with annotations (result: dict[str, int] = {"a": 1, "b": 2})
+    - Decorators (basic):
+      * Simple decorators (@decorator)
+      * Decorators with calls (@decorator())
+      * Decorators with arguments (@decorator(arg1, arg2))
+      * Multiple stacked decorators (@decorator1 @decorator2 @decorator3)
+      * Attribute access decorators (@pkg.decorator, @pkg.module.decorator)
+      * Decorators on async functions (@decorator async def foo(): pass)
+      * Decorators preserve all function details (parameters, return types, body)
+  - Lexer enhancement: Added @ (At) token for decorator syntax
   - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations, invalid class names, duplicate * or *args or / parameters, / after * validation, async without def validation
   - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation; positional-only and keyword-only parameter validation; async keyword must be followed by def
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages; clear async syntax error messages
-  - **496 total tests, all passing (142 lexer + 354 parser)**
+  - **517 total tests, all passing (142 lexer + 367 parser + 8 other)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

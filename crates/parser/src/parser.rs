@@ -68,17 +68,50 @@ impl Parser {
             Some(TokenKind::If) => self.parse_if(),
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
+            Some(TokenKind::At) => {
+                // Parse decorators followed by function definition
+                let decorators = self.parse_decorators()?;
+                
+                // After decorators, expect def or async def
+                match self.current_kind() {
+                    Some(TokenKind::Def) => {
+                        let pos = self.current_position();
+                        self.advance(); // consume 'def'
+                        self.parse_function_def(false, pos, decorators)
+                    }
+                    Some(TokenKind::Async) => {
+                        let pos = self.current_position();
+                        self.advance(); // consume 'async'
+                        if self.match_token(&TokenKind::Def) {
+                            self.parse_function_def(true, pos, decorators)
+                        } else {
+                            return Err(MambaError::ParseError(
+                                format!("Expected 'def' after 'async' at {}:{}", 
+                                    self.current_position().line, 
+                                    self.current_position().column)
+                            ));
+                        }
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected function definition after decorator at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                }
+            }
             Some(TokenKind::Def) => {
                 let pos = self.current_position();
                 self.advance(); // consume 'def'
-                self.parse_function_def(false, pos)
+                self.parse_function_def(false, pos, Vec::new())
             }
             Some(TokenKind::Async) => {
                 // Check if this is async def
                 let pos = self.current_position();
                 self.advance(); // consume 'async'
                 if self.match_token(&TokenKind::Def) {
-                    self.parse_function_def(true, pos)
+                    self.parse_function_def(true, pos, Vec::new())
                 } else {
                     return Err(MambaError::ParseError(
                         format!("Expected 'def' after 'async' at {}:{}", 
@@ -822,8 +855,30 @@ impl Parser {
         }
     }
 
+    /// Parse decorators (@decorator followed by newline)
+    fn parse_decorators(&mut self) -> ParseResult<Vec<Expression>> {
+        let mut decorators = Vec::new();
+        
+        while self.match_token(&TokenKind::At) {
+            // Parse decorator expression (can be identifier, call, or attribute)
+            let decorator = self.parse_expression()?;
+            decorators.push(decorator);
+            
+            // Expect newline after decorator
+            if !self.match_token(&TokenKind::Newline) {
+                return Err(MambaError::ParseError(
+                    format!("Expected newline after decorator at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+        }
+        
+        Ok(decorators)
+    }
+
     /// Parse function definition (def name(params): body)
-    fn parse_function_def(&mut self, is_async: bool, pos: SourcePosition) -> ParseResult<Statement> {
+    fn parse_function_def(&mut self, is_async: bool, pos: SourcePosition, decorators: Vec<Expression>) -> ParseResult<Statement> {
         // 'def' already consumed by caller
         
         // Parse function name
@@ -888,6 +943,7 @@ impl Parser {
             body,
             is_async,
             return_type,
+            decorators,
             position: pos,
         })
     }
