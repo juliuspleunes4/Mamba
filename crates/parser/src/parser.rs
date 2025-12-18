@@ -977,18 +977,75 @@ impl Parser {
             }
         };
         
-        // Parse optional base classes (inheritance)
-        let bases = if self.match_token(&TokenKind::LeftParen) {
-            let mut base_list = Vec::new();
-            
+        // Parse optional base classes (inheritance) and metaclass
+        let mut bases = Vec::new();
+        let mut metaclass = None;
+        
+        if self.match_token(&TokenKind::LeftParen) {
             // Check for empty parentheses
             if !self.check(&TokenKind::RightParen) {
                 loop {
-                    // Parse base class expression (identifier or attribute access)
-                    let base = self.parse_expression()?;
-                    base_list.push(base);
+                    // Check if this is a keyword argument (metaclass=...)
+                    if let Some(TokenKind::Identifier(name)) = self.current_kind() {
+                        let id_name = name.clone();
+                        
+                        // Peek ahead to see if there's an equals sign
+                        if let Some(next_token) = self.tokens.peek() {
+                            if matches!(next_token.kind, TokenKind::Assign) {
+                                // This is a keyword argument - must be metaclass
+                                self.advance(); // consume identifier
+                                
+                                if id_name != "metaclass" {
+                                    return Err(MambaError::ParseError(
+                                        format!("Invalid keyword argument '{}' in class definition. Only 'metaclass' is allowed at {}:{}", 
+                                            id_name,
+                                            self.current_position().line, 
+                                            self.current_position().column)
+                                    ));
+                                }
+                                
+                                if metaclass.is_some() {
+                                    return Err(MambaError::ParseError(
+                                        format!("Duplicate metaclass specification at {}:{}", 
+                                            self.current_position().line, 
+                                            self.current_position().column)
+                                    ));
+                                }
+                                
+                                self.advance(); // consume '='
+                                
+                                // Parse the metaclass expression
+                                let meta_expr = self.parse_expression()?;
+                                metaclass = Some(meta_expr);
+                                
+                                // After metaclass, we can only have comma or closing paren
+                                if self.match_token(&TokenKind::Comma) {
+                                    // Allow trailing comma
+                                    if self.check(&TokenKind::RightParen) {
+                                        break;
+                                    }
+                                    // Continue to check if next is another keyword arg (for better error)
+                                    continue;
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
                     
-                    // Check for comma (more base classes)
+                    // Not a keyword argument - parse as base class
+                    if metaclass.is_some() {
+                        return Err(MambaError::ParseError(
+                            format!("Base classes must come before metaclass specification at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                    
+                    let base = self.parse_expression()?;
+                    bases.push(base);
+                    
+                    // Check for comma (more base classes or metaclass)
                     if self.match_token(&TokenKind::Comma) {
                         // Allow trailing comma
                         if self.check(&TokenKind::RightParen) {
@@ -1009,11 +1066,7 @@ impl Parser {
                         self.current_position().column)
                 ));
             }
-            
-            base_list
-        } else {
-            Vec::new()
-        };
+        }
         
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
@@ -1032,6 +1085,7 @@ impl Parser {
             bases,
             body,
             decorators,
+            metaclass,
             position: pos,
         })
     }

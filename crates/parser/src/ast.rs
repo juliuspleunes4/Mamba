@@ -144,6 +144,7 @@ pub enum Statement {
         bases: Vec<Expression>,
         body: Vec<Statement>,
         decorators: Vec<Expression>,
+        metaclass: Option<Expression>,
         position: SourcePosition,
     },
 }
