@@ -184,7 +184,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     * 16 tests covering various error scenarios
     * All 16 tests passing (improved error messages and validation working)
     * Test helper enhanced to catch both lexer and parser errors
-  - **582 total tests (142 lexer + 432 parser + 8 other); all passing ✅**
+  - Error suggestions for common mistakes:
+    * `error_with_suggestion()` - Append helpful hints to error messages
+    * `suggest_keyword_fix()` - Detects 11 common keyword typos:
+      - `elseif`/`elsif` → "Did you mean 'elif'?"
+      - `define`/`function`/`func` → "Did you mean 'def'?"
+      - `cls` → "Did you mean 'class'?"
+      - `then` → "Remove 'then' (not needed in Python syntax)"
+      - `switch` → "Did you mean 'match'? (Python 3.10+ pattern matching)"
+      - `foreach` → "Did you mean 'for'?"
+      - `until` → "Python uses 'while not' instead of 'until'"
+      - `unless` → "Python uses 'if not' instead of 'unless'"
+    * Context-aware suggestion triggering:
+      - Checks identifier context before suggesting (avoids false positives)
+      - Detects typos in statement-like contexts (followed by colon/identifier)
+      - Suggestions integrated into `expected()` helper for broader coverage
+    * Special handling for 'then' in if statements
+    * Error suggestion test suite: 11 tests covering all keyword typo suggestions
+  - **593 total tests (142 lexer + 443 parser + 8 other); all passing ✅**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

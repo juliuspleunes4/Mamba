@@ -238,6 +238,20 @@ impl Parser {
                 }
                 
                 // Otherwise it's an expression statement
+                // But first, check if we have an identifier that looks like a keyword typo
+                // This catches cases like "elseif x:" where elseif was parsed as identifier
+                if let Expression::Identifier { name, position } = &expr {
+                    if let Some(suggestion) = self.suggest_keyword_fix(name) {
+                        // Check if this looks like a statement keyword context (followed by identifier/colon)
+                        if matches!(self.current_kind(), Some(TokenKind::Identifier(_)) | Some(TokenKind::Colon)) {
+                            return Err(MambaError::ParseError(format!(
+                                "Unexpected identifier '{}' at {}:{}. {}",
+                                name, position.line, position.column, suggestion
+                            )));
+                        }
+                    }
+                }
+                
                 self.consume_newline_or_eof()?;
                 Ok(Statement::Expression(expr))
             }
@@ -646,9 +660,17 @@ impl Parser {
         // Parse condition
         let condition = self.parse_expression()?;
         
-        // Expect colon
+        // Expect colon (check for common 'then' mistake)
         if !self.match_token(&TokenKind::Colon) {
-            return Err(self.expected_after("':'", "if condition"));
+            let suggestion = if matches!(self.current_kind(), Some(TokenKind::Identifier(name)) if name == "then") {
+                Some("Remove 'then' (not needed in Mamba syntax)".to_string())
+            } else {
+                None
+            };
+            return Err(self.error_with_suggestion(
+                "Expected ':' after if condition".to_string(),
+                suggestion
+            ));
         }
         
         // Parse then block
@@ -2331,10 +2353,24 @@ impl Parser {
     fn expected(&self, expected: &str) -> MambaError {
         let pos = self.current_position();
         let found = self.current_token_string();
-        MambaError::ParseError(format!(
+        
+        // Check if the found token is a common keyword typo
+        let suggestion = if let Some(TokenKind::Identifier(name)) = self.current_kind() {
+            self.suggest_keyword_fix(name)
+        } else {
+            None
+        };
+        
+        let base_msg = format!(
             "Expected {}, found {} at {}:{}",
             expected, found, pos.line, pos.column
-        ))
+        );
+        
+        if let Some(suggestion_text) = suggestion {
+            MambaError::ParseError(format!("{}. {}", base_msg, suggestion_text))
+        } else {
+            MambaError::ParseError(base_msg)
+        }
     }
 
     /// Create "Expected X after Y" error message
@@ -2447,6 +2483,59 @@ impl Parser {
                 TokenKind::Comment(_) => "comment".to_string(),
             }
         }
+    }
+
+    /// Create error with optional suggestion
+    fn error_with_suggestion(&self, message: impl Into<String>, suggestion: Option<String>) -> MambaError {
+        let pos = self.current_position();
+        let msg = message.into();
+        match suggestion {
+            Some(hint) => MambaError::ParseError(format!("{} at {}:{}. {}", msg, pos.line, pos.column, hint)),
+            None => MambaError::ParseError(format!("{} at {}:{}", msg, pos.line, pos.column)),
+        }
+    }
+
+    /// Create "Expected X, found Y" error with optional suggestion
+    fn expected_with_suggestion(&self, expected: &str, suggestion: Option<String>) -> MambaError {
+        let pos = self.current_position();
+        let found = self.current_token_string();
+        let base_msg = format!("Expected {}, found {} at {}:{}", expected, found, pos.line, pos.column);
+        match suggestion {
+            Some(hint) => MambaError::ParseError(format!("{}. {}", base_msg, hint)),
+            None => MambaError::ParseError(base_msg),
+        }
+    }
+
+    /// Detect if current identifier might be a misspelled keyword
+    fn suggest_keyword_fix(&self, identifier: &str) -> Option<String> {
+        match identifier {
+            "elseif" => Some("Did you mean 'elif'?".to_string()),
+            "elsif" => Some("Did you mean 'elif'?".to_string()),
+            "define" => Some("Did you mean 'def'?".to_string()),
+            "function" => Some("Did you mean 'def'?".to_string()),
+            "func" => Some("Did you mean 'def'?".to_string()),
+            "then" => Some("Remove 'then' (not needed in Mamba syntax)".to_string()),
+            "cls" => Some("Did you mean 'class'?".to_string()),
+            "switch" => Some("Did you mean 'match'?".to_string()),
+            "foreach" => Some("Did you mean 'for'?".to_string()),
+            "until" => Some("Mamba uses 'while not' instead of 'until'".to_string()),
+            "unless" => Some("Mamba uses 'if not' instead of 'unless'".to_string()),
+            _ => None,
+        }
+    }
+
+    /// Check if this looks like a Python 2 print statement
+    fn is_python2_print(&self) -> bool {
+        // Check if we have "print" identifier followed by something other than '('
+        if let Some(TokenKind::Identifier(name)) = self.current_kind() {
+            if name == "print" {
+                // Peek ahead to see if next token is NOT a left paren
+                if let Some(next_token) = self.tokens.clone().peek() {
+                    return !matches!(next_token.kind, TokenKind::LeftParen);
+                }
+            }
+        }
+        false
     }
 
     // ========================================
