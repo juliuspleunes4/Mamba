@@ -133,14 +133,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * Multiple stacked decorators (@decorator1 @decorator2 @decorator3)
       * Attribute access decorators (@pkg.decorator, @pkg.module.decorator)
       * Decorators on async functions (@decorator async def foo(): pass)
-      * Decorators preserve all function details (parameters, return types, body)
+      * Decorators on classes (@decorator class Foo: pass)
+      * Class decorators with inheritance (@decorator class Foo(Base): pass)
+      * Class decorators with all combinations (inheritance, methods, blank lines)
+      * Decorators preserve all function and class details (parameters, return types, inheritance, body)
   - Lexer enhancement: Added @ (At) token for decorator syntax
   - Parser enhancement: Proper handling of blank lines between statements, functions, and classes (PEP 8 compliant spacing)
   - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations, invalid class names, duplicate * or *args or / parameters, / after * validation, async without def validation
   - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation; positional-only and keyword-only parameter validation; async keyword must be followed by def
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages; clear async syntax error messages
-  - **536 total tests, all passing (142 lexer + 386 parser + 8 other)**
+  - **549 total tests, all passing (142 lexer + 399 parser + 8 other)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 

@@ -143,6 +143,7 @@ pub enum Statement {
         name: String,
         bases: Vec<Expression>,
         body: Vec<Statement>,
+        decorators: Vec<Expression>,
         position: SourcePosition,
     },
 }

@@ -201,7 +201,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse single inheritance
 - [x] Parse multiple inheritance
 - [x] Parse class methods
-- [ ] Parse class decorators
+- [x] Parse class decorators
 - [ ] Parse metaclass specification
 - [x] Parse variable annotations (x: int, x: int = 5)
 

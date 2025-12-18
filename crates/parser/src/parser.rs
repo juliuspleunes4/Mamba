@@ -74,10 +74,10 @@ impl Parser {
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
             Some(TokenKind::At) => {
-                // Parse decorators followed by function definition
+                // Parse decorators followed by function or class definition
                 let decorators = self.parse_decorators()?;
                 
-                // After decorators, expect def or async def
+                // After decorators, expect def, async def, or class
                 match self.current_kind() {
                     Some(TokenKind::Def) => {
                         let pos = self.current_position();
@@ -97,9 +97,12 @@ impl Parser {
                             ));
                         }
                     }
+                    Some(TokenKind::Class) => {
+                        self.parse_class_def(decorators)
+                    }
                     _ => {
                         return Err(MambaError::ParseError(
-                            format!("Expected function definition after decorator at {}:{}", 
+                            format!("Expected function or class definition after decorator at {}:{}", 
                                 self.current_position().line, 
                                 self.current_position().column)
                         ));
@@ -125,7 +128,7 @@ impl Parser {
                     ));
                 }
             }
-            Some(TokenKind::Class) => self.parse_class_def(),
+            Some(TokenKind::Class) => self.parse_class_def(Vec::new()),
             _ => {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
@@ -954,7 +957,7 @@ impl Parser {
     }
 
     /// Parse class definition (class Name[(bases)]: body)
-    fn parse_class_def(&mut self) -> ParseResult<Statement> {
+    fn parse_class_def(&mut self, decorators: Vec<Expression>) -> ParseResult<Statement> {
         let pos = self.current_position();
         self.advance(); // consume 'class'
         
@@ -1028,6 +1031,7 @@ impl Parser {
             name,
             bases,
             body,
+            decorators,
             position: pos,
         })
     }
