@@ -5578,3 +5578,364 @@ fn test_generator_expression_complex() {
         _ => panic!("Expected generator expression"),
     }
 }
+
+// ============================================================================
+// Return Type Annotation Tests
+// ============================================================================
+
+#[test]
+fn test_parse_return_type_simple_int() {
+    let input = "def foo() -> int:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 1);
+    
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(return_type.is_some());
+        
+        if let Some(Expression::Identifier { name: type_name, .. }) = return_type {
+            assert_eq!(type_name, "int");
+        } else {
+            panic!("Expected Identifier expression for return type");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_simple_str() {
+    let input = "def foo() -> str:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str return type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_simple_bool() {
+    let input = "def foo() -> bool:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "bool");
+        } else {
+            panic!("Expected bool return type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_none() {
+    let input = "def foo() -> None:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        // None is parsed as a Literal, not an Identifier
+        if let Some(Expression::Literal(Literal::None { .. })) = return_type {
+            // Success - None was parsed correctly
+        } else {
+            panic!("Expected None literal as return type, got: {:?}", return_type);
+        }
+    }
+}
+
+#[test]
+fn test_parse_function_without_return_type() {
+    let input = "def foo():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(return_type.is_none(), "Expected no return type");
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_with_parameters() {
+    let input = "def foo(x: int, y: str) -> bool:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, parameters, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert_eq!(parameters.len(), 2);
+        
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "bool");
+        } else {
+            panic!("Expected bool return type");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_generic_list() {
+    let input = "def foo() -> list[int]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be a Subscript expression: list[int]
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            // object should be "list"
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected Identifier for list");
+            }
+            
+            // index should be "int"
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected Identifier for int");
+            }
+        } else {
+            panic!("Expected Subscript expression for list[int]");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_generic_dict() {
+    let input = "def foo() -> dict[str, int]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be a Subscript expression: dict[str, int]
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            // object should be "dict"
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            } else {
+                panic!("Expected Identifier for dict");
+            }
+            
+            // index should be a tuple (str, int)
+            if let Expression::Tuple { elements, .. } = &**index {
+                assert_eq!(elements.len(), 2);
+                
+                if let Expression::Identifier { name, .. } = &elements[0] {
+                    assert_eq!(name, "str");
+                } else {
+                    panic!("Expected str as first type argument");
+                }
+                
+                if let Expression::Identifier { name, .. } = &elements[1] {
+                    assert_eq!(name, "int");
+                } else {
+                    panic!("Expected int as second type argument");
+                }
+            } else {
+                panic!("Expected Tuple for dict type arguments");
+            }
+        } else {
+            panic!("Expected Subscript expression for dict[str, int]");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_return_type_nested_generic() {
+    let input = "def foo() -> list[dict[str, int]]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be list[dict[str, int]]
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            // Outer is list
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected list");
+            }
+            
+            // Inner should be dict[str, int]
+            if let Expression::Subscript { object: inner_object, index: inner_index, .. } = &**index {
+                if let Expression::Identifier { name, .. } = &**inner_object {
+                    assert_eq!(name, "dict");
+                } else {
+                    panic!("Expected dict");
+                }
+                
+                // Inner index should be tuple (str, int)
+                if let Expression::Tuple { elements, .. } = &**inner_index {
+                    assert_eq!(elements.len(), 2);
+                } else {
+                    panic!("Expected tuple for dict type arguments");
+                }
+            } else {
+                panic!("Expected Subscript for inner dict");
+            }
+        } else {
+            panic!("Expected Subscript expression");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_async_function_with_return_type() {
+    let input = "async def foo() -> int:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { name, is_async, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        assert!(is_async, "Expected async function");
+        
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int return type");
+        }
+    } else {
+        panic!("Expected function definition");
+    }
+}
+
+#[test]
+fn test_parse_async_function_complex_return_type() {
+    let input = "async def fetch_data() -> dict[str, list[int]]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { is_async, return_type, .. } = &module.statements[0] {
+        assert!(is_async);
+        assert!(return_type.is_some());
+        
+        // Verify it's a Subscript (dict[...])
+        if let Some(Expression::Subscript { object, .. }) = return_type {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            } else {
+                panic!("Expected dict");
+            }
+        } else {
+            panic!("Expected Subscript expression");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_callable() {
+    let input = "def foo() -> Callable:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "Callable");
+        } else {
+            panic!("Expected Callable return type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_optional() {
+    let input = "def foo() -> Optional[int]:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        if let Some(Expression::Subscript { object, index, .. }) = return_type {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "Optional");
+            } else {
+                panic!("Expected Optional");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+        } else {
+            panic!("Expected Subscript expression");
+        }
+    }
+}
+
+#[test]
+fn test_parse_return_type_union() {
+    let input = "def foo() -> int | str:\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::FunctionDef { return_type, .. } = &module.statements[0] {
+        assert!(return_type.is_some());
+        
+        // Should be a BinaryOp with BitwiseOr
+        if let Some(Expression::BinaryOp { left, op, right, .. }) = return_type {
+            assert_eq!(*op, BinaryOperator::BitwiseOr);
+            
+            if let Expression::Identifier { name, .. } = &**left {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**right {
+                assert_eq!(name, "str");
+            } else {
+                panic!("Expected str");
+            }
+        } else {
+            panic!("Expected BinaryOp for union type");
+        }
+    }
+}
+
+#[test]
+fn test_parse_multiple_functions_with_return_types() {
+    let input = "def foo() -> int:\n    pass\ndef bar() -> str:\n    pass\ndef baz():\n    pass\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 3);
+    
+    // First function has int return type
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[0] {
+        assert_eq!(name, "foo");
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int return type");
+        }
+    }
+    
+    // Second function has str return type
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[1] {
+        assert_eq!(name, "bar");
+        if let Some(Expression::Identifier { name, .. }) = return_type {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str return type");
+        }
+    }
+    
+    // Third function has no return type
+    if let Statement::FunctionDef { name, return_type, .. } = &module.statements[2] {
+        assert_eq!(name, "baz");
+        assert!(return_type.is_none());
+    }
+}

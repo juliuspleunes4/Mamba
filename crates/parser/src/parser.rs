@@ -839,6 +839,13 @@ impl Parser {
             ));
         }
         
+        // Parse optional return type annotation (-> type)
+        let return_type = if self.match_token(&TokenKind::Arrow) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        
         // Expect colon
         if !self.match_token(&TokenKind::Colon) {
             return Err(MambaError::ParseError(
@@ -856,6 +863,7 @@ impl Parser {
             parameters,
             body,
             is_async,
+            return_type,
             position: pos,
         })
     }
@@ -1644,11 +1652,34 @@ impl Parser {
                     };
                 }
                 Some(TokenKind::LeftBracket) => {
-                    // Subscript: obj[index]
+                    // Subscript: obj[index] or obj[a, b, c] (tuple index for type annotations)
                     self.advance(); // consume '['
                     let subscript_pos = expr.position().clone();
                     
-                    let index = self.parse_expression()?;
+                    // Parse first index expression
+                    let first_index = self.parse_expression()?;
+                    
+                    // Check if there are more elements (tuple index, e.g., dict[str, int])
+                    let index = if self.check(&TokenKind::Comma) {
+                        // Multiple elements - create a tuple
+                        let mut elements = vec![first_index];
+                        
+                        while self.match_token(&TokenKind::Comma) {
+                            // Allow trailing comma
+                            if self.check(&TokenKind::RightBracket) {
+                                break;
+                            }
+                            elements.push(self.parse_expression()?);
+                        }
+                        
+                        Expression::Tuple {
+                            elements,
+                            position: subscript_pos.clone(),
+                        }
+                    } else {
+                        // Single element
+                        first_index
+                    };
                     
                     self.expect_token(TokenKind::RightBracket, "Expected ']' after subscript index")?;
                     
