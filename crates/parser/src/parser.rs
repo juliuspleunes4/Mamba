@@ -1341,15 +1341,68 @@ impl Parser {
     /// Validate a single assignment target (checks for multiple starred expressions)
     fn validate_single_target(&self, target: &Expression) -> ParseResult<()> {
         match target {
+            // Valid assignment targets
+            Expression::Identifier { .. } => Ok(()),
+            Expression::Subscript { .. } => Ok(()),
+            Expression::Attribute { .. } => Ok(()),
+            Expression::Starred { value, .. } => {
+                // Starred expressions can only contain valid targets
+                self.validate_single_target(value)
+            }
             Expression::Tuple { elements, .. } => {
+                // Validate each element in tuple unpacking
+                for element in elements {
+                    self.validate_single_target(element)?;
+                }
                 self.validate_unpacking_targets(elements)?;
+                Ok(())
             }
             Expression::List { elements, .. } => {
+                // Validate each element in list unpacking
+                for element in elements {
+                    self.validate_single_target(element)?;
+                }
                 self.validate_unpacking_targets(elements)?;
+                Ok(())
             }
-            _ => {}
+            // Invalid assignment targets
+            Expression::Literal(lit) => {
+                let position = match lit {
+                    Literal::Integer { position, .. } 
+                    | Literal::Float { position, .. }
+                    | Literal::String { position, .. }
+                    | Literal::Boolean { position, .. }
+                    | Literal::None { position }
+                    | Literal::Ellipsis { position } => position,
+                };
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to literal at {}:{}", position.line, position.column)
+                ))
+            }
+            Expression::BinaryOp { position, .. }
+            | Expression::UnaryOp { position, .. } => {
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to operator at {}:{}", position.line, position.column)
+                ))
+            }
+            Expression::Call { position, .. } => {
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to function call at {}:{}", position.line, position.column)
+                ))
+            }
+            Expression::Lambda { position, .. } => {
+                Err(MambaError::ParseError(
+                    format!("Cannot assign to lambda at {}:{}", position.line, position.column)
+                ))
+            }
+            _ => {
+                // For other expression types, reject as invalid assignment target
+                Err(MambaError::ParseError(
+                    format!("Invalid assignment target at {}:{}", 
+                        target.position().line, target.position().column)
+                ))
+            }
         }
-        Ok(())
     }
 
     /// Count starred expressions in a list of expressions (recursively handles tuples)
@@ -2102,12 +2155,7 @@ impl Parser {
                     })
                 }
             }
-            _ => Err(MambaError::ParseError(format!(
-                "Unexpected token at {}:{}: {:?}",
-                self.current_position().line,
-                self.current_position().column,
-                self.current_token.as_ref().map(|t| &t.kind)
-            ))),
+            _ => Err(self.expected("expression")),
         }
     }
 
@@ -2265,11 +2313,7 @@ impl Parser {
         } else if self.match_token(&TokenKind::Newline) {
             Ok(())
         } else {
-            Err(MambaError::ParseError(format!(
-                "Expected newline or end of file at {}:{}",
-                self.current_position().line,
-                self.current_position().column
-            )))
+            Err(self.expected("newline or end of file"))
         }
     }
 

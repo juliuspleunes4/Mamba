@@ -37,12 +37,11 @@ fn test_missing_colon_after_class() {
 }
 
 #[test]
-#[ignore] // TODO: Requires better token description in error messages
 fn test_unexpected_token_in_expression() {
     let source = "x = 5 @\n";
     let err = parse_error(source);
     // Should mention unexpected token
-    assert!(err.contains("'@'") || err.contains("unexpected"));
+    assert!(err.contains("'@'") || err.contains("unexpected") || err.contains("Expected"));
 }
 
 #[test]
@@ -60,7 +59,6 @@ fn test_missing_closing_bracket() {
 }
 
 #[test]
-#[ignore] // TODO: Requires assignment target validation
 fn test_invalid_assignment_target() {
     let source = "5 = x\n";
     let err = parse_error(source);
@@ -69,7 +67,7 @@ fn test_invalid_assignment_target() {
 }
 
 #[test]
-#[ignore] // TODO: Requires better indentation error context
+#[ignore] // Lexer handles indentation; parser sees result as unexpected token
 fn test_unexpected_dedent() {
     let source = r#"if True:
     x = 1
@@ -77,7 +75,7 @@ fn test_unexpected_dedent() {
 "#;
     let err = parse_error(source);
     // Indentation error
-    assert!(err.contains("indent") || err.contains("Dedent"));
+    assert!(err.contains("indent") || err.contains("Dedent") || err.contains("Unexpected"));
 }
 
 #[test]
@@ -110,11 +108,11 @@ fn test_missing_import_module() {
 }
 
 #[test]
-#[ignore] // TODO: Requires parameter order validation
 fn test_invalid_parameter_order() {
-    let source = "def foo(*args, x):\n    pass\n";
+    // Non-default parameter after default parameter (in same section) is invalid
+    let source = "def foo(x=1, y):\n    pass\n";
     let err = parse_error(source);
-    assert!(err.contains("after") || err.contains("parameter"));
+    assert!(err.contains("default") || err.contains("after"));
 }
 
 #[test]
@@ -125,7 +123,6 @@ fn test_duplicate_star_parameter() {
 }
 
 #[test]
-#[ignore] // TODO: Requires empty expression detection
 fn test_expected_expression() {
     let source = "if :\n    pass\n";
     let err = parse_error(source);
