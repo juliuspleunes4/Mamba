@@ -8,6 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.1: Symbol Table (In Progress)**
+  - Core symbol table data structures:
+    - `SymbolKind` enum: Variable, Function, Class, Parameter
+    - `Symbol` struct: tracks name, kind, position, scope
+    - `ScopeKind` enum: Module, Function, Class, Block
+    - `Scope` struct: HashMap-based symbol storage with parent/child tracking
+    - `SymbolTable`: manages scope hierarchy with enter/exit/declare/lookup methods
+  - 11 comprehensive unit tests covering:
+    - Scope creation and management
+    - Symbol insertion and lookup
+    - Redeclaration prevention
+    - Nested scope handling
+    - Variable shadowing
+    - Deeply nested scope chains
+  - Semantic analyzer framework:
+    - `SemanticAnalyzer` struct with symbol table and error tracking
+    - `SemanticError` enum: UndefinedVariable, Redeclaration, InvalidScope
+    - AST visitor pattern for statements and expressions
+    - Module analysis with error reporting
+  - 7 semantic analyzer smoke tests
+  - Variable declaration tracking:
+    - Simple assignments (x = 5)
+    - Multiple assignments (x = y = 10)
+    - Tuple/list unpacking (a, b = 1, 2)
+    - Nested unpacking ((a, (b, c)) = ...)
+    - Starred unpacking (a, *rest = ...)
+    - Annotated assignments (x: int = 5)
+    - Augmented assignments (x += 1) with undefined variable detection
+    - Redeclaration detection in same scope
+  - 19 additional variable tracking tests (26 total)
+  - Function definition tracking:
+    - Function declarations with SymbolKind::Function
+    - Function scope management (enter/exit)
+    - Parameter declarations with SymbolKind::Parameter
+    - Nested function support
+    - Function redeclaration detection
+    - Duplicate parameter detection
+    - Support for async functions, decorators, return types, default parameters
+  - 15 additional function tests (41 total)
 - **Phase 1: Lexer & Tokenization (Complete!)**
   - Full tokenization of Python-compatible syntax
   - Support for all Python operators, keywords, and delimiters
