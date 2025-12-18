@@ -227,13 +227,13 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 2.8 Parser Testing
 
-- [ ] Unit tests for all expression types
-- [ ] Unit tests for all statement types
-- [ ] Test complex nested structures
-- [ ] Test error cases
-- [ ] Test edge cases
-- [ ] Add parser benchmarks
-- [ ] Add fuzzing for parser robustness
+- [ ] Unit tests for all expression types (in progress - creating specialized test files)
+- [ ] Unit tests for all statement types (in progress)
+- [ ] Test complex nested structures (planned)
+- [ ] Test error cases (existing - 16 error message tests, 21 error recovery tests, 11 suggestion tests)
+- [ ] Test edge cases (planned)
+- [x] Add parser benchmarks (COMPLETED - 40+ benchmarks across 7 categories)
+- [ ] Add fuzzing for parser robustness (skipped - Windows limitation, using proptest instead)
 
 ---
 
