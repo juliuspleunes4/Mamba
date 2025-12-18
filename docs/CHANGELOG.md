@@ -99,6 +99,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * Parameter type annotations (x: int, y: str)
       * Type annotations for all parameter kinds (regular, positional-only, keyword-only, *args, **kwargs)
       * Generic type annotations (List[int], Optional[str], List[List[int]])
+    - Return type annotations:
+      * Function return types (def foo() -> int: pass)
+      * Generic return types (def foo() -> list[int]: pass, def bar() -> dict[str, int]: pass)
+      * Nested generic return types (def foo() -> list[dict[str, int]]: pass)
+      * Union types (def foo() -> int | str: pass)
+      * Optional types (def foo() -> Optional[int]: pass)
+      * Async function return types (async def foo() -> int: pass)
+      * Complex return types (Callable, etc.)
     - Class definitions:
       * Basic class definitions with class keyword (class Foo: pass)
       * Class body with statements and methods
@@ -107,12 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       * Inheritance with dotted names (class Child(pkg.Module): pass)
       * Nested class definitions
       * Complex class bodies with attributes and methods
-  - Parser test suite: 326 tests (321 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types including positional-only and keyword-only parameters, async function definitions, parameter type annotations, class definitions with inheritance and async methods
+  - Subscript parsing enhancement: Subscripts now handle comma-separated indices for type annotations (e.g., dict[str, int] creates a tuple index)
+  - Parser test suite: 341 tests (336 in parser_tests.rs + 5 in compound_operators_test.rs) covering operators, postfix operations, collection literals, lambda expressions, conditional expressions, walrus operator, ellipsis, comprehensions (list/dict/set), generator expressions, assignment statements, exception handling, import statements, from...import statements, control flow (if/elif/else, while, for), function definitions with all parameter types including positional-only and keyword-only parameters, async function definitions, parameter type annotations, return type annotations, class definitions with inheritance and async methods
   - Comprehensive negative tests for edge cases: empty statements, invalid syntax, malformed inputs with clear error messages, parameter order violations, invalid class names, duplicate * or *args or / parameters, / after * validation, async without def validation
   - Syntax validation: Multiple starred expressions in unpacking now properly rejected as syntax error; parameter order strictly enforced; class name validation; positional-only and keyword-only parameter validation; async keyword must be followed by def
   - Code quality: Refactored parse_global and parse_nonlocal to use shared parse_name_list helper function (DRY principle)
   - Improved error messages: More specific "Expected at least one identifier" message when no identifiers provided after global/nonlocal; clear parameter order error messages; clear class definition error messages; clear async syntax error messages
-  - **468 total tests, all passing (142 lexer + 326 parser)**
+  - **483 total tests, all passing (142 lexer + 341 parser)**
 - Documentation: BENCHMARKS.md, FUZZING.md
 - Test organization: All tests moved to separate files in tests/ directory
 
