@@ -92,6 +92,30 @@ impl Parser {
                 // Try to parse as assignment or expression
                 let expr = self.parse_assignment_target()?;
                 
+                // Check for annotated assignment (x: int or x: int = 5)
+                // Must be a simple identifier followed by colon
+                if let Expression::Identifier { name, position } = &expr {
+                    if self.match_token(&TokenKind::Colon) {
+                        // Parse the annotation
+                        let annotation = self.parse_expression()?;
+                        
+                        // Check for optional value assignment
+                        let value = if self.match_token(&TokenKind::Assign) {
+                            Some(self.parse_expression()?)
+                        } else {
+                            None
+                        };
+                        
+                        self.consume_newline_or_eof()?;
+                        return Ok(Statement::AnnAssignment {
+                            target: name.clone(),
+                            annotation,
+                            value,
+                            position: position.clone(),
+                        });
+                    }
+                }
+                
                 // Check for comma (tuple without parentheses) - this could be unpacking
                 if self.check(&TokenKind::Comma) {
                     // Build a tuple from comma-separated targets

@@ -203,7 +203,7 @@ This roadmap outlines the complete development plan for Mamba, broken into phase
 - [x] Parse class methods
 - [ ] Parse class decorators
 - [ ] Parse metaclass specification
-- [ ] Parse variable annotations (x: int, x: int = 5)
+- [x] Parse variable annotations (x: int, x: int = 5)
 
 ### 2.6 Indentation Handling
 

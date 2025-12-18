@@ -5939,3 +5939,355 @@ fn test_parse_multiple_functions_with_return_types() {
         assert!(return_type.is_none());
     }
 }
+
+// ============================================================================
+// Variable Annotation Tests
+// ============================================================================
+
+#[test]
+fn test_parse_variable_annotation_simple_int() {
+    let input = "x: int\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 1);
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "x");
+        assert!(value.is_none());
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected Identifier for annotation");
+        }
+    } else {
+        panic!("Expected AnnAssignment");
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_with_value() {
+    let input = "x: int = 5\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "x");
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "int");
+        } else {
+            panic!("Expected int annotation");
+        }
+        
+        assert!(value.is_some());
+        if let Some(Expression::Literal(Literal::Integer { value: val, .. })) = value {
+            assert_eq!(*val, 5);
+        } else {
+            panic!("Expected integer value");
+        }
+    } else {
+        panic!("Expected AnnAssignment");
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_string() {
+    let input = "name: str = \"hello\"\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "name");
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "str");
+        } else {
+            panic!("Expected str annotation");
+        }
+        
+        if let Some(Expression::Literal(Literal::String { value: s, .. })) = value {
+            assert_eq!(s, "hello");
+        } else {
+            panic!("Expected string value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_bool() {
+    let input = "flag: bool = True\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "flag");
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "bool");
+        } else {
+            panic!("Expected bool annotation");
+        }
+        
+        if let Some(Expression::Literal(Literal::Boolean { value: b, .. })) = value {
+            assert!(*b);
+        } else {
+            panic!("Expected boolean value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_generic_list() {
+    let input = "items: list[int]\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "items");
+        assert!(value.is_none());
+        
+        // Should be list[int] subscript
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected list");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+        } else {
+            panic!("Expected Subscript for list[int]");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_generic_dict() {
+    let input = "data: dict[str, int] = {}\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "data");
+        
+        // Check annotation is dict[str, int]
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            } else {
+                panic!("Expected dict");
+            }
+            
+            // Index should be tuple (str, int)
+            if let Expression::Tuple { elements, .. } = &**index {
+                assert_eq!(elements.len(), 2);
+            } else {
+                panic!("Expected tuple for dict type args");
+            }
+        } else {
+            panic!("Expected Subscript");
+        }
+        
+        // Check value is empty dict
+        if let Some(Expression::Dict { pairs, .. }) = value {
+            assert_eq!(pairs.len(), 0);
+        } else {
+            panic!("Expected empty dict value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_nested_generic() {
+    let input = "matrix: list[list[int]]\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, .. } = &module.statements[0] {
+        assert_eq!(target, "matrix");
+        
+        // Outer should be list[list[int]]
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "list");
+            } else {
+                panic!("Expected list");
+            }
+            
+            // Inner should also be list[int]
+            if let Expression::Subscript { object: inner_obj, index: inner_idx, .. } = &**index {
+                if let Expression::Identifier { name, .. } = &**inner_obj {
+                    assert_eq!(name, "list");
+                } else {
+                    panic!("Expected inner list");
+                }
+                
+                if let Expression::Identifier { name, .. } = &**inner_idx {
+                    assert_eq!(name, "int");
+                } else {
+                    panic!("Expected int");
+                }
+            } else {
+                panic!("Expected inner Subscript");
+            }
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_optional() {
+    let input = "value: Optional[int] = None\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "value");
+        
+        // Annotation should be Optional[int]
+        if let Expression::Subscript { object, index, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "Optional");
+            } else {
+                panic!("Expected Optional");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**index {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+        } else {
+            panic!("Expected Subscript");
+        }
+        
+        // Value should be None literal
+        assert!(value.is_some());
+        if let Some(Expression::Literal(Literal::None { .. })) = value {
+            // Correct!
+        } else {
+            panic!("Expected None literal value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_union() {
+    let input = "value: int | str\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, .. } = &module.statements[0] {
+        assert_eq!(target, "value");
+        
+        // Should be BinaryOp with BitwiseOr
+        if let Expression::BinaryOp { left, op, right, .. } = annotation {
+            assert_eq!(*op, BinaryOperator::BitwiseOr);
+            
+            if let Expression::Identifier { name, .. } = &**left {
+                assert_eq!(name, "int");
+            } else {
+                panic!("Expected int");
+            }
+            
+            if let Expression::Identifier { name, .. } = &**right {
+                assert_eq!(name, "str");
+            } else {
+                panic!("Expected str");
+            }
+        } else {
+            panic!("Expected BinaryOp for union");
+        }
+    }
+}
+
+#[test]
+fn test_parse_multiple_variable_annotations() {
+    let input = "x: int\ny: str = \"test\"\nz: bool = False\n";
+    let module = parse(input).unwrap();
+    
+    assert_eq!(module.statements.len(), 3);
+    
+    // First: x: int
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[0] {
+        assert_eq!(target, "x");
+        assert!(value.is_none());
+    } else {
+        panic!("Expected first AnnAssignment");
+    }
+    
+    // Second: y: str = "test"
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[1] {
+        assert_eq!(target, "y");
+        assert!(value.is_some());
+    } else {
+        panic!("Expected second AnnAssignment");
+    }
+    
+    // Third: z: bool = False
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[2] {
+        assert_eq!(target, "z");
+        if let Some(Expression::Literal(Literal::Boolean { value: b, .. })) = value {
+            assert!(!*b);
+        } else {
+            panic!("Expected False");
+        }
+    } else {
+        panic!("Expected third AnnAssignment");
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_complex_value() {
+    let input = "result: dict[str, int] = {\"a\": 1, \"b\": 2}\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "result");
+        
+        // Verify annotation
+        if let Expression::Subscript { object, .. } = annotation {
+            if let Expression::Identifier { name, .. } = &**object {
+                assert_eq!(name, "dict");
+            }
+        } else {
+            panic!("Expected Subscript annotation");
+        }
+        
+        // Verify value is a dict with 2 pairs
+        if let Some(Expression::Dict { pairs, .. }) = value {
+            assert_eq!(pairs.len(), 2);
+        } else {
+            panic!("Expected dict value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_list_value() {
+    let input = "numbers: list[int] = [1, 2, 3]\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, value, .. } = &module.statements[0] {
+        assert_eq!(target, "numbers");
+        
+        if let Some(Expression::List { elements, .. }) = value {
+            assert_eq!(elements.len(), 3);
+        } else {
+            panic!("Expected list value");
+        }
+    }
+}
+
+#[test]
+fn test_parse_variable_annotation_callable() {
+    let input = "func: Callable\n";
+    let module = parse(input).unwrap();
+    
+    if let Statement::AnnAssignment { target, annotation, value, .. } = &module.statements[0] {
+        assert_eq!(target, "func");
+        assert!(value.is_none());
+        
+        if let Expression::Identifier { name, .. } = annotation {
+            assert_eq!(name, "Callable");
+        } else {
+            panic!("Expected Callable annotation");
+        }
+    }
+}
