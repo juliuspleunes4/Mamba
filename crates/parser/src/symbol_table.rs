@@ -33,6 +33,12 @@ pub struct Symbol {
     pub position: SourcePosition,
     /// Which scope it belongs to
     pub scope_id: ScopeId,
+    /// Whether this variable is captured by a nested function (for closures)
+    pub is_captured: bool,
+    /// Whether this variable was declared with `global` keyword
+    pub is_global: bool,
+    /// Whether this variable was declared with `nonlocal` keyword
+    pub is_nonlocal: bool,
 }
 
 impl Symbol {
@@ -43,7 +49,25 @@ impl Symbol {
             kind,
             position,
             scope_id,
+            is_captured: false,
+            is_global: false,
+            is_nonlocal: false,
         }
+    }
+    
+    /// Mark this symbol as captured by a nested function
+    pub fn mark_captured(&mut self) {
+        self.is_captured = true;
+    }
+    
+    /// Mark this symbol as global
+    pub fn mark_global(&mut self) {
+        self.is_global = true;
+    }
+    
+    /// Mark this symbol as nonlocal
+    pub fn mark_nonlocal(&mut self) {
+        self.is_nonlocal = true;
     }
 }
 
@@ -243,6 +267,73 @@ impl SymbolTable {
     /// Look up a symbol in the current scope only (not parent scopes)
     pub fn lookup_current_scope(&self, name: &str) -> Option<&Symbol> {
         self.scopes.get(&self.current_scope)?.lookup(name)
+    }
+    
+    /// Mark a symbol in the current scope as global
+    pub fn mark_global(&mut self, name: &str) -> bool {
+        if let Some(scope) = self.scopes.get_mut(&self.current_scope) {
+            if let Some(symbol) = scope.symbols.get_mut(name) {
+                symbol.mark_global();
+                return true;
+            }
+        }
+        false
+    }
+    
+    /// Mark a symbol in the current scope as nonlocal
+    pub fn mark_nonlocal(&mut self, name: &str) -> bool {
+        if let Some(scope) = self.scopes.get_mut(&self.current_scope) {
+            if let Some(symbol) = scope.symbols.get_mut(name) {
+                symbol.mark_nonlocal();
+                return true;
+            }
+        }
+        false
+    }
+    
+    /// Get the kind of the current scope
+    pub fn current_scope_kind(&self) -> ScopeKind {
+        self.scopes.get(&self.current_scope)
+            .map(|s| s.kind)
+            .unwrap_or(ScopeKind::Module)
+    }
+    
+    /// Look up a symbol in enclosing function scopes (excluding module scope)
+    /// Used for nonlocal declarations
+    pub fn lookup_in_enclosing_function_scopes(&self, name: &str) -> Option<&Symbol> {
+        let mut current_id = self.current_scope;
+        
+        // Skip current scope, look in parents
+        if let Some(scope) = self.scopes.get(&current_id) {
+            if let Some(parent_id) = scope.parent {
+                current_id = parent_id;
+            } else {
+                return None;
+            }
+        }
+        
+        // Search through enclosing scopes, stopping at module level
+        loop {
+            if let Some(scope) = self.scopes.get(&current_id) {
+                // Don't search in module scope for nonlocal
+                if scope.kind == ScopeKind::Module {
+                    return None;
+                }
+                
+                if let Some(symbol) = scope.lookup(name) {
+                    return Some(symbol);
+                }
+                
+                // Try parent scope
+                if let Some(parent_id) = scope.parent {
+                    current_id = parent_id;
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
     }
 
     /// Get all scopes

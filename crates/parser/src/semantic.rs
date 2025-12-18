@@ -26,6 +26,27 @@ pub enum SemanticError {
         message: String,
         position: SourcePosition,
     },
+    /// nonlocal declaration at module level
+    NonlocalAtModuleLevel {
+        name: String,
+        position: SourcePosition,
+    },
+    /// nonlocal name not found in any enclosing scope
+    NonlocalNotFound {
+        name: String,
+        position: SourcePosition,
+    },
+    /// global declaration at module level is redundant
+    GlobalAtModuleLevel {
+        name: String,
+        position: SourcePosition,
+    },
+    /// Variable used before declaration in the same scope
+    UsedBeforeDeclaration {
+        name: String,
+        use_position: SourcePosition,
+        decl_position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -35,6 +56,10 @@ impl SemanticError {
             SemanticError::UndefinedVariable { position, .. } => position,
             SemanticError::Redeclaration { second_position, .. } => second_position,
             SemanticError::InvalidScope { position, .. } => position,
+            SemanticError::NonlocalAtModuleLevel { position, .. } => position,
+            SemanticError::NonlocalNotFound { position, .. } => position,
+            SemanticError::GlobalAtModuleLevel { position, .. } => position,
+            SemanticError::UsedBeforeDeclaration { use_position, .. } => use_position,
         }
     }
 
@@ -48,6 +73,18 @@ impl SemanticError {
                 format!("Redeclaration of '{}'", name)
             }
             SemanticError::InvalidScope { message, .. } => message.clone(),
+            SemanticError::NonlocalAtModuleLevel { name, .. } => {
+                format!("nonlocal declaration not allowed at module level: '{}'", name)
+            }
+            SemanticError::NonlocalNotFound { name, .. } => {
+                format!("no binding for nonlocal '{}' found", name)
+            }
+            SemanticError::GlobalAtModuleLevel { name, .. } => {
+                format!("name '{}' is used prior to global declaration", name)
+            }
+            SemanticError::UsedBeforeDeclaration { name, .. } => {
+                format!("local variable '{}' referenced before assignment", name)
+            }
         }
     }
 }
@@ -308,14 +345,81 @@ impl SemanticAnalyzer {
                 // TODO: Declare imported names
             }
 
-            // TODO: Global - mark variables as global
-            Statement::Global { .. } => {
-                // TODO: Track global declarations
+            // Global - mark variables as global
+            Statement::Global { names, position } => {
+                // Check if we're at module level
+                if self.symbol_table.current_scope_kind() == ScopeKind::Module {
+                    // global at module level is allowed but redundant in Python
+                    // We'll just skip it without error
+                    return;
+                }
+                
+                // Mark each name as global
+                for name in names {
+                    // Check if already declared in current scope
+                    if let Some(existing) = self.symbol_table.lookup_current_scope(name) {
+                        self.add_error(SemanticError::Redeclaration {
+                            name: name.clone(),
+                            first_position: existing.position.clone(),
+                            second_position: position.clone(),
+                        });
+                        continue;
+                    }
+                    
+                    // Declare the variable as global in current scope
+                    // This creates a local reference to the global variable
+                    if self.symbol_table.declare(
+                        name.clone(),
+                        SymbolKind::Variable,
+                        position.clone()
+                    ).is_ok() {
+                        self.symbol_table.mark_global(name);
+                    }
+                }
             }
 
-            // TODO: Nonlocal - mark variables as nonlocal
-            Statement::Nonlocal { .. } => {
-                // TODO: Track nonlocal declarations
+            // Nonlocal - mark variables as nonlocal
+            Statement::Nonlocal { names, position } => {
+                // Check if we're at module level
+                if self.symbol_table.current_scope_kind() == ScopeKind::Module {
+                    for name in names {
+                        self.add_error(SemanticError::NonlocalAtModuleLevel {
+                            name: name.clone(),
+                            position: position.clone(),
+                        });
+                    }
+                    return;
+                }
+                
+                // For each name, find it in an enclosing scope (not global)
+                for name in names {
+                    // Check if already declared in current scope
+                    if let Some(existing) = self.symbol_table.lookup_current_scope(name) {
+                        self.add_error(SemanticError::Redeclaration {
+                            name: name.clone(),
+                            first_position: existing.position.clone(),
+                            second_position: position.clone(),
+                        });
+                        continue;
+                    }
+                    
+                    // Look for the variable in enclosing scopes (excluding module/global)
+                    if self.symbol_table.lookup_in_enclosing_function_scopes(name).is_some() {
+                        // Declare the nonlocal reference in current scope
+                        if self.symbol_table.declare(
+                            name.clone(),
+                            SymbolKind::Variable,
+                            position.clone()
+                        ).is_ok() {
+                            self.symbol_table.mark_nonlocal(name);
+                        }
+                    } else {
+                        self.add_error(SemanticError::NonlocalNotFound {
+                            name: name.clone(),
+                            position: position.clone(),
+                        });
+                    }
+                }
             }
 
             // Other statements that don't affect symbol table
@@ -476,7 +580,22 @@ impl SemanticAnalyzer {
     fn extract_and_declare_names(&mut self, expr: &Expression, position: &SourcePosition) {
         match expr {
             Expression::Identifier { name, .. } => {
-                // Declare single variable
+                // Check if already declared as global or nonlocal in current scope
+                if let Some(existing) = self.symbol_table.lookup_current_scope(name) {
+                    // If it's a global or nonlocal declaration, don't redeclare
+                    if existing.is_global || existing.is_nonlocal {
+                        return; // Skip declaration, it's a reference to outer scope
+                    }
+                    // Otherwise it's a redeclaration error
+                    self.add_error(SemanticError::Redeclaration {
+                        name: name.clone(),
+                        first_position: existing.position.clone(),
+                        second_position: position.clone(),
+                    });
+                    return;
+                }
+                
+                // Declare new variable
                 if let Err(existing) = self.symbol_table.declare(
                     name.clone(),
                     SymbolKind::Variable,
@@ -1516,6 +1635,168 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let result = analyzer.analyze(&module);
         assert!(result.is_ok(), "For-else should not create scopes");
+    }
+
+    // ==================== Closure Tracking & Global/Nonlocal Tests ====================
+
+    #[test]
+    fn test_global_at_module_level() {
+        // global at module level is allowed (though redundant)
+        let code = "global x\nx = 10\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "global at module level should be allowed");
+    }
+
+    #[test]
+    fn test_global_in_function() {
+        // global in function allows modifying module-level variable
+        let code = "x = 10\ndef func():\n    global x\n    x = 20\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "global declaration in function should work");
+    }
+
+    #[test]
+    fn test_global_multiple_names() {
+        // global can declare multiple names
+        let code = "def func():\n    global x, y, z\n    x = 1\n    y = 2\n    z = 3\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "global with multiple names should work");
+    }
+
+    #[test]
+    fn test_global_after_local_declaration() {
+        // Cannot use global after local declaration
+        let code = "def func():\n    x = 10\n    global x\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "global after local declaration should fail");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::Redeclaration { name, .. } if name == "x")));
+    }
+
+    #[test]
+    fn test_nonlocal_at_module_level() {
+        // nonlocal at module level is an error
+        let code = "nonlocal x\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "nonlocal at module level should fail");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::NonlocalAtModuleLevel { name, .. } if name == "x")));
+    }
+
+    #[test]
+    fn test_nonlocal_in_nested_function() {
+        // nonlocal in nested function accesses outer function variable
+        let code = "def outer():\n    x = 10\n    def inner():\n        nonlocal x\n        x = 20\n    return inner\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "nonlocal in nested function should work");
+    }
+
+    #[test]
+    fn test_nonlocal_not_found() {
+        // nonlocal variable must exist in enclosing scope
+        let code = "def outer():\n    def inner():\n        nonlocal x\n        x = 10\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "nonlocal without enclosing binding should fail");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::NonlocalNotFound { name, .. } if name == "x")));
+    }
+
+    #[test]
+    fn test_nonlocal_skips_module_scope() {
+        // nonlocal should not find variables in module scope
+        let code = "x = 10\ndef func():\n    nonlocal x\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "nonlocal should not find module-level variables");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::NonlocalNotFound { name, .. } if name == "x")));
+    }
+
+    #[test]
+    fn test_nonlocal_multiple_names() {
+        // nonlocal can declare multiple names
+        let code = "def outer():\n    x = 1\n    y = 2\n    def inner():\n        nonlocal x, y\n        x = 10\n        y = 20\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "nonlocal with multiple names should work");
+    }
+
+    #[test]
+    fn test_nonlocal_after_local_declaration() {
+        // Cannot use nonlocal after local declaration
+        let code = "def outer():\n    x = 10\n    def inner():\n        x = 5\n        nonlocal x\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "nonlocal after local declaration should fail");
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::Redeclaration { name, .. } if name == "x")));
+    }
+
+    #[test]
+    fn test_closure_basic() {
+        // Basic closure - inner function references outer variable
+        let code = "def outer():\n    x = 10\n    def inner():\n        print(x)\n    return inner\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Basic closure should work");
+    }
+
+    #[test]
+    fn test_closure_multiple_levels() {
+        // Multi-level closure
+        let code = "def level1():\n    x = 1\n    def level2():\n        y = 2\n        def level3():\n            print(x, y)\n        return level3\n    return level2\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Multi-level closure should work");
+    }
+
+    #[test]
+    fn test_global_and_nonlocal_different_vars() {
+        // Can use global and nonlocal for different variables
+        let code = "x = 1\ndef outer():\n    y = 2\n    def inner():\n        global x\n        nonlocal y\n        x = 10\n        y = 20\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "global and nonlocal for different vars should work");
+    }
+
+    #[test]
+    fn test_nonlocal_finds_nearest_enclosing() {
+        // nonlocal should find variable in nearest enclosing function scope
+        let code = "def outer():\n    x = 1\n    def middle():\n        x = 2\n        def inner():\n            nonlocal x\n            x = 3\n        return inner\n    return middle\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "nonlocal should find nearest enclosing scope");
+    }
+
+    #[test]
+    fn test_nonlocal_in_class() {
+        // nonlocal in class method
+        let code = "def outer():\n    x = 10\n    class Inner:\n        def method(self):\n            nonlocal x\n            x = 20\n    return Inner\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "nonlocal in class method should work");
     }
 }
 

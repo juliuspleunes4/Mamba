@@ -76,6 +76,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - If/elif/else, while-else, for-else handling
     - Built-in functions and constants (print, range, len, str, int, float, bool, list, dict, set, tuple, True, False, None)
   - 14 additional nested scope tests (82 total)
+  - Closure tracking and global/nonlocal:
+    - Global declarations in functions (modify module-level variables)
+    - Global at module level (allowed, redundant)
+    - Multiple global declarations
+    - Global after local declaration error detection
+    - Nonlocal declarations in nested functions
+    - Nonlocal at module level error detection
+    - Nonlocal variable not found error detection
+    - Nonlocal skips module scope (function scopes only)
+    - Multiple nonlocal declarations
+    - Nonlocal after local declaration error detection
+    - Basic closures (inner function references outer variable)
+    - Multi-level closures
+    - Global and nonlocal for different variables
+    - Nonlocal finds nearest enclosing scope
+    - Nonlocal in class methods
+    - Symbol tracking: is_captured, is_global, is_nonlocal flags
+  - 15 additional closure/global/nonlocal tests (97 total)
 - **Phase 1: Lexer & Tokenization (Complete!)**
   - Full tokenization of Python-compatible syntax
   - Support for all Python operators, keywords, and delimiters
