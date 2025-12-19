@@ -171,26 +171,88 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// For testing: analyze and return self to access type_table
+    #[cfg(test)]
+    pub fn analyze_with_types(mut self, module: &Module) -> Self {
+        for statement in &module.statements {
+            self.visit_statement(statement);
+        }
+        self
+    }
+
+    /// For testing: get type_table reference
+    #[cfg(test)]
+    pub fn type_table(&self) -> &TypeTable {
+        &self.type_table
+    }
+
+    /// Infer the type of an expression
+    fn infer_type(&self, expr: &Expression) -> Type {
+        match expr {
+            Expression::Literal(lit) => {
+                match lit {
+                    Literal::Integer { .. } => Type::Int,
+                    Literal::Float { .. } => Type::Float,
+                    Literal::String { .. } => Type::String,
+                    Literal::Boolean { .. } => Type::Bool,
+                    Literal::None { .. } => Type::None,
+                    _ => Type::Unknown,
+                }
+            },
+            Expression::Identifier { name, .. } => {
+                // Look up existing type or return Unknown
+                self.type_table.get_type(name).cloned().unwrap_or(Type::Unknown)
+            },
+            // For other expressions, return Unknown for now
+            _ => Type::Unknown,
+        }
+    }
+
+    /// Recursively assign type to all names in assignment targets
+    fn assign_type_to_names(&mut self, target: &Expression, typ: &Type) {
+        match target {
+            Expression::Identifier { name, .. } => {
+                self.type_table.assign_type(name.clone(), typ.clone());
+            },
+            Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
+                // For unpacking, all variables get the same type (for now)
+                for elem in elements {
+                    self.assign_type_to_names(elem, typ);
+                }
+            },
+            _ => {
+                // Other target types (subscript, attribute) - skip for now
+            }
+        }
+    }
+
     /// Visit a statement and perform semantic analysis
     fn visit_statement(&mut self, statement: &Statement) {
         match statement {
-            // Assignment - track variable declarations
+            // Assignment - track variable declarations and types
             Statement::Assignment { targets, value, position } => {
                 // Visit the value expression first
                 self.visit_expression(value);
                 
-                // Extract and declare all target variables
+                // Infer the type of the value
+                let value_type = self.infer_type(value);
+                
+                // Extract and declare all target variables, then assign type
                 for target in targets {
                     self.extract_and_declare_names(target, position);
+                    self.assign_type_to_names(target, &value_type);
                 }
             }
 
-            // AnnAssignment - track typed variable declarations
+            // AnnAssignment - track typed variable declarations and infer types
             Statement::AnnAssignment { target, value, position, .. } => {
-                // Visit the value expression if present
-                if let Some(val) = value {
+                // Infer type from value if present, otherwise Unknown
+                let inferred_type = if let Some(val) = value {
                     self.visit_expression(val);
-                }
+                    self.infer_type(val)
+                } else {
+                    Type::Unknown
+                };
                 
                 // Declare the variable
                 if let Err(existing) = self.symbol_table.declare(
@@ -204,6 +266,9 @@ impl SemanticAnalyzer {
                         second_position: position.clone(),
                     });
                 }
+                
+                // Assign the inferred type
+                self.type_table.assign_type(target.clone(), inferred_type);
             }
 
             // AugmentedAssignment - check variable exists before augmenting
@@ -568,9 +633,13 @@ impl SemanticAnalyzer {
                 self.visit_expression(false_expr);
             }
 
-            // Assignment expression (walrus operator) - declare or reassign
+            // Assignment expression (walrus operator) - declare or reassign and infer type
             Expression::AssignmentExpr { target, value, position } => {
                 self.visit_expression(value);
+                
+                // Infer the type of the value
+                let value_type = self.infer_type(value);
+                
                 // In Python, walrus operator can both introduce new variables and reassign existing ones.
                 // Check if variable exists in current scope - if not, declare it; if yes, it's a reassignment.
                 if self.symbol_table.lookup_current_scope(target).is_none() {
@@ -581,7 +650,8 @@ impl SemanticAnalyzer {
                         position.clone()
                     );
                 }
-                // If it already exists, it's a reassignment (no action needed)
+                // Assign the inferred type (works for both new variables and reassignments)
+                self.type_table.assign_type(target.clone(), value_type);
             }
 
             // Starred expression - visit the value
@@ -610,32 +680,6 @@ impl SemanticAnalyzer {
 
             // Literals - no semantic analysis needed
             Expression::Literal(_) => {}
-        }
-    }
-
-    /// Infer the type of an expression
-    ///
-    /// Returns the inferred type, or Type::Unknown if type cannot be determined
-    fn infer_type(&mut self, expression: &Expression) -> Type {
-        match expression {
-            // Literal types
-            Expression::Literal(lit) => match lit {
-                Literal::Integer { .. } => Type::Int,
-                Literal::Float { .. } => Type::Float,
-                Literal::String { .. } => Type::String,
-                Literal::Boolean { .. } => Type::Bool,
-                Literal::None { .. } => Type::None,
-                Literal::Ellipsis { .. } => Type::Unknown, // Ellipsis has no clear type
-            },
-
-            // Identifier - lookup in type table
-            Expression::Identifier { name, .. } => {
-                self.type_table.get_type(name).cloned().unwrap_or(Type::Unknown)
-            }
-
-            // For now, return Unknown for all other expressions
-            // We'll implement these in later tasks
-            _ => Type::Unknown,
         }
     }
 
@@ -2117,6 +2161,229 @@ mod tests {
         assert_eq!(analyzer.type_table.get_type("True"), Some(&Type::Bool));
         assert_eq!(analyzer.type_table.get_type("False"), Some(&Type::Bool));
         assert_eq!(analyzer.type_table.get_type("None"), Some(&Type::None));
+    }
+
+    // ======================
+    // Task 2: Variable Type Inference Tests
+    // ======================
+
+    #[test]
+    fn test_simple_int_assignment() {
+        let code = "x = 42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_simple_float_assignment() {
+        let code = "y = 3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_simple_string_assignment() {
+        let code = "name = \"Alice\"";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("name"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_simple_bool_assignment() {
+        let code = "flag = True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("flag"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_simple_none_assignment() {
+        let code = "value = None";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("value"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_multiple_assignment_same_type() {
+        let code = "x = y = 10";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_multiple_assignment_chain() {
+        let code = "a = b = c = \"test\"";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::String));
+        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::String));
+        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_reassignment_same_type() {
+        let code = "x = 5\nx = 10";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both assignments are int, type should be int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_reassignment_different_type() {
+        let code = "x = 10\nx = \"hello\"";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment wins (Python-style dynamic typing)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_annotated_assignment_with_value() {
+        let code = "x: int = 42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_annotated_assignment_without_value() {
+        let code = "x: int";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Without value, type is Unknown (we don't parse annotations yet)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_unpacking_assignment() {
+        let code = "a, b, c = (1, 2, 3)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // For now, unpacked variables get Unknown type (tuple type not yet implemented)
+        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_walrus_operator_assignment() {
+        let code = "y = (x := 42)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_walrus_operator_string() {
+        let code = "y = (name := \"test\")";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("name"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_assignment_from_identifier() {
+        let code = "x = 10\ny = x";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        // y should get the type from x
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_assignment_from_undefined_identifier() {
+        let code = "y = x";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x is undefined, so y gets Unknown type
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_mixed_types() {
+        let code = "a = 42\nb = \"hello\"\nc = True\nd = None";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::String));
+        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::Bool));
+        assert_eq!(analyzer.type_table().get_type("d"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_chained_identifier_assignment() {
+        let code = "x = 5\ny = x\nz = y";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_complex_expression_unknown_type() {
+        let code = "x = 1 + 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Binary operations not yet inferred, should be Unknown
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_walrus_reassignment() {
+        let code = "x = True\ny = (x := 42)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Walrus reassigns x to int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
     }
 }
 

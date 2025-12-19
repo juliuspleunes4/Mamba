@@ -260,8 +260,8 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.2 Type Inference (Basic)
 
-- [x] Infer literal types
-- [ ] Infer variable types from assignments
+- [x] Infer literal types (int, float, string, bool, none)
+- [x] Infer variable types from assignments
 - [ ] Infer function return types
 - [ ] Infer binary operation result types
 - [ ] Track type through control flow

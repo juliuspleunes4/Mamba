@@ -8,7 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS
+- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (151 tests passing)
+  
+  **Task 1: Type System Foundation & Literal Type Inference** ✅
   - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
   - Type compatibility checking for Python-style dynamic typing
   - `TypeTable` for tracking inferred types of variables
@@ -26,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Built-in constant types: True (bool), False (bool), None (None)
     - `infer_type` method for expression type inference
     - Type lookup for identifiers from type table
+  
+  **Task 2: Variable Type Inference from Assignments** ✅
+  - Variable type inference from all assignment forms
+  - `assign_type_to_names()` helper for recursive type assignment to targets
+  - Statement::Assignment: infers value type and assigns to all targets
+  - Statement::AnnAssignment: infers from value or uses Unknown
+  - Expression::AssignmentExpr (walrus): infers and assigns types
+  - Handles multiple assignment chains, reassignment, identifier chain assignment
+  - Supports Python-style dynamic typing (last assignment wins)
+  - 20 comprehensive tests covering all assignment scenarios
 
 - **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (113 tests passing)
   - Complete symbol table implementation with scope hierarchy management
