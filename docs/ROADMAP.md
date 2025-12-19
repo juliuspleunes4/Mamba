@@ -254,13 +254,13 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [x] Implement closure tracking (global/nonlocal declarations)
 - [x] Built-in functions and constants support
 - [x] Symbol flags: is_captured, is_global, is_nonlocal
-- [x] Comprehensive test suite: 11 symbol table + 86 semantic analyzer tests
+- [x] Comprehensive test suite: 11 symbol table + 102 semantic analyzer tests
 
 **Completed**: Symbol table with full scope management, semantic analyzer with visitor pattern, undefined variable detection, redeclaration detection, nested scope support including control flow statements and classes, closure tracking with global/nonlocal support.
 
 ### 3.2 Type Inference (Basic)
 
-- [ ] Infer literal types
+- [x] Infer literal types
 - [ ] Infer variable types from assignments
 - [ ] Infer function return types
 - [ ] Infer binary operation result types

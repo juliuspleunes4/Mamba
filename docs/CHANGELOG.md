@@ -8,7 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (97 tests passing)
+- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS
+  - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
+  - Type compatibility checking for Python-style dynamic typing
+  - `TypeTable` for tracking inferred types of variables
+  - Literal type inference for all Python literal types
+  - 18 comprehensive tests (6 type system + 12 type inference)
+  
+  **Type system**:
+    - `Type` enum: Int, Float, String, Bool, None, Unknown
+    - Type compatibility checking (`is_compatible_with`)
+    - Display implementation for type names
+    - Numeric type compatibility (Int ↔ Float, Bool ↔ Int)
+  
+  **Type inference**:
+    - Literal type inference: integers, floats, strings, booleans, None
+    - Built-in constant types: True (bool), False (bool), None (None)
+    - `infer_type` method for expression type inference
+    - Type lookup for identifiers from type table
+
+- **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (113 tests passing)
   - Complete symbol table implementation with scope hierarchy management
   - Semantic analyzer with visitor pattern for comprehensive AST analysis
   - Full variable and function tracking across all scopes
@@ -17,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Nested scope support for functions, classes, and control flow
   - Closure tracking with global/nonlocal declarations
   - Built-in functions and constants pre-declared
-  - 97 comprehensive tests (11 symbol table + 86 semantic analyzer)
+  - Expression visiting in Return, Assert, Del, Raise statements
+  - Walrus operator (`:=`) reassignment support
+  - 113 comprehensive tests (11 symbol table + 102 semantic analyzer)
   
   **Core symbol table data structures**:
     - `SymbolKind` enum: Variable, Function, Class, Parameter

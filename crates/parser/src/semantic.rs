@@ -3,9 +3,37 @@
 //! This module performs semantic analysis on the AST, building a symbol table
 //! and detecting semantic errors such as undefined variables, redeclarations, etc.
 
-use crate::ast::{Expression, Module, Statement};
+use crate::ast::{Expression, Literal, Module, Statement};
 use crate::symbol_table::{ScopeKind, SymbolKind, SymbolTable};
 use crate::token::SourcePosition;
+use crate::types::Type;
+use std::collections::HashMap;
+
+/// Type table for tracking inferred types of variables
+#[derive(Debug, Clone)]
+pub struct TypeTable {
+    /// Maps variable name to its inferred type
+    types: HashMap<String, Type>,
+}
+
+impl TypeTable {
+    /// Create a new type table
+    pub fn new() -> Self {
+        Self {
+            types: HashMap::new(),
+        }
+    }
+
+    /// Assign a type to a variable
+    pub fn assign_type(&mut self, name: String, ty: Type) {
+        self.types.insert(name, ty);
+    }
+
+    /// Get the type of a variable
+    pub fn get_type(&self, name: &str) -> Option<&Type> {
+        self.types.get(name)
+    }
+}
 
 /// Semantic error types
 #[derive(Debug, Clone, PartialEq)]
@@ -83,6 +111,8 @@ impl SemanticError {
 pub struct SemanticAnalyzer {
     /// Symbol table tracking all declarations and scopes
     symbol_table: SymbolTable,
+    /// Type table tracking inferred types
+    type_table: TypeTable,
     /// Collected semantic errors
     errors: Vec<SemanticError>,
 }
@@ -91,6 +121,7 @@ impl SemanticAnalyzer {
     /// Create a new semantic analyzer
     pub fn new() -> Self {
         let mut symbol_table = SymbolTable::new();
+        let mut type_table = TypeTable::new();
         
         // Declare built-in functions in the module scope
         let builtin_pos = SourcePosition::start();
@@ -109,10 +140,16 @@ impl SemanticAnalyzer {
         // Declare built-in constants
         let _ = symbol_table.declare("True".to_string(), SymbolKind::Variable, builtin_pos.clone());
         let _ = symbol_table.declare("False".to_string(), SymbolKind::Variable, builtin_pos.clone());
-        let _ = symbol_table.declare("None".to_string(), SymbolKind::Variable, builtin_pos);
+        let _ = symbol_table.declare("None".to_string(), SymbolKind::Variable, builtin_pos.clone());
+        
+        // Assign types to built-in constants
+        type_table.assign_type("True".to_string(), Type::Bool);
+        type_table.assign_type("False".to_string(), Type::Bool);
+        type_table.assign_type("None".to_string(), Type::None);
         
         Self {
             symbol_table,
+            type_table,
             errors: Vec::new(),
         }
     }
@@ -573,6 +610,32 @@ impl SemanticAnalyzer {
 
             // Literals - no semantic analysis needed
             Expression::Literal(_) => {}
+        }
+    }
+
+    /// Infer the type of an expression
+    ///
+    /// Returns the inferred type, or Type::Unknown if type cannot be determined
+    fn infer_type(&mut self, expression: &Expression) -> Type {
+        match expression {
+            // Literal types
+            Expression::Literal(lit) => match lit {
+                Literal::Integer { .. } => Type::Int,
+                Literal::Float { .. } => Type::Float,
+                Literal::String { .. } => Type::String,
+                Literal::Boolean { .. } => Type::Bool,
+                Literal::None { .. } => Type::None,
+                Literal::Ellipsis { .. } => Type::Unknown, // Ellipsis has no clear type
+            },
+
+            // Identifier - lookup in type table
+            Expression::Identifier { name, .. } => {
+                self.type_table.get_type(name).cloned().unwrap_or(Type::Unknown)
+            }
+
+            // For now, return Unknown for all other expressions
+            // We'll implement these in later tasks
+            _ => Type::Unknown,
         }
     }
 
@@ -1886,6 +1949,174 @@ mod tests {
             }
             _ => panic!("Expected UndefinedVariable error"),
         }
+    }
+
+    // ===== Type Inference Tests =====
+
+    #[test]
+    fn test_infer_integer_literal() {
+        let code = "42";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        // Get the expression from the module
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Int);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_float_literal() {
+        let code = "3.14";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Float);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_string_literal() {
+        let code = "\"hello\"";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::String);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_bool_literal_true() {
+        let code = "True";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Bool);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_bool_literal_false() {
+        let code = "False";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Bool);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_none_literal() {
+        let code = "None";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::None);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_large_integer() {
+        let code = "999999999";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Int);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_negative_integer() {
+        let code = "-42";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            // This will be a UnaryOp, not a literal, so it returns Unknown for now
+            let ty = analyzer.infer_type(expr);
+            // For now, we expect Unknown since UnaryOp inference is not implemented yet
+            assert_eq!(ty, Type::Unknown);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_empty_string() {
+        let code = "\"\"";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::String);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_multiline_string() {
+        let code = "\"\"\"multi\nline\nstring\"\"\"";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::String);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_type_table_storage() {
+        let mut type_table = TypeTable::new();
+        
+        type_table.assign_type("x".to_string(), Type::Int);
+        type_table.assign_type("y".to_string(), Type::String);
+        type_table.assign_type("z".to_string(), Type::Bool);
+        
+        assert_eq!(type_table.get_type("x"), Some(&Type::Int));
+        assert_eq!(type_table.get_type("y"), Some(&Type::String));
+        assert_eq!(type_table.get_type("z"), Some(&Type::Bool));
+        assert_eq!(type_table.get_type("undefined"), None);
+    }
+
+    #[test]
+    fn test_builtin_constant_types() {
+        let analyzer = SemanticAnalyzer::new();
+        
+        assert_eq!(analyzer.type_table.get_type("True"), Some(&Type::Bool));
+        assert_eq!(analyzer.type_table.get_type("False"), Some(&Type::Bool));
+        assert_eq!(analyzer.type_table.get_type("None"), Some(&Type::None));
     }
 }
 
