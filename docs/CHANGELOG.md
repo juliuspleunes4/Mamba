@@ -28,7 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   
   **Semantic analyzer features**:
     - `SemanticAnalyzer` struct with symbol table and error tracking
-    - `SemanticError` enum: UndefinedVariable, Redeclaration, InvalidScope
+    - `SemanticError` enum: UndefinedVariable, Redeclaration, InvalidScope, NonlocalAtModuleLevel, NonlocalNotFound, GlobalAtModuleLevel
     - AST visitor pattern for statements and expressions
     - Module analysis with error reporting
   - 7 semantic analyzer smoke tests

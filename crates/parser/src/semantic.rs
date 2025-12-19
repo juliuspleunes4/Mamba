@@ -41,12 +41,6 @@ pub enum SemanticError {
         name: String,
         position: SourcePosition,
     },
-    /// Variable used before declaration in the same scope
-    UsedBeforeDeclaration {
-        name: String,
-        use_position: SourcePosition,
-        decl_position: SourcePosition,
-    },
 }
 
 impl SemanticError {
@@ -59,7 +53,6 @@ impl SemanticError {
             SemanticError::NonlocalAtModuleLevel { position, .. } => position,
             SemanticError::NonlocalNotFound { position, .. } => position,
             SemanticError::GlobalAtModuleLevel { position, .. } => position,
-            SemanticError::UsedBeforeDeclaration { use_position, .. } => use_position,
         }
     }
 
@@ -81,9 +74,6 @@ impl SemanticError {
             }
             SemanticError::GlobalAtModuleLevel { name, .. } => {
                 format!("name '{}' is used prior to global declaration", name)
-            }
-            SemanticError::UsedBeforeDeclaration { name, .. } => {
-                format!("local variable '{}' referenced before assignment", name)
             }
         }
     }
@@ -422,15 +412,37 @@ impl SemanticAnalyzer {
                 }
             }
 
-            // Other statements that don't affect symbol table
-            Statement::Return { .. }
-            | Statement::Del { .. }
-            | Statement::Assert { .. }
-            | Statement::Pass(_)
+            // Statements with expressions that need semantic analysis
+            Statement::Return { value, .. } => {
+                if let Some(expr) = value {
+                    self.visit_expression(expr);
+                }
+            }
+
+            Statement::Assert { condition, message, .. } => {
+                self.visit_expression(condition);
+                if let Some(msg) = message {
+                    self.visit_expression(msg);
+                }
+            }
+
+            Statement::Del { targets, .. } => {
+                for target in targets {
+                    self.visit_expression(target);
+                }
+            }
+
+            Statement::Raise { exception, .. } => {
+                if let Some(exc) = exception {
+                    self.visit_expression(exc);
+                }
+            }
+
+            // Statements with no expressions to visit
+            Statement::Pass(_)
             | Statement::Break(_)
-            | Statement::Continue(_)
-            | Statement::Raise { .. } => {
-                // TODO: Visit child expressions if any
+            | Statement::Continue(_) => {
+                // No child expressions
             }
         }
     }
@@ -519,21 +531,20 @@ impl SemanticAnalyzer {
                 self.visit_expression(false_expr);
             }
 
-            // Assignment expression (walrus operator) - declare and visit
+            // Assignment expression (walrus operator) - declare or reassign
             Expression::AssignmentExpr { target, value, position } => {
                 self.visit_expression(value);
-                // Declare the target variable
-                if let Err(existing) = self.symbol_table.declare(
-                    target.clone(),
-                    SymbolKind::Variable,
-                    position.clone()
-                ) {
-                    self.add_error(SemanticError::Redeclaration {
-                        name: target.clone(),
-                        first_position: existing.position.clone(),
-                        second_position: position.clone(),
-                    });
+                // In Python, walrus operator can both introduce new variables and reassign existing ones.
+                // Check if variable exists in current scope - if not, declare it; if yes, it's a reassignment.
+                if self.symbol_table.lookup_current_scope(target).is_none() {
+                    // Variable doesn't exist in current scope, declare it
+                    let _ = self.symbol_table.declare(
+                        target.clone(),
+                        SymbolKind::Variable,
+                        position.clone()
+                    );
                 }
+                // If it already exists, it's a reassignment (no action needed)
             }
 
             // Starred expression - visit the value
@@ -1467,25 +1478,13 @@ mod tests {
 
     #[test]
     fn test_walrus_redeclaration() {
-        // In Python, walrus operator at module level would redeclare
-        // But in current implementation, it's treated as assignment
-        // This test verifies current behavior - walrus declares in current scope
+        // Walrus operator allows reassignment of existing variables
         let code = "x = 10\ny = (x := 20)\n";
         let module = parse(code);
         let analyzer = SemanticAnalyzer::new();
         let result = analyzer.analyze(&module);
-        // Walrus operator on existing variable - in Python this is allowed
-        // It rebinds the variable, which our current implementation treats as redeclaration
-        assert!(result.is_err(), "Walrus operator redeclaring variable should fail in current implementation");
-        
-        let errors = result.unwrap_err();
-        assert_eq!(errors.len(), 1);
-        match &errors[0] {
-            SemanticError::Redeclaration { name, .. } => {
-                assert_eq!(name, "x");
-            }
-            _ => panic!("Expected Redeclaration error"),
-        }
+        // Walrus operator on existing variable - in Python this is allowed (rebinds the variable)
+        assert!(result.is_ok(), "Walrus operator should allow reassignment");
     }
 
     // ==================== Nested Scope Support Tests ====================
@@ -1797,6 +1796,96 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let result = analyzer.analyze(&module);
         assert!(result.is_ok(), "nonlocal in class method should work");
+    }
+
+    #[test]
+    fn test_undefined_in_return() {
+        // Undefined variable in return statement
+        let code = "def func():\n    return undefined_var\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "undefined variable in return should fail");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "undefined_var");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_undefined_in_assert() {
+        // Undefined variable in assert condition
+        let code = "assert undefined_condition\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "undefined variable in assert should fail");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "undefined_condition");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_undefined_in_assert_message() {
+        // Undefined variable in assert message
+        let code = "assert True, undefined_message\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "undefined variable in assert message should fail");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "undefined_message");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_undefined_in_del() {
+        // Undefined variable in del statement
+        let code = "del undefined_var\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "undefined variable in del should fail");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "undefined_var");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
+    }
+
+    #[test]
+    fn test_undefined_in_raise() {
+        // Undefined variable in raise statement
+        let code = "raise undefined_exception\n";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "undefined variable in raise should fail");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        match &errors[0] {
+            SemanticError::UndefinedVariable { name, .. } => {
+                assert_eq!(name, "undefined_exception");
+            }
+            _ => panic!("Expected UndefinedVariable error"),
+        }
     }
 }
 
