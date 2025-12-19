@@ -8,6 +8,96 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (97 tests passing)
+  - Complete symbol table implementation with scope hierarchy management
+  - Semantic analyzer with visitor pattern for comprehensive AST analysis
+  - Full variable and function tracking across all scopes
+  - Undefined variable detection with detailed error reporting
+  - Redeclaration detection with proper shadowing support
+  - Nested scope support for functions, classes, and control flow
+  - Closure tracking with global/nonlocal declarations
+  - Built-in functions and constants pre-declared
+  - 97 comprehensive tests (11 symbol table + 86 semantic analyzer)
+  
+  **Core symbol table data structures**:
+    - `SymbolKind` enum: Variable, Function, Class, Parameter
+    - `Symbol` struct: tracks name, kind, position, scope, capture/global/nonlocal flags
+    - `ScopeKind` enum: Module, Function, Class, Block
+    - `Scope` struct: HashMap-based symbol storage with parent/child tracking
+    - `SymbolTable`: manages scope hierarchy with enter/exit/declare/lookup methods
+  
+  **Semantic analyzer features**:
+    - `SemanticAnalyzer` struct with symbol table and error tracking
+    - `SemanticError` enum: UndefinedVariable, Redeclaration, InvalidScope, NonlocalAtModuleLevel, NonlocalNotFound, GlobalAtModuleLevel
+    - AST visitor pattern for statements and expressions
+    - Module analysis with error reporting
+  - 7 semantic analyzer smoke tests
+  - Variable declaration tracking:
+    - Simple assignments (x = 5)
+    - Multiple assignments (x = y = 10)
+    - Tuple/list unpacking (a, b = 1, 2)
+    - Nested unpacking ((a, (b, c)) = ...)
+    - Starred unpacking (a, *rest = ...)
+    - Annotated assignments (x: int = 5)
+    - Augmented assignments (x += 1) with undefined variable detection
+    - Redeclaration detection in same scope
+  - 19 additional variable tracking tests (26 total)
+  - Function definition tracking:
+    - Function declarations with SymbolKind::Function
+    - Function scope management (enter/exit)
+    - Parameter declarations with SymbolKind::Parameter
+    - Nested function support
+    - Function redeclaration detection
+    - Duplicate parameter detection
+    - Support for async functions, decorators, return types, default parameters
+  - 15 additional function tests (41 total)
+  - Variable usage detection:
+    - Identifier lookup with UndefinedVariable errors
+    - Recursive expression visiting (BinaryOp, UnaryOp, Call, Subscript, Attribute)
+    - Collection expressions (List, Tuple, Dict, Set)
+    - Conditional expressions
+    - Walrus operator (assignment expressions)
+    - Nested scope variable access
+    - Parameter usage in functions
+  - 16 additional usage detection tests (57 total)
+  - Redeclaration detection and shadowing:
+    - Redeclaration errors in same scope (variables, functions, parameters)
+    - Proper shadowing support across nested scopes
+    - Parameter vs body variable conflict detection
+    - Function/variable name conflicts
+    - Mixed type redeclarations
+    - Walrus operator redeclaration handling
+  - 11 additional redeclaration/shadowing tests (68 total)
+  - Nested scope support:
+    - Control flow statements (if/while/for) don't create new scopes
+    - Variables in if/while/for blocks persist in enclosing scope
+    - For loop variables accessible after loop
+    - Tuple unpacking in for loops
+    - Class definitions create new scopes (with proper isolation)
+    - Class name declaration and redeclaration detection
+    - Nested classes in functions and methods in classes
+    - Deeply nested scope combinations
+    - If/elif/else, while-else, for-else handling
+    - Built-in functions and constants (print, range, len, str, int, float, bool, list, dict, set, tuple, True, False, None)
+  - 14 additional nested scope tests (82 total)
+  - Closure tracking and global/nonlocal:
+    - Global declarations in functions (modify module-level variables)
+    - Global at module level (allowed, redundant)
+    - Multiple global declarations
+    - Global after local declaration error detection
+    - Nonlocal declarations in nested functions
+    - Nonlocal at module level error detection
+    - Nonlocal variable not found error detection
+    - Nonlocal skips module scope (function scopes only)
+    - Multiple nonlocal declarations
+    - Nonlocal after local declaration error detection
+    - Basic closures (inner function references outer variable)
+    - Multi-level closures
+    - Global and nonlocal for different variables
+    - Nonlocal finds nearest enclosing scope
+    - Nonlocal in class methods
+    - Symbol tracking: is_captured, is_global, is_nonlocal flags
+  - 15 additional closure/global/nonlocal tests (97 total)
 - **Phase 1: Lexer & Tokenization (Complete!)**
   - Full tokenization of Python-compatible syntax
   - Support for all Python operators, keywords, and delimiters
