@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (171 tests passing)
+- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (191 tests passing)
   
   **Task 1: Type System Foundation & Literal Type Inference** ✅
   - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
@@ -52,6 +52,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Single return statement inference (5 tests)
     - Multiple return paths (6 tests)
     - Using function return types in calls (4 tests)
+
+  **Task 4: Binary Operation Result Type Inference** ✅
+  - Binary operation type inference for all arithmetic, comparison, and logical operators
+  - Unary operation type inference (not, -, +, ~)
+  - Type promotion rules (Int + Float → Float)
+  - Python 3 division always returns Float (Int / Int → Float)
+  - String concatenation (String + String → String)
+  - Comparison operations always return Bool
+  - Logical operations (and, or) for Bool types
+  - Parenthesized expression handling
+  - Helper methods: `infer_binary_op_type()` and `infer_unary_op_type()`
+  - 20 comprehensive tests across 5 subtasks:
+    - Arithmetic operations (5 tests)
+    - Comparison operations (5 tests)
+    - Logical operations (4 tests)
+    - Unary operations (3 tests)
+    - Complex nested expressions (3 tests)
 
 - **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (113 tests passing)
   - Complete symbol table implementation with scope hierarchy management

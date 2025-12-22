@@ -3,7 +3,7 @@
 //! This module performs semantic analysis on the AST, building a symbol table
 //! and detecting semantic errors such as undefined variables, redeclarations, etc.
 
-use crate::ast::{Expression, Literal, Module, Statement};
+use crate::ast::{BinaryOperator, Expression, Literal, Module, Statement, UnaryOperator};
 use crate::symbol_table::{ScopeKind, SymbolKind, SymbolTable};
 use crate::token::SourcePosition;
 use crate::types::Type;
@@ -223,8 +223,90 @@ impl SemanticAnalyzer {
                     Type::Unknown
                 }
             },
+            Expression::BinaryOp { left, op, right, .. } => {
+                let left_type = self.infer_type(left);
+                let right_type = self.infer_type(right);
+                self.infer_binary_op_type(op, &left_type, &right_type)
+            },
+            Expression::UnaryOp { op, operand, .. } => {
+                let operand_type = self.infer_type(operand);
+                self.infer_unary_op_type(op, &operand_type)
+            },
+            Expression::Parenthesized { expr, .. } => {
+                // Parentheses don't change the type
+                self.infer_type(expr)
+            },
             // For other expressions, return Unknown for now
             _ => Type::Unknown,
+        }
+    }
+
+    /// Infer the result type of a binary operation
+    fn infer_binary_op_type(&self, op: &BinaryOperator, left: &Type, right: &Type) -> Type {
+        use BinaryOperator::*;
+        
+        match op {
+            // Arithmetic operations
+            Add => {
+                match (left, right) {
+                    (Type::Int, Type::Int) => Type::Int,
+                    (Type::Float, Type::Float) => Type::Float,
+                    (Type::Int, Type::Float) | (Type::Float, Type::Int) => Type::Float,
+                    (Type::String, Type::String) => Type::String,
+                    _ => Type::Unknown,
+                }
+            },
+            Subtract | Multiply | Modulo | Power | FloorDivide => {
+                match (left, right) {
+                    (Type::Int, Type::Int) => Type::Int,
+                    (Type::Float, Type::Float) => Type::Float,
+                    (Type::Int, Type::Float) | (Type::Float, Type::Int) => Type::Float,
+                    _ => Type::Unknown,
+                }
+            },
+            Divide => {
+                // In Python 3, division always returns float
+                match (left, right) {
+                    (Type::Int, Type::Int) | 
+                    (Type::Float, Type::Float) |
+                    (Type::Int, Type::Float) | 
+                    (Type::Float, Type::Int) => Type::Float,
+                    _ => Type::Unknown,
+                }
+            },
+            // Comparison operations always return bool
+            Equal | NotEqual | LessThan | LessThanEq | GreaterThan | GreaterThanEq => Type::Bool,
+            // Logical operations
+            And | Or => {
+                match (left, right) {
+                    (Type::Bool, Type::Bool) => Type::Bool,
+                    _ => Type::Unknown,
+                }
+            },
+            // Other operations return Unknown for now
+            _ => Type::Unknown,
+        }
+    }
+
+    /// Infer the result type of a unary operation
+    fn infer_unary_op_type(&self, op: &UnaryOperator, operand: &Type) -> Type {
+        use UnaryOperator::*;
+        
+        match op {
+            Not => Type::Bool,
+            Minus | Plus => {
+                match operand {
+                    Type::Int => Type::Int,
+                    Type::Float => Type::Float,
+                    _ => Type::Unknown,
+                }
+            },
+            BitwiseNot => {
+                match operand {
+                    Type::Int => Type::Int,
+                    _ => Type::Unknown,
+                }
+            },
         }
     }
 
@@ -2140,10 +2222,9 @@ mod tests {
         let mut analyzer = SemanticAnalyzer::new();
         
         if let Some(Statement::Expression(expr)) = module.statements.first() {
-            // This will be a UnaryOp, not a literal, so it returns Unknown for now
+            // UnaryOp with Minus and Int operand should return Int
             let ty = analyzer.infer_type(expr);
-            // For now, we expect Unknown since UnaryOp inference is not implemented yet
-            assert_eq!(ty, Type::Unknown);
+            assert_eq!(ty, Type::Int);
         } else {
             panic!("Expected expression statement");
         }
@@ -2408,8 +2489,8 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        // Binary operations not yet inferred, should be Unknown
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Unknown));
+        // Binary operations are now inferred: Int + Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
     }
 
     #[test]
@@ -2749,6 +2830,246 @@ result = double()
         assert_eq!(analyzer.function_types().get("double"), Some(&Type::Int));
         // result gets Int from double()
         assert_eq!(analyzer.type_table().get_type("result"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Arithmetic Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_int_plus_int() {
+        let code = "x = 1 + 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int + Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_float_plus_float() {
+        let code = "x = 1.5 + 2.5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float + Float → Float
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_int_plus_float_promotion() {
+        let code = "x = 1 + 2.5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int + Float → Float (type promotion)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_division_always_float() {
+        let code = "x = 10 / 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Division always returns Float in Python 3
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_string_concatenation() {
+        let code = r#"x = "hello" + "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // String + String → String
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    // ============================================================
+    // Comparison Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_int_comparison() {
+        let code = "x = 5 < 10";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int < Int → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_float_comparison() {
+        let code = "x = 3.14 > 2.71";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float > Float → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_string_equality() {
+        let code = r#"x = "hello" == "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // String == String → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_mixed_type_comparison() {
+        let code = "x = 5 != 3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int != Float → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_bool_equality() {
+        let code = "x = True == False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool == Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    // ============================================================
+    // Logical Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_bool_and() {
+        let code = "x = True and False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_bool_or() {
+        let code = "x = True or False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool or Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_literal_bool_and() {
+        let code = "x = False and True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_comparison_in_logical() {
+        let code = "x = (5 > 3) and (10 < 20)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Comparison results are Bool, Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    // ============================================================
+    // Unary Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_unary_not() {
+        let code = "x = not True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // not Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_unary_minus_int() {
+        let code = "x = -42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // -Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_unary_minus_float() {
+        let code = "x = -3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // -Float → Float
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    // ============================================================
+    // Complex Expression Type Propagation Tests
+    // ============================================================
+
+    #[test]
+    fn test_nested_arithmetic() {
+        let code = "x = (1 + 2) * 3";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // (Int + Int) * Int → Int * Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_mixed_type_nested_arithmetic() {
+        let code = "x = 1.5 + (2 * 3)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float + (Int * Int) → Float + Int → Float
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_nested_logical() {
+        let code = "x = (1 < 2) and (3 > 1)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // (Int < Int) and (Int > Int) → Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
     }
 }
 
