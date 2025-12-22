@@ -113,6 +113,10 @@ pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     /// Type table tracking inferred types
     type_table: TypeTable,
+    /// Function return types
+    function_types: HashMap<String, Type>,
+    /// Current function being analyzed
+    current_function: Option<String>,
     /// Collected semantic errors
     errors: Vec<SemanticError>,
 }
@@ -150,6 +154,8 @@ impl SemanticAnalyzer {
         Self {
             symbol_table,
             type_table,
+            function_types: HashMap::new(),
+            current_function: None,
             errors: Vec::new(),
         }
     }
@@ -186,6 +192,12 @@ impl SemanticAnalyzer {
         &self.type_table
     }
 
+    /// For testing: get function_types reference
+    #[cfg(test)]
+    pub fn function_types(&self) -> &HashMap<String, Type> {
+        &self.function_types
+    }
+
     /// Infer the type of an expression
     fn infer_type(&self, expr: &Expression) -> Type {
         match expr {
@@ -202,6 +214,14 @@ impl SemanticAnalyzer {
             Expression::Identifier { name, .. } => {
                 // Look up existing type or return Unknown
                 self.type_table.get_type(name).cloned().unwrap_or(Type::Unknown)
+            },
+            Expression::Call { function, .. } => {
+                // If calling a function, return its inferred return type
+                if let Expression::Identifier { name, .. } = &**function {
+                    self.function_types.get(name).cloned().unwrap_or(Type::Unknown)
+                } else {
+                    Type::Unknown
+                }
             },
             // For other expressions, return Unknown for now
             _ => Type::Unknown,
@@ -305,6 +325,13 @@ impl SemanticAnalyzer {
                     });
                 }
 
+                // Track current function for return type inference
+                let prev_function = self.current_function.take();
+                self.current_function = Some(name.clone());
+                
+                // Initialize function return type to None
+                self.function_types.insert(name.clone(), Type::None);
+
                 // Enter new function scope
                 self.symbol_table.enter_scope(ScopeKind::Function);
 
@@ -330,6 +357,9 @@ impl SemanticAnalyzer {
 
                 // Exit function scope
                 self.symbol_table.exit_scope();
+                
+                // Restore previous function context
+                self.current_function = prev_function;
             }
 
             // ClassDef - track class declarations
@@ -518,7 +548,14 @@ impl SemanticAnalyzer {
             Statement::Return { value, .. } => {
                 if let Some(expr) = value {
                     self.visit_expression(expr);
+                    
+                    // Infer return type and update function type
+                    if let Some(func_name) = &self.current_function {
+                        let return_type = self.infer_type(expr);
+                        self.function_types.insert(func_name.clone(), return_type);
+                    }
                 }
+                // Note: return without value keeps function type as None
             }
 
             Statement::Assert { condition, message, .. } => {
@@ -2384,6 +2421,334 @@ mod tests {
         
         // Walrus reassigns x to int
         assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Basic Function Return Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_function_with_no_return() {
+        let code = r#"
+def foo():
+    x = 1
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function with no return should have None type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_function_with_simple_literal_return() {
+        let code = r#"
+def foo():
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning literal int should have Int type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_with_variable_return() {
+        let code = r#"
+def foo():
+    x = 3.14
+    return x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning float variable should have Float type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_function_return_type_empty_function() {
+        let code = r#"
+def foo():
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Empty function should have None type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_function_with_pass_only() {
+        let code = r#"
+def foo():
+    pass
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function with only pass statements should have None type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::None));
+    }
+
+    // ============================================================
+    // Single Return Statement Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_function_return_string_literal() {
+        let code = r#"
+def greet():
+    return "hello"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning string literal
+        assert_eq!(analyzer.function_types().get("greet"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_function_return_float_literal() {
+        let code = r#"
+def pi():
+    return 3.14159
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning float literal
+        assert_eq!(analyzer.function_types().get("pi"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_function_return_bool_literal() {
+        let code = r#"
+def always_true():
+    return True
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning bool literal
+        assert_eq!(analyzer.function_types().get("always_true"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_function_return_none_literal() {
+        let code = r#"
+def return_none():
+    return None
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning None literal
+        assert_eq!(analyzer.function_types().get("return_none"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_function_return_typed_variable() {
+        let code = r#"
+def get_name():
+    name = "Alice"
+    return name
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning string variable
+        assert_eq!(analyzer.function_types().get("get_name"), Some(&Type::String));
+    }
+
+    // ============================================================
+    // Multiple Return Paths Tests
+    // ============================================================
+
+    #[test]
+    fn test_function_multiple_returns_same_type() {
+        let code = r#"
+def abs_value(x):
+    if x >= 0:
+        return x
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return wins for now (simple approach)
+        assert_eq!(analyzer.function_types().get("abs_value"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_if_else_returns() {
+        let code = r#"
+def check(flag):
+    if flag:
+        return True
+    else:
+        return False
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return statement type
+        assert_eq!(analyzer.function_types().get("check"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_function_early_return() {
+        let code = r#"
+def early():
+    return 10
+    return "unreachable"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return statement processed (even if unreachable)
+        assert_eq!(analyzer.function_types().get("early"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_function_nested_if_returns() {
+        let code = r#"
+def nested(x):
+    if x > 0:
+        if x > 10:
+            return "big"
+        return "small"
+    return 0
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return statement
+        assert_eq!(analyzer.function_types().get("nested"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_mixed_return_and_implicit_none() {
+        let code = r#"
+def maybe_return(x):
+    if x:
+        return 42
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Has explicit return, so takes that type
+        assert_eq!(analyzer.function_types().get("maybe_return"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_return_in_loop() {
+        let code = r#"
+def find_first():
+    for i in range(10):
+        return i
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Return type is Unknown since 'i' type is not tracked in for loops yet
+        assert_eq!(analyzer.function_types().get("find_first"), Some(&Type::Unknown));
+    }
+
+    // ============================================================
+    // Using Function Return Types Tests
+    // ============================================================
+
+    #[test]
+    fn test_assign_from_function_call() {
+        let code = r#"
+def get_number():
+    return 42
+
+x = get_number()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned from function call gets function's return type
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_assign_from_string_returning_function() {
+        let code = r#"
+def get_greeting():
+    return "Hello"
+
+msg = get_greeting()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable gets string type from function
+        assert_eq!(analyzer.type_table().get_type("msg"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_assign_from_none_returning_function() {
+        let code = r#"
+def do_nothing():
+    pass
+
+result = do_nothing()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable gets None type from function
+        assert_eq!(analyzer.type_table().get_type("result"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_chained_function_calls() {
+        let code = r#"
+def get_number():
+    return 100
+
+def double():
+    x = get_number()
+    return x
+
+result = double()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both functions should have Int type
+        assert_eq!(analyzer.function_types().get("get_number"), Some(&Type::Int));
+        // double() returns x which is Int
+        assert_eq!(analyzer.function_types().get("double"), Some(&Type::Int));
+        // result gets Int from double()
+        assert_eq!(analyzer.type_table().get_type("result"), Some(&Type::Int));
     }
 }
 

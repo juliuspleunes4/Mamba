@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (151 tests passing)
+- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (171 tests passing)
   
   **Task 1: Type System Foundation & Literal Type Inference** ✅
   - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
@@ -38,6 +38,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Handles multiple assignment chains, reassignment, identifier chain assignment
   - Supports Python-style dynamic typing (last assignment wins)
   - 20 comprehensive tests covering all assignment scenarios
+
+  **Task 3: Function Return Type Inference** ✅
+  - Function return type tracking with `function_types` HashMap
+  - Current function context tracking during analysis
+  - Return statement type inference from return expressions
+  - Function call type inference (calls inherit function's return type)
+  - Handles functions with no return (None type)
+  - Handles multiple return paths (last return wins for now)
+  - Type propagation through function calls in assignments
+  - 20 comprehensive tests across 4 subtasks:
+    - Basic return type tracking (5 tests)
+    - Single return statement inference (5 tests)
+    - Multiple return paths (6 tests)
+    - Using function return types in calls (4 tests)
 
 - **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (113 tests passing)
   - Complete symbol table implementation with scope hierarchy management
