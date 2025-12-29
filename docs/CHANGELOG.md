@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.3: Semantic Validation - Unreachable Code Detection** ✅ (276 tests passing)
+  - Added `UnreachableCode` error variant
+  - Detects code that cannot be executed after exit statements (return/break/continue/raise)
+  - Implements sequential statement analysis within statement blocks
+  - Each if/elif/else branch analyzed independently (no cross-branch analysis)
+  - Added helper methods:
+    * `statement_always_exits()`: Checks if a statement is an exit statement
+    * `visit_statement_list()`: Analyzes statement sequences with exit tracking
+  - Updated all statement list processing: module, function body, class body, loops, if/elif/else
+  - Added 10 comprehensive tests:
+    * 5 detection cases (after return, break, continue in various contexts)
+    * 3 non-detection cases (after if-return, else-return, last statement)
+    * 2 edge cases (pass after return, nested loops)
+  - Clear error message: "Unreachable code"
+  - **Note**: Simple sequential analysis only - complex control flow (all branches return, try/except) deferred to Phase 2
+
 - **Phase 3.3: Semantic Validation - Return Statement Validation** ✅ (266 tests passing)
   - Added `ReturnOutsideFunction` error variant
   - Validates that `return` statements only appear inside function definitions

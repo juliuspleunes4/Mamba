@@ -65,6 +65,10 @@ pub enum SemanticError {
     ReturnOutsideFunction {
         position: SourcePosition,
     },
+    /// unreachable code detected
+    UnreachableCode {
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -82,6 +86,7 @@ impl SemanticError {
             SemanticError::BreakOutsideLoop { position } => position,
             SemanticError::ContinueOutsideLoop { position } => position,
             SemanticError::ReturnOutsideFunction { position } => position,
+            SemanticError::UnreachableCode { position } => position,
         }
     }
 
@@ -118,6 +123,9 @@ impl SemanticError {
             }
             SemanticError::ReturnOutsideFunction { .. } => {
                 "'return' outside function".to_string()
+            }
+            SemanticError::UnreachableCode { .. } => {
+                "Unreachable code".to_string()
             }
         }
     }
@@ -182,10 +190,8 @@ impl SemanticAnalyzer {
     ///
     /// Returns Ok(symbol_table) if no errors, Err(errors) if errors found
     pub fn analyze(mut self, module: &Module) -> Result<SymbolTable, Vec<SemanticError>> {
-        // Visit all statements in the module
-        for statement in &module.statements {
-            self.visit_statement(statement);
-        }
+        // Visit all statements in the module with unreachable code detection
+        self.visit_statement_list(&module.statements);
 
         // Return symbol table if no errors, otherwise return errors
         if self.errors.is_empty() {
@@ -198,9 +204,7 @@ impl SemanticAnalyzer {
     /// For testing: analyze and return self to access type_table
     #[cfg(test)]
     pub fn analyze_with_types(mut self, module: &Module) -> Self {
-        for statement in &module.statements {
-            self.visit_statement(statement);
-        }
+        self.visit_statement_list(&module.statements);
         self
     }
 
@@ -513,6 +517,39 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Check if a statement always exits (returns, breaks, continues, raises)
+    fn statement_always_exits(&self, statement: &Statement) -> bool {
+        matches!(
+            statement,
+            Statement::Return { .. }
+                | Statement::Break(_)
+                | Statement::Continue(_)
+                | Statement::Raise { .. }
+        )
+    }
+
+    /// Visit a list of statements with unreachable code detection
+    fn visit_statement_list(&mut self, statements: &[Statement]) {
+        let mut seen_exit = false;
+        
+        for statement in statements {
+            // Check if previous statement always exits
+            if seen_exit {
+                self.add_error(SemanticError::UnreachableCode {
+                    position: statement.position().clone(),
+                });
+            }
+            
+            // Visit the statement
+            self.visit_statement(statement);
+            
+            // Update exit flag
+            if self.statement_always_exits(statement) {
+                seen_exit = true;
+            }
+        }
+    }
+
     /// Visit a statement and perform semantic analysis
     fn visit_statement(&mut self, statement: &Statement) {
         match statement {
@@ -637,10 +674,8 @@ impl SemanticAnalyzer {
                     }
                 }
 
-                // Analyze function body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Analyze function body with unreachable code detection
+                self.visit_statement_list(body);
 
                 // Exit function scope
                 self.symbol_table.exit_scope();
@@ -668,10 +703,8 @@ impl SemanticAnalyzer {
                 // Enter new class scope
                 self.symbol_table.enter_scope(ScopeKind::Class);
 
-                // Analyze class body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Analyze class body with unreachable code detection
+                self.visit_statement_list(body);
 
                 // Exit class scope
                 self.symbol_table.exit_scope();
@@ -682,24 +715,18 @@ impl SemanticAnalyzer {
                 // Visit condition
                 self.visit_expression(condition);
                 
-                // Visit then block
-                for statement in then_block {
-                    self.visit_statement(statement);
-                }
+                // Visit then block with unreachable code detection
+                self.visit_statement_list(then_block);
                 
                 // Visit elif blocks
                 for (elif_condition, elif_body) in elif_blocks {
                     self.visit_expression(elif_condition);
-                    for statement in elif_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(elif_body);
                 }
                 
                 // Visit else block
                 if let Some(else_body) = else_block {
-                    for statement in else_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(else_body);
                 }
             }
 
@@ -711,19 +738,15 @@ impl SemanticAnalyzer {
                 // Enter loop context
                 self.loop_depth += 1;
                 
-                // Visit body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Visit body with unreachable code detection
+                self.visit_statement_list(body);
                 
                 // Exit loop context
                 self.loop_depth -= 1;
                 
                 // Visit else block if present (not in loop context)
                 if let Some(else_body) = else_block {
-                    for statement in else_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(else_body);
                 }
             }
 
@@ -741,19 +764,15 @@ impl SemanticAnalyzer {
                 // Enter loop context
                 self.loop_depth += 1;
                 
-                // Visit body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Visit body with unreachable code detection
+                self.visit_statement_list(body);
                 
                 // Exit loop context
                 self.loop_depth -= 1;
                 
                 // Visit else block if present (not in loop context)
                 if let Some(else_body) = else_block {
-                    for statement in else_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(else_body);
                 }
             }
 
@@ -4555,6 +4574,192 @@ class MyClass:
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert!(errors.iter().any(|e| matches!(e, SemanticError::ReturnOutsideFunction { .. })));
+    }
+
+    // ======================
+    // Unreachable Code Detection Tests
+    // ======================
+
+    #[test]
+    fn test_unreachable_after_return_in_function() {
+        let code = r#"
+def foo():
+    return 42
+    x = 10
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+        assert_eq!(errors[0].message(), "Unreachable code");
+    }
+
+    #[test]
+    fn test_unreachable_after_break_in_loop() {
+        let code = r#"
+while True:
+    break
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_continue_in_loop() {
+        let code = r#"
+for i in range(10):
+    continue
+    print(i)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_multiple_unreachable_statements() {
+        let code = r#"
+def foo():
+    return 1
+    x = 2
+    y = 3
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce 2 UnreachableCode errors
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+        assert!(matches!(errors[1], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_return_in_nested_function() {
+        let code = r#"
+def outer():
+    def inner():
+        return 10
+        x = 5
+    return inner()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error in inner function
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_no_unreachable_after_if_with_return() {
+        let code = r#"
+def foo(x):
+    if x > 0:
+        return "positive"
+    print("not positive")
+    return "done"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce unreachable code errors
+        // (code after if can execute if condition is false)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_no_unreachable_in_else_after_return_in_if() {
+        let code = r#"
+def foo(x):
+    if x:
+        return 1
+    else:
+        return 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors - each branch's return is reachable
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_as_last_statement_not_unreachable() {
+        let code = r#"
+def foo():
+    x = 10
+    return x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unreachable_pass_after_return() {
+        let code = r#"
+def foo():
+    return 42
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error even for pass
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_in_nested_loop() {
+        let code = r#"
+for i in range(10):
+    for j in range(10):
+        break
+        print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
     }
 }
 
