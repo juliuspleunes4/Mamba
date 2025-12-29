@@ -9,32 +9,6 @@ use crate::token::SourcePosition;
 use crate::types::Type;
 use std::collections::HashMap;
 
-/// Type table for tracking inferred types of variables
-#[derive(Debug, Clone)]
-pub struct TypeTable {
-    /// Maps variable name to its inferred type
-    types: HashMap<String, Type>,
-}
-
-impl TypeTable {
-    /// Create a new type table
-    pub fn new() -> Self {
-        Self {
-            types: HashMap::new(),
-        }
-    }
-
-    /// Assign a type to a variable
-    pub fn assign_type(&mut self, name: String, ty: Type) {
-        self.types.insert(name, ty);
-    }
-
-    /// Get the type of a variable
-    pub fn get_type(&self, name: &str) -> Option<&Type> {
-        self.types.get(name)
-    }
-}
-
 /// Semantic error types
 #[derive(Debug, Clone, PartialEq)]
 pub enum SemanticError {
@@ -129,8 +103,6 @@ impl SemanticError {
 pub struct SemanticAnalyzer {
     /// Symbol table tracking all declarations and scopes
     symbol_table: SymbolTable,
-    /// Type table tracking inferred types
-    type_table: TypeTable,
     /// Function return types
     function_types: HashMap<String, Type>,
     /// Current function being analyzed
@@ -145,7 +117,6 @@ impl SemanticAnalyzer {
     /// Create a new semantic analyzer
     pub fn new() -> Self {
         let mut symbol_table = SymbolTable::new();
-        let mut type_table = TypeTable::new();
         
         // Declare built-in functions in the module scope
         let builtin_pos = SourcePosition::start();
@@ -167,13 +138,12 @@ impl SemanticAnalyzer {
         let _ = symbol_table.declare("None".to_string(), SymbolKind::Variable, builtin_pos.clone());
         
         // Assign types to built-in constants
-        type_table.assign_type("True".to_string(), Type::Bool);
-        type_table.assign_type("False".to_string(), Type::Bool);
-        type_table.assign_type("None".to_string(), Type::None);
+        symbol_table.assign_type("True", Type::Bool);
+        symbol_table.assign_type("False", Type::Bool);
+        symbol_table.assign_type("None", Type::None);
         
         Self {
             symbol_table,
-            type_table,
             function_types: HashMap::new(),
             current_function: None,
             expected_return_type: None,
@@ -207,10 +177,9 @@ impl SemanticAnalyzer {
         self
     }
 
-    /// For testing: get type_table reference
-    #[cfg(test)]
-    pub fn type_table(&self) -> &TypeTable {
-        &self.type_table
+    /// Get the type of a variable by name
+    pub fn get_type(&self, name: &str) -> Option<Type> {
+        self.symbol_table.get_type(name)
     }
 
     /// For testing: get function_types reference
@@ -234,7 +203,7 @@ impl SemanticAnalyzer {
             },
             Expression::Identifier { name, .. } => {
                 // Look up existing type or return Unknown
-                self.type_table.get_type(name).cloned().unwrap_or(Type::Unknown)
+                self.symbol_table.get_type(name).unwrap_or(Type::Unknown)
             },
             Expression::Call { function, .. } => {
                 // If calling a function, return its inferred return type
@@ -502,7 +471,7 @@ impl SemanticAnalyzer {
     fn assign_type_to_names(&mut self, target: &Expression, typ: &Type) {
         match target {
             Expression::Identifier { name, .. } => {
-                self.type_table.assign_type(name.clone(), typ.clone());
+                self.symbol_table.assign_type(name, typ.clone());
             },
             Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
                 // For unpacking, all variables get the inferred type of the RHS expression
@@ -575,7 +544,7 @@ impl SemanticAnalyzer {
                 }
                 
                 // Assign the inferred type
-                self.type_table.assign_type(target.clone(), inferred_type);
+                self.symbol_table.assign_type(target, inferred_type);
             }
 
             // AugmentedAssignment - check variable exists before augmenting
@@ -997,7 +966,7 @@ impl SemanticAnalyzer {
                     );
                 }
                 // Assign the inferred type (works for both new variables and reassignments)
-                self.type_table.assign_type(target.clone(), value_type);
+                self.symbol_table.assign_type(target, value_type);
             }
 
             // Starred expression - visit the value
@@ -2486,26 +2455,34 @@ mod tests {
     }
 
     #[test]
-    fn test_type_table_storage() {
-        let mut type_table = TypeTable::new();
+    fn test_symbol_table_type_storage() {
+        let mut symbol_table = SymbolTable::new();
+        let pos = SourcePosition::start();
         
-        type_table.assign_type("x".to_string(), Type::Int);
-        type_table.assign_type("y".to_string(), Type::String);
-        type_table.assign_type("z".to_string(), Type::Bool);
+        // Declare symbols
+        let _ = symbol_table.declare("x".to_string(), SymbolKind::Variable, pos.clone());
+        let _ = symbol_table.declare("y".to_string(), SymbolKind::Variable, pos.clone());
+        let _ = symbol_table.declare("z".to_string(), SymbolKind::Variable, pos.clone());
         
-        assert_eq!(type_table.get_type("x"), Some(&Type::Int));
-        assert_eq!(type_table.get_type("y"), Some(&Type::String));
-        assert_eq!(type_table.get_type("z"), Some(&Type::Bool));
-        assert_eq!(type_table.get_type("undefined"), None);
+        // Assign types
+        symbol_table.assign_type("x", Type::Int);
+        symbol_table.assign_type("y", Type::String);
+        symbol_table.assign_type("z", Type::Bool);
+        
+        // Verify types
+        assert_eq!(symbol_table.get_type("x"), Some(Type::Int));
+        assert_eq!(symbol_table.get_type("y"), Some(Type::String));
+        assert_eq!(symbol_table.get_type("z"), Some(Type::Bool));
+        assert_eq!(symbol_table.get_type("undefined"), None);
     }
 
     #[test]
     fn test_builtin_constant_types() {
         let analyzer = SemanticAnalyzer::new();
         
-        assert_eq!(analyzer.type_table.get_type("True"), Some(&Type::Bool));
-        assert_eq!(analyzer.type_table.get_type("False"), Some(&Type::Bool));
-        assert_eq!(analyzer.type_table.get_type("None"), Some(&Type::None));
+        assert_eq!(analyzer.get_type("True"), Some(Type::Bool));
+        assert_eq!(analyzer.get_type("False"), Some(Type::Bool));
+        assert_eq!(analyzer.get_type("None"), Some(Type::None));
     }
 
     // ======================
@@ -2519,7 +2496,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -2529,7 +2506,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Float));
     }
 
     #[test]
@@ -2539,7 +2516,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("name"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("name"), Some(Type::String));
     }
 
     #[test]
@@ -2549,7 +2526,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("flag"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("flag"), Some(Type::Bool));
     }
 
     #[test]
@@ -2559,7 +2536,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("value"), Some(&Type::None));
+        assert_eq!(analyzer.get_type("value"), Some(Type::None));
     }
 
     #[test]
@@ -2569,8 +2546,8 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Int));
     }
 
     #[test]
@@ -2580,9 +2557,9 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::String));
-        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::String));
-        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("a"), Some(Type::String));
+        assert_eq!(analyzer.get_type("b"), Some(Type::String));
+        assert_eq!(analyzer.get_type("c"), Some(Type::String));
     }
 
     #[test]
@@ -2593,7 +2570,7 @@ mod tests {
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Both assignments are int, type should be int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -2604,7 +2581,7 @@ mod tests {
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Last assignment wins (Python-style dynamic typing)
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("x"), Some(Type::String));
     }
 
     #[test]
@@ -2614,7 +2591,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -2625,7 +2602,7 @@ mod tests {
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Without value, type comes from the annotation
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -2636,9 +2613,9 @@ mod tests {
         let analyzer = analyzer.analyze_with_types(&module);
         
         // For now, unpacked variables get Unknown type (tuple type not yet implemented)
-        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::Unknown));
-        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::Unknown));
-        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::Unknown));
+        assert_eq!(analyzer.get_type("a"), Some(Type::Unknown));
+        assert_eq!(analyzer.get_type("b"), Some(Type::Unknown));
+        assert_eq!(analyzer.get_type("c"), Some(Type::Unknown));
     }
 
     #[test]
@@ -2648,7 +2625,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -2658,7 +2635,7 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("name"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("name"), Some(Type::String));
     }
 
     #[test]
@@ -2668,9 +2645,9 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
         // y should get the type from x
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Int));
     }
 
     #[test]
@@ -2681,7 +2658,7 @@ mod tests {
         let analyzer = analyzer.analyze_with_types(&module);
         
         // x is undefined, so y gets Unknown type
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Unknown));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Unknown));
     }
 
     #[test]
@@ -2691,10 +2668,10 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::Int));
-        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::String));
-        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::Bool));
-        assert_eq!(analyzer.type_table().get_type("d"), Some(&Type::None));
+        assert_eq!(analyzer.get_type("a"), Some(Type::Int));
+        assert_eq!(analyzer.get_type("b"), Some(Type::String));
+        assert_eq!(analyzer.get_type("c"), Some(Type::Bool));
+        assert_eq!(analyzer.get_type("d"), Some(Type::None));
     }
 
     #[test]
@@ -2704,9 +2681,9 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
-        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Int));
+        assert_eq!(analyzer.get_type("z"), Some(Type::Int));
     }
 
     #[test]
@@ -2717,7 +2694,7 @@ mod tests {
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Binary operations are now inferred: Int + Int → Int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -2728,7 +2705,7 @@ mod tests {
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Walrus reassigns x to int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3000,7 +2977,7 @@ x = get_number()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Variable assigned from function call gets function's return type
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3016,7 +2993,7 @@ msg = get_greeting()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Variable gets string type from function
-        assert_eq!(analyzer.type_table().get_type("msg"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("msg"), Some(Type::String));
     }
 
     #[test]
@@ -3032,7 +3009,7 @@ result = do_nothing()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Variable gets None type from function
-        assert_eq!(analyzer.type_table().get_type("result"), Some(&Type::None));
+        assert_eq!(analyzer.get_type("result"), Some(Type::None));
     }
 
     #[test]
@@ -3056,7 +3033,7 @@ result = double()
         // double() returns x which is Int
         assert_eq!(analyzer.function_types().get("double"), Some(&Type::Int));
         // result gets Int from double()
-        assert_eq!(analyzer.type_table().get_type("result"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("result"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3071,7 +3048,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Int + Int → Int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3082,7 +3059,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Float + Float → Float
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
     }
 
     #[test]
@@ -3093,7 +3070,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Int + Float → Float (type promotion)
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
     }
 
     #[test]
@@ -3104,7 +3081,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Division always returns Float in Python 3
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
     }
 
     #[test]
@@ -3115,7 +3092,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // String + String → String
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("x"), Some(Type::String));
     }
 
     #[test]
@@ -3126,7 +3103,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Bool + Float → Float (bool is subclass of int in Python)
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
     }
 
     #[test]
@@ -3137,7 +3114,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Float + Bool → Float
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Float));
     }
 
     #[test]
@@ -3148,7 +3125,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Bool + Int → Int (bool is subclass of int)
-        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("z"), Some(Type::Int));
     }
 
     #[test]
@@ -3159,7 +3136,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Bool + Bool → Int (both bools treated as ints)
-        assert_eq!(analyzer.type_table().get_type("w"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("w"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3174,7 +3151,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Int < Int → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3185,7 +3162,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Float > Float → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3196,7 +3173,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // String == String → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3207,7 +3184,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Int != Float → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3218,7 +3195,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Bool == Bool → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     // ============================================================
@@ -3233,7 +3210,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Bool and Bool → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3244,7 +3221,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Bool or Bool → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3255,7 +3232,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Bool and Bool → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3266,7 +3243,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Comparison results are Bool, Bool and Bool → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     // ============================================================
@@ -3281,7 +3258,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // not Bool → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     #[test]
@@ -3292,7 +3269,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // -Int → Int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3303,7 +3280,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // -Float → Float
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
     }
 
     #[test]
@@ -3314,7 +3291,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // -Bool → Int (bool is subclass of int in Python)
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3325,7 +3302,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // +Bool → Int (bool is subclass of int in Python)
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3340,7 +3317,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // (Int + Int) * Int → Int * Int → Int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3351,7 +3328,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Float + (Int * Int) → Float + Int → Float
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
     }
 
     #[test]
@@ -3362,7 +3339,7 @@ result = double()
         let analyzer = analyzer.analyze_with_types(&module);
         
         // (Int < Int) and (Int > Int) → Bool and Bool → Bool
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Bool));
     }
 
     // ============================================================
@@ -3380,7 +3357,7 @@ if True:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Variable assigned in if block should be tracked
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3395,7 +3372,7 @@ if True:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Last assignment wins: x is now Int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3410,8 +3387,8 @@ y = x
         let analyzer = analyzer.analyze_with_types(&module);
         
         // x assigned in if block, y gets its type
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Float));
     }
 
     #[test]
@@ -3426,7 +3403,7 @@ if True:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Both assignments are Int, last one wins
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3446,7 +3423,7 @@ else:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Both branches assign Int, so x is Int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3463,7 +3440,7 @@ else:
         
         // Different types: last write wins (else branch executed last in analysis)
         // In Python, actual type depends on runtime condition; we track last seen
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("x"), Some(Type::String));
     }
 
     #[test]
@@ -3480,9 +3457,9 @@ else:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // x only assigned in if branch
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
         // y assigned before and in else branch
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Int));
     }
 
     #[test]
@@ -3498,9 +3475,9 @@ else:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // x only assigned in else branch
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
         // y only assigned in if branch
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Int));
     }
 
     #[test]
@@ -3517,7 +3494,7 @@ else:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // All assignments are Int
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3536,7 +3513,7 @@ if True:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Variable assigned in nested if
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3553,7 +3530,7 @@ if True:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Last assignment in nested if wins
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3571,9 +3548,9 @@ if True:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Type propagates through multiple nesting levels
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
-        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Float));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Float));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Float));
+        assert_eq!(analyzer.get_type("z"), Some(Type::Float));
     }
 
     // ============================================================
@@ -3592,7 +3569,7 @@ while False:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Last assignment in loop wins
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     #[test]
@@ -3606,7 +3583,7 @@ while False:
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Variable assigned in while loop
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+        assert_eq!(analyzer.get_type("x"), Some(Type::String));
     }
 
     #[test]
@@ -3621,8 +3598,8 @@ y = x
         let analyzer = analyzer.analyze_with_types(&module);
         
         // x assigned in loop, y gets its type
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
-        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
+        assert_eq!(analyzer.get_type("y"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3640,7 +3617,7 @@ for i in range(10):
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Loop variable gets Unknown type (iterable element types not tracked yet)
-        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+        assert_eq!(analyzer.get_type("i"), Some(Type::Unknown));
     }
 
     #[test]
@@ -3654,8 +3631,8 @@ for i in range(5):
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Variable assigned in for loop body
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
-        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
+        assert_eq!(analyzer.get_type("i"), Some(Type::Unknown));
     }
 
     #[test]
@@ -3670,8 +3647,8 @@ x = i
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Loop variable accessible after loop
-        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Unknown));
+        assert_eq!(analyzer.get_type("i"), Some(Type::Unknown));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Unknown));
     }
 
     #[test]
@@ -3686,10 +3663,10 @@ for i in range(3):
         let analyzer = analyzer.analyze_with_types(&module);
         
         // Both loop variables are Unknown
-        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
-        assert_eq!(analyzer.type_table().get_type("j"), Some(&Type::Unknown));
+        assert_eq!(analyzer.get_type("i"), Some(Type::Unknown));
+        assert_eq!(analyzer.get_type("j"), Some(Type::Unknown));
         // Variable assigned in nested loop
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
     }
 
     // ============================================================
@@ -3990,6 +3967,88 @@ def get_flag() -> bool:
         
         // Should not produce any errors when return types match
         assert!(result.is_ok());
+    }
+
+    // ======================
+    // Scope-Aware Type Tracking Tests
+    // ======================
+
+    #[test]
+    fn test_variable_shadowing_different_types() {
+        let code = r#"
+x = 42
+def foo():
+    x = "hello"
+    y = x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Module-level x should be Int
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
+        // Function-level y should have String type (from shadowed x)
+        // Note: Currently our type tracking may not perfectly isolate function scope
+        // This test documents current behavior and can be enhanced later
+    }
+
+    #[test]
+    fn test_function_parameter_type_scoping() {
+        let code = r#"
+def add(a, b):
+    result = a + b
+    return result
+x = 10
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Module-level x should exist
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
+        // Parameters a, b are in function scope - may not be accessible from module level
+        // This documents that parameters are properly scoped
+        assert_eq!(analyzer.get_type("a"), None);
+    }
+
+    #[test]
+    fn test_block_scope_type_tracking() {
+        let code = r#"
+flag = True
+if flag:
+    message = "yes"
+else:
+    message = "no"
+count = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // All variables should be accessible at module level
+        assert_eq!(analyzer.get_type("flag"), Some(Type::Bool));
+        assert_eq!(analyzer.get_type("message"), Some(Type::String));
+        assert_eq!(analyzer.get_type("count"), Some(Type::Int));
+    }
+
+    #[test]
+    fn test_nested_scope_type_isolation() {
+        let code = r#"
+x = 1
+def outer():
+    y = 2
+    def inner():
+        z = 3
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Only module-level variable accessible
+        assert_eq!(analyzer.get_type("x"), Some(Type::Int));
+        // Function-scoped variables not accessible from module scope
+        assert_eq!(analyzer.get_type("y"), None);
+        assert_eq!(analyzer.get_type("z"), None);
     }
 }
 

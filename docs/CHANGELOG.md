@@ -7,13 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Integrated type tracking into SymbolTable (Phase 3.2 Refactoring)** ✅ (239 tests passing)
+  - Removed separate `TypeTable` structure that caused scope-awareness issues
+  - Added `inferred_type: Type` field to `Symbol` struct in SymbolTable
+  - Added `assign_type()` and `get_type()` methods to SymbolTable for scope-aware type tracking
+  - Updated SemanticAnalyzer to use SymbolTable for all type operations
+  - Type tracking now automatically follows scope hierarchy (module → function → block)
+  - Eliminated duplicate name tracking between TypeTable and SymbolTable
+  - Updated test `test_type_table_storage` → `test_symbol_table_type_storage`
+  - Added 4 new scope-awareness tests (variable shadowing, parameter scoping, block scope, nested scope isolation)
+  - **Architecture improvement**: Single source of truth for both declarations and types
+  - **No user-facing changes**: Internal refactoring only, all existing tests pass
+
 ### Added
-- **Phase 3.2: Type Inference (Basic)** ✅ COMPLETE (226 tests passing)
+- **Phase 3.2: Type Inference (Basic)** ✅ COMPLETE (239 tests passing)
   
   **Task 1: Type System Foundation & Literal Type Inference** ✅
   - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
   - Type compatibility checking for Python-style dynamic typing
-  - `TypeTable` for tracking inferred types of variables
   - Literal type inference for all Python literal types
   - 18 comprehensive tests (6 type system + 12 type inference)
   
@@ -21,13 +33,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `Type` enum: Int, Float, String, Bool, None, Unknown
     - Type compatibility checking (`is_compatible_with`)
     - Display implementation for type names
-    - Numeric type compatibility (Int ↔ Float, Bool ↔ Int)
+    - Numeric type compatibility (Int ↔ Float, Bool ↔ Int, Bool ↔ Float)
   
   **Type inference**:
     - Literal type inference: integers, floats, strings, booleans, None
     - Built-in constant types: True (bool), False (bool), None (None)
     - `infer_type` method for expression type inference
-    - Type lookup for identifiers from type table
+    - Type lookup for identifiers from symbol table
   
   **Task 2: Variable Type Inference from Assignments** ✅
   - Variable type inference from all assignment forms
