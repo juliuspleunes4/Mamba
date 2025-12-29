@@ -8,6 +8,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.3: Semantic Validation - Invalid Assignment Target Validation** ✅ (320 tests passing)
+  - Added comprehensive validation for assignment targets in assignments and augmented assignments
+  - Added `InvalidAssignmentTarget` error variant with descriptive target type
+  - Validates assignment targets recursively:
+    * **Valid targets**: identifiers, tuples, lists, subscripts, attributes, starred expressions
+    * **Invalid targets**: literals, function calls, operations, comparisons, lambdas, comprehensions
+  - Validation rules:
+    * Identifier assignments: `x = 5` ✓
+    * Tuple/list unpacking: `a, b = 1, 2` or `[a, b] = [1, 2]` ✓
+    * Starred unpacking: `a, *b, c = [1, 2, 3, 4]` ✓
+    * Subscript assignments: `mylist[0] = 10` ✓
+    * Attribute assignments: `obj.attr = 5` ✓
+    * Nested unpacking recursively validated: `(a, (b, c)) = (1, (2, 3))` ✓
+    * Parenthesized expressions checked recursively: `(x) = 5` ✓
+  - Error cases detected:
+    * Literal assignments: `5 = x`, `"hello" = x`, `True = x`, `None = x` ✗
+    * Operation assignments: `x + y = 5`, `not x = False` ✗
+    * Call assignments: `foo() = x` ✗
+    * Collection literals: `{} = x`, `{1, 2} = x` ✗
+    * Comprehensions: `[x for x in range(10)] = foo` ✗
+    * Conditional expressions: `(x if True else y) = 5` ✗
+    * Lambda assignments: `lambda x: x = foo` ✗
+  - Augmented assignments validated same as regular: `5 += 1` ✗
+  - Added 12 comprehensive tests:
+    * 7 valid target tests (identifier, subscript, attribute, tuple/list/starred/nested unpacking)
+    * 5 invalid target tests (dict, set, comprehension, conditional, augmented conditional)
+  - Works in cooperation with parser - parser catches some invalid assignments early
+  - Clear error messages: "Cannot assign to literal/operator/function call/etc."
+  - **Note**: Handles all core assignment validation - future enhancements may add more specific type-based checks
+
 - **Phase 3.3: Semantic Validation - Operator Usage Validation** ✅ (308 tests passing)
   - Extended operator type checking to cover all operator categories:
     * **Bitwise operators** (&, |, ^, <<, >>): Require integer types (int or bool)

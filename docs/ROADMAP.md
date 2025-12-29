@@ -276,7 +276,9 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [x] Check for unreachable code (Phase 1: sequential analysis)
 - [x] Validate function call arguments (positional with defaults)
 - [x] Validate operator usage (bitwise, comparison, logical, identity)
-- [ ] Check for invalid assignments
+- [x] Check for invalid assignments (literals, operations, comprehensions, etc.)
+
+**Completed**: Comprehensive semantic validation covering control flow, function calls, operators, and assignments. All invalid patterns detected with clear error messages. 320 tests passing across all semantic analysis features. Phase 3.3 complete!
 
 ### 3.4 Advanced Control Flow Analysis
 

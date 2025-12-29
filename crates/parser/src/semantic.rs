@@ -90,6 +90,11 @@ pub enum SemanticError {
         actual: Type,
         position: SourcePosition,
     },
+    /// invalid assignment target (e.g., assigning to a literal or expression)
+    InvalidAssignmentTarget {
+        target: String,
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -111,6 +116,7 @@ impl SemanticError {
             SemanticError::UndefinedFunction { position, .. } => position,
             SemanticError::ArgumentCountMismatch { position, .. } => position,
             SemanticError::ArgumentTypeMismatch { position, .. } => position,
+            SemanticError::InvalidAssignmentTarget { position, .. } => position,
         }
     }
 
@@ -163,6 +169,9 @@ impl SemanticError {
             }
             SemanticError::ArgumentTypeMismatch { function, parameter, expected, actual, .. } => {
                 format!("Function '{}' parameter '{}': expected {}, got {}", function, parameter, expected, actual)
+            }
+            SemanticError::InvalidAssignmentTarget { target, .. } => {
+                format!("Cannot assign to {}", target)
             }
         }
     }
@@ -649,6 +658,128 @@ impl SemanticAnalyzer {
         )
     }
 
+    /// Check if an expression is a valid assignment target
+    fn check_assignment_target(&mut self, target: &Expression) {
+        match target {
+            // Valid assignment targets
+            Expression::Identifier { .. } => {
+                // Variables are valid assignment targets
+            }
+            Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
+                // Tuple/list unpacking - check each element recursively
+                for elem in elements {
+                    self.check_assignment_target(elem);
+                }
+            }
+            Expression::Subscript { .. } => {
+                // Subscript assignment (e.g., list[0] = 5) is valid
+            }
+            Expression::Attribute { .. } => {
+                // Attribute assignment (e.g., obj.attr = 5) is valid
+            }
+            Expression::Starred { value, .. } => {
+                // Starred expression in unpacking (e.g., *rest) - check inner expression
+                self.check_assignment_target(value);
+            }
+            
+            // Invalid assignment targets
+            Expression::Literal(lit) => {
+                let (target_name, position) = match lit {
+                    Literal::Integer { position, .. } | Literal::Float { position, .. } |
+                    Literal::String { position, .. } | Literal::Boolean { position, .. } => {
+                        ("literal".to_string(), position.clone())
+                    }
+                    Literal::None { position } => {
+                        ("None".to_string(), position.clone())
+                    }
+                    Literal::Ellipsis { position } => {
+                        ("Ellipsis".to_string(), position.clone())
+                    }
+                };
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: target_name,
+                    position,
+                });
+            }
+            Expression::Call { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "function call".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::BinaryOp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "operator".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::UnaryOp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "operator".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Lambda { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "lambda".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Conditional { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "conditional expression".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Dict { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "dict display".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Set { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "set display".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::ListComp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "list comprehension".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::SetComp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "set comprehension".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::DictComp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "dict comprehension".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::GeneratorExpr { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "generator expression".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::AssignmentExpr { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "named expression".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Parenthesized { expr, .. } => {
+                // Parenthesized expressions - check the inner expression
+                self.check_assignment_target(expr);
+            }
+        }
+    }
+
     /// Visit a list of statements with unreachable code detection
     fn visit_statement_list(&mut self, statements: &[Statement]) {
         let mut seen_exit = false;
@@ -763,6 +894,11 @@ impl SemanticAnalyzer {
                 // Visit the value expression first
                 self.visit_expression(value);
                 
+                // Validate all assignment targets
+                for target in targets {
+                    self.check_assignment_target(target);
+                }
+                
                 // Infer the type of the value
                 let value_type = self.infer_type(value);
                 
@@ -818,6 +954,9 @@ impl SemanticAnalyzer {
 
             // AugmentedAssignment - check variable exists before augmenting
             Statement::AugmentedAssignment { target, value, position, .. } => {
+                // Validate assignment target first
+                self.check_assignment_target(target);
+                
                 // Visit the value expression
                 self.visit_expression(value);
                 
@@ -1388,6 +1527,7 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
+    use mamba_error::MambaError;
 
     /// Helper to parse code and create an analyzer
     fn parse(code: &str) -> Module {
@@ -1395,6 +1535,14 @@ mod tests {
         let tokens = lexer.tokenize().expect("Tokenize should succeed");
         let mut parser = Parser::new(tokens);
         parser.parse().expect("Parse should succeed")
+    }
+
+    /// Helper that returns Result for tests that might have parse errors
+    fn try_parse(code: &str) -> Result<Module, Vec<MambaError>> {
+        let mut lexer = Lexer::new(code);
+        let tokens = lexer.tokenize().map_err(|e| vec![e])?;
+        let mut parser = Parser::new(tokens);
+        parser.parse()
     }
 
     #[test]
@@ -5542,5 +5690,182 @@ result = x or y
         // Should not produce errors (logical operators accept any type)
         assert!(result.is_ok());
     }
+
+    // ===== Invalid Assignment Target Tests =====
+    // Note: Parser already catches some invalid assignments (literals, operators, function calls, lambdas)
+    // These tests verify semantic analyzer catches cases that might slip through
+
+    #[test]
+    fn test_valid_identifier_assignment() {
+        let code = "x = 5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (identifier is valid target)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_subscript_assignment() {
+        let code = r#"
+mylist = [1, 2, 3]
+mylist[0] = 10
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (subscript is valid target)
+        if let Err(errors) = &result {
+            eprintln!("Unexpected errors: {:?}", errors);
+        }
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_attribute_assignment() {
+        let code = r#"
+x = None
+x.attr = 5
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (attribute is valid target)
+        if let Err(errors) = &result {
+            eprintln!("Unexpected errors: {:?}", errors);
+        }
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_tuple_unpacking() {
+        let code = "a, b = 1, 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (tuple unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_list_unpacking() {
+        let code = "[a, b] = [1, 2]";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (list unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_starred_unpacking() {
+        let code = "a, *b, c = [1, 2, 3, 4]";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (starred unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_nested_unpacking() {
+        let code = "(a, (b, c)) = (1, (2, 3))";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (nested unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_dict_literal_assignment() {
+        let code = r#"{} = x"#;
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_set_literal_assignment() {
+        let code = r#"{1, 2, 3} = x"#;
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_list_comp_assignment() {
+        let code = "[x for x in range(10)] = foo";
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_conditional_expression_assignment() {
+        let code = r#"
+x = 1
+y = 2
+(x if True else y) = 5
+"#;
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_augmented_assignment_conditional() {
+        let code = r#"
+x = 1
+y = 2
+(x if True else y) += 5
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Parser or semantic analyzer should catch this
+        assert!(result.is_err());
+    }
 }
+
 
