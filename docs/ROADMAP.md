@@ -271,14 +271,27 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.3 Semantic Validation
 
-- [ ] Validate break/continue usage (must be in loop)
-- [ ] Validate return usage (must be in function)
-- [ ] Check for unreachable code
-- [ ] Validate function call arguments
-- [ ] Validate operator usage
-- [ ] Check for invalid assignments
+- [x] Validate break/continue usage (must be in loop)
+- [x] Validate return usage (must be in function)
+- [x] Check for unreachable code (Phase 1: sequential analysis)
+- [x] Validate function call arguments (positional with defaults)
+- [x] Validate operator usage (bitwise, comparison, logical, identity)
+- [x] Check for invalid assignments (literals, operations, comprehensions, etc.)
 
-### 3.4 Semantic Testing
+**Completed**: Comprehensive semantic validation covering control flow, function calls, operators, and assignments. All invalid patterns detected with clear error messages. 320 tests passing across all semantic analysis features. Phase 3.3 complete!
+
+### 3.4 Advanced Control Flow Analysis
+
+- [ ] Detect unreachable code after if/else with returns in all branches
+- [ ] Handle unreachable code in try/except blocks
+- [ ] Implement sophisticated control flow graphs for comprehensive analysis
+
+### 3.5 Deferred Semantic Validation
+
+- [ ] Validate membership operators (in, not in) - requires collection type system
+- [ ] Add explicit tests for augmented assignment operators (+=, -=, etc.)
+
+### 3.6 Semantic Testing
 
 - [ ] Test scope resolution
 - [ ] Test type inference accuracy

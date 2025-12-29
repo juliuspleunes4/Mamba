@@ -53,6 +53,48 @@ pub enum SemanticError {
     DivisionByZero {
         position: SourcePosition,
     },
+    /// break statement outside of loop
+    BreakOutsideLoop {
+        position: SourcePosition,
+    },
+    /// continue statement outside of loop
+    ContinueOutsideLoop {
+        position: SourcePosition,
+    },
+    /// return statement outside of function
+    ReturnOutsideFunction {
+        position: SourcePosition,
+    },
+    /// unreachable code detected
+    UnreachableCode {
+        position: SourcePosition,
+    },
+    /// function called but not defined
+    UndefinedFunction {
+        name: String,
+        position: SourcePosition,
+    },
+    /// function called with wrong number of arguments
+    ArgumentCountMismatch {
+        function: String,
+        expected_min: usize,
+        expected_max: usize,
+        actual: usize,
+        position: SourcePosition,
+    },
+    /// function called with wrong argument type
+    ArgumentTypeMismatch {
+        function: String,
+        parameter: String,
+        expected: Type,
+        actual: Type,
+        position: SourcePosition,
+    },
+    /// invalid assignment target (e.g., assigning to a literal or expression)
+    InvalidAssignmentTarget {
+        target: String,
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -67,6 +109,14 @@ impl SemanticError {
             SemanticError::GlobalAtModuleLevel { position, .. } => position,
             SemanticError::TypeMismatch { position, .. } => position,
             SemanticError::DivisionByZero { position } => position,
+            SemanticError::BreakOutsideLoop { position } => position,
+            SemanticError::ContinueOutsideLoop { position } => position,
+            SemanticError::ReturnOutsideFunction { position } => position,
+            SemanticError::UnreachableCode { position } => position,
+            SemanticError::UndefinedFunction { position, .. } => position,
+            SemanticError::ArgumentCountMismatch { position, .. } => position,
+            SemanticError::ArgumentTypeMismatch { position, .. } => position,
+            SemanticError::InvalidAssignmentTarget { position, .. } => position,
         }
     }
 
@@ -95,8 +145,58 @@ impl SemanticError {
             SemanticError::DivisionByZero { .. } => {
                 "Division by zero".to_string()
             }
+            SemanticError::BreakOutsideLoop { .. } => {
+                "'break' outside loop".to_string()
+            }
+            SemanticError::ContinueOutsideLoop { .. } => {
+                "'continue' outside loop".to_string()
+            }
+            SemanticError::ReturnOutsideFunction { .. } => {
+                "'return' outside function".to_string()
+            }
+            SemanticError::UnreachableCode { .. } => {
+                "Unreachable code".to_string()
+            }
+            SemanticError::UndefinedFunction { name, .. } => {
+                format!("Undefined function: '{}'", name)
+            }
+            SemanticError::ArgumentCountMismatch { function, expected_min, expected_max, actual, .. } => {
+                if expected_min == expected_max {
+                    format!("Function '{}' takes {} argument(s) but {} were given", function, expected_min, actual)
+                } else {
+                    format!("Function '{}' takes {}-{} arguments but {} were given", function, expected_min, expected_max, actual)
+                }
+            }
+            SemanticError::ArgumentTypeMismatch { function, parameter, expected, actual, .. } => {
+                format!("Function '{}' parameter '{}': expected {}, got {}", function, parameter, expected, actual)
+            }
+            SemanticError::InvalidAssignmentTarget { target, .. } => {
+                format!("Cannot assign to {}", target)
+            }
         }
     }
+}
+
+/// Function parameter metadata
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
+    /// Parameter name
+    pub name: String,
+    /// Parameter type (Unknown if not annotated)
+    pub param_type: Type,
+    /// Whether this parameter has a default value
+    pub has_default: bool,
+}
+
+/// Function signature metadata
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionSignature {
+    /// Function name
+    pub name: String,
+    /// Function parameters
+    pub parameters: Vec<Parameter>,
+    /// Function return type (Unknown if not annotated)
+    pub return_type: Type,
 }
 
 /// The semantic analyzer traverses the AST and builds a symbol table
@@ -105,10 +205,14 @@ pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     /// Function return types
     function_types: HashMap<String, Type>,
+    /// Function signatures for call validation
+    function_signatures: HashMap<String, FunctionSignature>,
     /// Current function being analyzed
     current_function: Option<String>,
     /// Expected return type annotation for current function
     expected_return_type: Option<Type>,
+    /// Loop nesting depth for break/continue validation
+    loop_depth: usize,
     /// Collected semantic errors
     errors: Vec<SemanticError>,
 }
@@ -145,8 +249,10 @@ impl SemanticAnalyzer {
         Self {
             symbol_table,
             function_types: HashMap::new(),
+            function_signatures: HashMap::new(),
             current_function: None,
             expected_return_type: None,
+            loop_depth: 0,
             errors: Vec::new(),
         }
     }
@@ -155,10 +261,8 @@ impl SemanticAnalyzer {
     ///
     /// Returns Ok(symbol_table) if no errors, Err(errors) if errors found
     pub fn analyze(mut self, module: &Module) -> Result<SymbolTable, Vec<SemanticError>> {
-        // Visit all statements in the module
-        for statement in &module.statements {
-            self.visit_statement(statement);
-        }
+        // Visit all statements in the module with unreachable code detection
+        self.visit_statement_list(&module.statements);
 
         // Return symbol table if no errors, otherwise return errors
         if self.errors.is_empty() {
@@ -171,9 +275,7 @@ impl SemanticAnalyzer {
     /// For testing: analyze and return self to access type_table
     #[cfg(test)]
     pub fn analyze_with_types(mut self, module: &Module) -> Self {
-        for statement in &module.statements {
-            self.visit_statement(statement);
-        }
+        self.visit_statement_list(&module.statements);
         self
     }
 
@@ -379,6 +481,72 @@ impl SemanticAnalyzer {
                     return Type::Unknown;
                 }
             },
+            // Bitwise operators require integer types
+            BitwiseAnd | BitwiseOr | BitwiseXor | LeftShift | RightShift => {
+                // Check both operands and collect all errors before returning
+                let mut has_error = false;
+                
+                // Check left operand
+                if !matches!(left, Type::Int | Type::Bool) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "int".to_string(),
+                        actual: left.clone(),
+                        position: position.clone(),
+                    });
+                    has_error = true;
+                }
+                // Check right operand
+                if !matches!(right, Type::Int | Type::Bool) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "int".to_string(),
+                        actual: right.clone(),
+                        position: position.clone(),
+                    });
+                    has_error = true;
+                }
+                
+                if has_error {
+                    return Type::Unknown;
+                }
+            },
+            // Comparison operators require compatible types
+            Equal | NotEqual | LessThan | LessThanEq | GreaterThan | GreaterThanEq => {
+                // None can be compared with anything (for equality)
+                if matches!(op, Equal | NotEqual) {
+                    // Equality operators are permissive
+                } else {
+                    // Ordering operators require compatible types
+                    // String comparisons: both must be strings
+                    if matches!(left, Type::String) && !matches!(right, Type::String) {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: "str".to_string(),
+                            actual: right.clone(),
+                            position: position.clone(),
+                        });
+                        return Type::Unknown;
+                    }
+                    if matches!(right, Type::String) && !matches!(left, Type::String) {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: "str".to_string(),
+                            actual: left.clone(),
+                            position: position.clone(),
+                        });
+                        return Type::Unknown;
+                    }
+                    // None cannot be ordered
+                    if matches!(left, Type::None) || matches!(right, Type::None) {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: "comparable types".to_string(),
+                            actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
+                            position: position.clone(),
+                        });
+                        return Type::Unknown;
+                    }
+                }
+            },
+            // Logical operators (And, Or) accept any type - truthy/falsy semantics
+            // Identity operators (Is, IsNot) accept any type - reference comparison
+            // Membership operators (In, NotIn) - deferred until we have collection types
             _ => {}
         }
         
@@ -486,6 +654,245 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Check if a statement always exits (returns, breaks, continues, raises)
+    fn statement_always_exits(&self, statement: &Statement) -> bool {
+        matches!(
+            statement,
+            Statement::Return { .. }
+                | Statement::Break(_)
+                | Statement::Continue(_)
+                | Statement::Raise { .. }
+        )
+    }
+
+    /// Check if an expression is a valid assignment target
+    fn check_assignment_target(&mut self, target: &Expression) {
+        match target {
+            // Valid assignment targets
+            Expression::Identifier { .. } => {
+                // Variables are valid assignment targets
+            }
+            Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
+                // Tuple/list unpacking - check each element recursively
+                for elem in elements {
+                    self.check_assignment_target(elem);
+                }
+            }
+            Expression::Subscript { .. } => {
+                // Subscript assignment (e.g., list[0] = 5) is valid
+            }
+            Expression::Attribute { .. } => {
+                // Attribute assignment (e.g., obj.attr = 5) is valid
+            }
+            Expression::Starred { value, .. } => {
+                // Starred expression in unpacking (e.g., *rest) - check inner expression
+                self.check_assignment_target(value);
+            }
+            
+            // Invalid assignment targets
+            Expression::Literal(lit) => {
+                let (target_name, position) = match lit {
+                    Literal::Integer { position, .. } | Literal::Float { position, .. } |
+                    Literal::String { position, .. } | Literal::Boolean { position, .. } => {
+                        ("literal".to_string(), position.clone())
+                    }
+                    Literal::None { position } => {
+                        ("None".to_string(), position.clone())
+                    }
+                    Literal::Ellipsis { position } => {
+                        ("Ellipsis".to_string(), position.clone())
+                    }
+                };
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: target_name,
+                    position,
+                });
+            }
+            Expression::Call { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "function call".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::BinaryOp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "operator".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::UnaryOp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "operator".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Lambda { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "lambda".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Conditional { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "conditional expression".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Dict { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "dict display".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Set { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "set display".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::ListComp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "list comprehension".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::SetComp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "set comprehension".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::DictComp { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "dict comprehension".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::GeneratorExpr { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "generator expression".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::AssignmentExpr { position, .. } => {
+                self.add_error(SemanticError::InvalidAssignmentTarget {
+                    target: "named expression".to_string(),
+                    position: position.clone(),
+                });
+            }
+            Expression::Parenthesized { expr, .. } => {
+                // Parenthesized expressions - check the inner expression
+                self.check_assignment_target(expr);
+            }
+        }
+    }
+
+    /// Visit a list of statements with unreachable code detection
+    fn visit_statement_list(&mut self, statements: &[Statement]) {
+        let mut seen_exit = false;
+        
+        for statement in statements {
+            // Check if previous statement always exits
+            if seen_exit {
+                self.add_error(SemanticError::UnreachableCode {
+                    position: statement.position().clone(),
+                });
+            }
+            
+            // Visit the statement
+            self.visit_statement(statement);
+            
+            // Update exit flag
+            if self.statement_always_exits(statement) {
+                seen_exit = true;
+            }
+        }
+    }
+
+    /// Validate a function call (argument count and types)
+    fn validate_function_call(&mut self, function_name: &str, arguments: &[Expression], position: &SourcePosition) {
+        // List of built-in functions that we skip validation for
+        const BUILTINS: &[&str] = &[
+            "print", "len", "range", "str", "int", "float", "bool",
+            "list", "dict", "set", "tuple", "type", "isinstance",
+            "hasattr", "getattr", "setattr", "dir", "help",
+            "sum", "min", "max", "abs", "round", "pow",
+            "input", "open", "chr", "ord", "enumerate", "zip",
+            "map", "filter", "sorted", "reversed", "all", "any"
+        ];
+        
+        // Skip validation for built-in functions
+        if BUILTINS.contains(&function_name) {
+            return;
+        }
+        
+        // Check if function exists
+        let signature = match self.function_signatures.get(function_name).cloned() {
+            Some(sig) => sig,
+            None => {
+                // Function not found
+                self.add_error(SemanticError::UndefinedFunction {
+                    name: function_name.to_string(),
+                    position: position.clone(),
+                });
+                return;
+            }
+        };
+        
+        // Count required and total parameters
+        let required_params = signature.parameters.iter()
+            .filter(|p| !p.has_default)
+            .count();
+        let total_params = signature.parameters.len();
+        let actual_args = arguments.len();
+        
+        // Check argument count
+        if actual_args < required_params || actual_args > total_params {
+            self.add_error(SemanticError::ArgumentCountMismatch {
+                function: function_name.to_string(),
+                expected_min: required_params,
+                expected_max: total_params,
+                actual: actual_args,
+                position: position.clone(),
+            });
+            return; // Don't check types if count is wrong
+        }
+        
+        // Check argument types (best-effort, only when both types are known)
+        for (i, arg) in arguments.iter().enumerate() {
+            if i >= signature.parameters.len() {
+                break; // Should not happen after count check
+            }
+            
+            let param = &signature.parameters[i];
+            let expected_type = &param.param_type;
+            
+            // Skip if parameter type is unknown
+            if *expected_type == Type::Unknown {
+                continue;
+            }
+            
+            // Infer argument type
+            let actual_type = self.infer_type(arg);
+            
+            // Skip if argument type is unknown
+            if actual_type == Type::Unknown {
+                continue;
+            }
+            
+            // Check type compatibility
+            if actual_type != *expected_type {
+                self.add_error(SemanticError::ArgumentTypeMismatch {
+                    function: function_name.to_string(),
+                    parameter: param.name.clone(),
+                    expected: expected_type.clone(),
+                    actual: actual_type,
+                    position: arg.position().clone(),
+                });
+            }
+        }
+    }
+
     /// Visit a statement and perform semantic analysis
     fn visit_statement(&mut self, statement: &Statement) {
         match statement {
@@ -493,6 +900,11 @@ impl SemanticAnalyzer {
             Statement::Assignment { targets, value, position } => {
                 // Visit the value expression first
                 self.visit_expression(value);
+                
+                // Validate all assignment targets
+                for target in targets {
+                    self.check_assignment_target(target);
+                }
                 
                 // Infer the type of the value
                 let value_type = self.infer_type(value);
@@ -549,6 +961,9 @@ impl SemanticAnalyzer {
 
             // AugmentedAssignment - check variable exists before augmenting
             Statement::AugmentedAssignment { target, value, position, .. } => {
+                // Validate assignment target first
+                self.check_assignment_target(target);
+                
                 // Visit the value expression
                 self.visit_expression(value);
                 
@@ -592,6 +1007,27 @@ impl SemanticAnalyzer {
                 // Initialize function return type to None
                 self.function_types.insert(name.clone(), Type::None);
 
+                // Build function signature for call validation
+                let mut sig_parameters = Vec::new();
+                for param in parameters {
+                    let param_type = param.type_annotation.as_ref()
+                        .map(|ann| self.parse_type_annotation(ann))
+                        .unwrap_or(Type::Unknown);
+                    sig_parameters.push(Parameter {
+                        name: param.name.clone(),
+                        param_type,
+                        has_default: param.default.is_some(),
+                    });
+                }
+                let sig_return_type = return_type.as_ref()
+                    .map(|rt| self.parse_type_annotation(rt))
+                    .unwrap_or(Type::Unknown);
+                self.function_signatures.insert(name.clone(), FunctionSignature {
+                    name: name.clone(),
+                    parameters: sig_parameters,
+                    return_type: sig_return_type,
+                });
+
                 // Enter new function scope
                 self.symbol_table.enter_scope(ScopeKind::Function);
 
@@ -610,10 +1046,8 @@ impl SemanticAnalyzer {
                     }
                 }
 
-                // Analyze function body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Analyze function body with unreachable code detection
+                self.visit_statement_list(body);
 
                 // Exit function scope
                 self.symbol_table.exit_scope();
@@ -641,10 +1075,8 @@ impl SemanticAnalyzer {
                 // Enter new class scope
                 self.symbol_table.enter_scope(ScopeKind::Class);
 
-                // Analyze class body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Analyze class body with unreachable code detection
+                self.visit_statement_list(body);
 
                 // Exit class scope
                 self.symbol_table.exit_scope();
@@ -655,24 +1087,18 @@ impl SemanticAnalyzer {
                 // Visit condition
                 self.visit_expression(condition);
                 
-                // Visit then block
-                for statement in then_block {
-                    self.visit_statement(statement);
-                }
+                // Visit then block with unreachable code detection
+                self.visit_statement_list(then_block);
                 
                 // Visit elif blocks
                 for (elif_condition, elif_body) in elif_blocks {
                     self.visit_expression(elif_condition);
-                    for statement in elif_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(elif_body);
                 }
                 
                 // Visit else block
                 if let Some(else_body) = else_block {
-                    for statement in else_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(else_body);
                 }
             }
 
@@ -681,16 +1107,18 @@ impl SemanticAnalyzer {
                 // Visit condition
                 self.visit_expression(condition);
                 
-                // Visit body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Enter loop context
+                self.loop_depth += 1;
                 
-                // Visit else block if present
+                // Visit body with unreachable code detection
+                self.visit_statement_list(body);
+                
+                // Exit loop context
+                self.loop_depth -= 1;
+                
+                // Visit else block if present (not in loop context)
                 if let Some(else_body) = else_block {
-                    for statement in else_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(else_body);
                 }
             }
 
@@ -705,16 +1133,18 @@ impl SemanticAnalyzer {
                 // Assign Unknown type to loop variable(s) since we don't track iterable types yet
                 self.assign_type_to_names(target, &Type::Unknown);
                 
-                // Visit body
-                for statement in body {
-                    self.visit_statement(statement);
-                }
+                // Enter loop context
+                self.loop_depth += 1;
                 
-                // Visit else block if present
+                // Visit body with unreachable code detection
+                self.visit_statement_list(body);
+                
+                // Exit loop context
+                self.loop_depth -= 1;
+                
+                // Visit else block if present (not in loop context)
                 if let Some(else_body) = else_block {
-                    for statement in else_body {
-                        self.visit_statement(statement);
-                    }
+                    self.visit_statement_list(else_body);
                 }
             }
 
@@ -810,6 +1240,13 @@ impl SemanticAnalyzer {
 
             // Statements with expressions that need semantic analysis
             Statement::Return { value, position } => {
+                // Validate return is inside a function
+                if self.current_function.is_none() {
+                    self.add_error(SemanticError::ReturnOutsideFunction {
+                        position: position.clone(),
+                    });
+                }
+                
                 if let Some(expr) = value {
                     self.visit_expression(expr);
                     
@@ -855,10 +1292,26 @@ impl SemanticAnalyzer {
                 }
             }
 
+            // Break statement - must be in a loop
+            Statement::Break(position) => {
+                if self.loop_depth == 0 {
+                    self.add_error(SemanticError::BreakOutsideLoop {
+                        position: position.clone(),
+                    });
+                }
+            }
+
+            // Continue statement - must be in a loop
+            Statement::Continue(position) => {
+                if self.loop_depth == 0 {
+                    self.add_error(SemanticError::ContinueOutsideLoop {
+                        position: position.clone(),
+                    });
+                }
+            }
+
             // Statements with no expressions to visit
-            Statement::Pass(_)
-            | Statement::Break(_)
-            | Statement::Continue(_) => {
+            Statement::Pass(_) => {
                 // No child expressions
             }
         }
@@ -894,10 +1347,15 @@ impl SemanticAnalyzer {
             }
 
             // Function call - visit function and all arguments
-            Expression::Call { function, arguments, .. } => {
+            Expression::Call { function, arguments, position } => {
                 self.visit_expression(function);
                 for arg in arguments {
                     self.visit_expression(arg);
+                }
+                
+                // Validate function call if it's a simple identifier
+                if let Expression::Identifier { name, .. } = &**function {
+                    self.validate_function_call(name, arguments, position);
                 }
             }
 
@@ -1076,6 +1534,7 @@ mod tests {
     use super::*;
     use crate::lexer::Lexer;
     use crate::parser::Parser;
+    use mamba_error::MambaError;
 
     /// Helper to parse code and create an analyzer
     fn parse(code: &str) -> Module {
@@ -1083,6 +1542,14 @@ mod tests {
         let tokens = lexer.tokenize().expect("Tokenize should succeed");
         let mut parser = Parser::new(tokens);
         parser.parse().expect("Parse should succeed")
+    }
+
+    /// Helper that returns Result for tests that might have parse errors
+    fn try_parse(code: &str) -> Result<Module, Vec<MambaError>> {
+        let mut lexer = Lexer::new(code);
+        let tokens = lexer.tokenize().map_err(|e| vec![e])?;
+        let mut parser = Parser::new(tokens);
+        parser.parse()
     }
 
     #[test]
@@ -4050,5 +4517,1387 @@ def outer():
         assert_eq!(analyzer.get_type("y"), None);
         assert_eq!(analyzer.get_type("z"), None);
     }
+
+    // ======================
+    // Break/Continue Validation Tests
+    // ======================
+
+    #[test]
+    fn test_break_in_while_loop() {
+        let code = r#"
+while True:
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_continue_in_while_loop() {
+        let code = r#"
+while True:
+    continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_in_for_loop() {
+        let code = r#"
+for i in range(10):
+    if i == 5:
+        break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_continue_in_for_loop() {
+        let code = r#"
+for i in range(10):
+    if i % 2 == 0:
+        continue
+    print(i)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_in_nested_loops() {
+        let code = r#"
+for i in range(10):
+    for j in range(10):
+        if i == j:
+            break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_continue_in_nested_loops() {
+        let code = r#"
+for i in range(10):
+    for j in range(10):
+        if i == j:
+            continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_at_module_level() {
+        let code = "break";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+        assert_eq!(errors[0].message(), "'break' outside loop");
+    }
+
+    #[test]
+    fn test_continue_at_module_level() {
+        let code = "continue";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ContinueOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ContinueOutsideLoop { .. }));
+        assert_eq!(errors[0].message(), "'continue' outside loop");
+    }
+
+    #[test]
+    fn test_break_in_function_not_in_loop() {
+        let code = r#"
+def foo():
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_continue_in_function_not_in_loop() {
+        let code = r#"
+def foo():
+    continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ContinueOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ContinueOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_break_in_if_not_in_loop() {
+        let code = r#"
+if True:
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_continue_in_while_else_block() {
+        let code = r#"
+while True:
+    pass
+else:
+    continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ContinueOutsideLoop error (else block is not in loop)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ContinueOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_break_in_for_else_block() {
+        let code = r#"
+for i in range(10):
+    pass
+else:
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error (else block is not in loop)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_multiple_break_continue_in_loop() {
+        let code = r#"
+for i in range(10):
+    if i == 5:
+        break
+    if i % 2 == 0:
+        continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_continue_in_function_with_loop() {
+        let code = r#"
+def process():
+    for i in range(10):
+        if i == 5:
+            break
+        if i % 2 == 0:
+            continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    // ======================
+    // Return Statement Validation Tests
+    // ======================
+
+    #[test]
+    fn test_return_in_simple_function() {
+        let code = r#"
+def foo():
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_none_in_function() {
+        let code = r#"
+def foo():
+    return None
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_no_value_in_function() {
+        let code = r#"
+def foo():
+    return
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_in_nested_function() {
+        let code = r#"
+def outer():
+    def inner():
+        return 10
+    return inner()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_multiple_returns_in_function() {
+        let code = r#"
+def check(x):
+    if x > 0:
+        return "positive"
+    elif x < 0:
+        return "negative"
+    else:
+        return "zero"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_in_loop_inside_function() {
+        let code = r#"
+def find(items, target):
+    for item in items:
+        if item == target:
+            return item
+    return None
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_in_if_inside_function() {
+        let code = r#"
+def get_value(flag):
+    if flag:
+        return 1
+    return 0
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_at_module_level() {
+        let code = "return 42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+        assert_eq!(errors[0].message(), "'return' outside function");
+    }
+
+    #[test]
+    fn test_return_no_value_at_module_level() {
+        let code = "return";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_return_in_if_at_module_level() {
+        let code = r#"
+if True:
+    return 1
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_return_after_function_definition() {
+        let code = r#"
+def foo():
+    pass
+return 10
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_return_in_class_body_not_method() {
+        let code = r#"
+class MyClass:
+    x = 10
+    return x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::ReturnOutsideFunction { .. })));
+    }
+
+    // ======================
+    // Unreachable Code Detection Tests
+    // ======================
+
+    #[test]
+    fn test_unreachable_after_return_in_function() {
+        let code = r#"
+def foo():
+    return 42
+    x = 10
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+        assert_eq!(errors[0].message(), "Unreachable code");
+    }
+
+    #[test]
+    fn test_unreachable_after_break_in_loop() {
+        let code = r#"
+while True:
+    break
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_continue_in_loop() {
+        let code = r#"
+for i in range(10):
+    continue
+    print(i)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_multiple_unreachable_statements() {
+        let code = r#"
+def foo():
+    return 1
+    x = 2
+    y = 3
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce 2 UnreachableCode errors
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+        assert!(matches!(errors[1], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_return_in_nested_function() {
+        let code = r#"
+def outer():
+    def inner():
+        return 10
+        x = 5
+    return inner()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error in inner function
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_no_unreachable_after_if_with_return() {
+        let code = r#"
+def foo(x):
+    if x > 0:
+        return "positive"
+    print("not positive")
+    return "done"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce unreachable code errors
+        // (code after if can execute if condition is false)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_no_unreachable_in_else_after_return_in_if() {
+        let code = r#"
+def foo(x):
+    if x:
+        return 1
+    else:
+        return 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors - each branch's return is reachable
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_as_last_statement_not_unreachable() {
+        let code = r#"
+def foo():
+    x = 10
+    return x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unreachable_pass_after_return() {
+        let code = r#"
+def foo():
+    return 42
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error even for pass
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_in_nested_loop() {
+        let code = r#"
+for i in range(10):
+    for j in range(10):
+        break
+        print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    // ======================
+    // Function Call Validation Tests
+    // ======================
+
+    #[test]
+    fn test_call_undefined_function() {
+        let code = r#"
+foo()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UndefinedFunction error (and possibly UndefinedVariable)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        // Check that at least one error is UndefinedFunction
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::UndefinedFunction { .. })));
+        // Find the UndefinedFunction error and check its message
+        let func_error = errors.iter().find(|e| matches!(e, SemanticError::UndefinedFunction { .. })).unwrap();
+        assert_eq!(func_error.message(), "Undefined function: 'foo'");
+    }
+
+    #[test]
+    fn test_call_function_too_few_arguments() {
+        let code = r#"
+def add(a, b):
+    return a + b
+
+add(1)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+        assert!(errors[0].message().contains("takes 2 argument(s) but 1 were given"));
+    }
+
+    #[test]
+    fn test_call_function_too_many_arguments() {
+        let code = r#"
+def add(a, b):
+    return a + b
+
+add(1, 2, 3)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+        assert!(errors[0].message().contains("takes 2 argument(s) but 3 were given"));
+    }
+
+    #[test]
+    fn test_call_function_correct_argument_count() {
+        let code = r#"
+def add(a, b):
+    return a + b
+
+result = add(1, 2)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_with_default_parameter_all_args() {
+        let code = r#"
+def greet(name, greeting="Hello"):
+    return greeting + " " + name
+
+result = greet("World", "Hi")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_with_default_parameter_omit_default() {
+        let code = r#"
+def greet(name, greeting="Hello"):
+    return greeting + " " + name
+
+result = greet("World")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_with_default_parameter_too_few() {
+        let code = r#"
+def greet(name, greeting="Hello"):
+    return greeting + " " + name
+
+result = greet()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+        assert!(errors[0].message().contains("takes 1-2 arguments but 0 were given"));
+    }
+
+    #[test]
+    fn test_call_function_argument_type_mismatch() {
+        let code = r#"
+def add(a: int, b: int) -> int:
+    return a + b
+
+result = add(1, "hello")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentTypeMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentTypeMismatch { .. }));
+        let msg = errors[0].message();
+        assert!(msg.contains("parameter 'b'"));
+        assert!(msg.contains("expected int")); 
+        assert!(msg.contains("got str"));
+    }
+
+    #[test]
+    fn test_call_function_correct_argument_types() {
+        let code = r#"
+def add(a: int, b: int) -> int:
+    return a + b
+
+result = add(1, 2)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_builtin_function_any_args() {
+        let code = r#"
+print("hello", "world", 1, 2, 3)
+len([1, 2, 3])
+range(10)
+str(42)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Built-in functions should accept any arguments
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_nested_function() {
+        let code = r#"
+def outer():
+    def inner(x):
+        return x * 2
+    return inner(5)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_no_parameters() {
+        let code = r#"
+def get_value():
+    return 42
+
+x = get_value()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_no_parameters_with_args() {
+        let code = r#"
+def get_value():
+    return 42
+
+x = get_value(1)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+    }
+
+    #[test]
+    fn test_call_function_in_expression() {
+        let code = r#"
+def double(x: int) -> int:
+    return x * 2
+
+result = double(5) + double(3)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_recursive_function() {
+        let code = r#"
+def factorial(n: int) -> int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+result = factorial(5)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_all_defaults() {
+        let code = r#"
+def configure(mode="auto", debug=False):
+    pass
+
+configure()
+configure("manual")
+configure("manual", True)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_without_type_annotations() {
+        let code = r#"
+def process(data):
+    return data
+
+result = process("anything")
+result2 = process(123)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors - no type info to check
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_multiple_type_errors() {
+        let code = r#"
+def add(a: int, b: int) -> int:
+    return a + b
+
+result = add("hello", "world")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce 2 ArgumentTypeMismatch errors (one for each parameter)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2);
+        assert!(matches!(errors[0], SemanticError::ArgumentTypeMismatch { .. }));
+        assert!(matches!(errors[1], SemanticError::ArgumentTypeMismatch { .. }));
+    }
+
+    // ======================
+    // Operator Validation Tests
+    // ======================
+
+    #[test]
+    fn test_bitwise_and_with_integers() {
+        let code = r#"
+x = 5
+y = 3
+result = x & y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bitwise_and_with_string_error() {
+        let code = r#"
+x = "hello"
+y = "world"
+result = x & y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch errors
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.len() >= 1);
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_bitwise_or_with_floats_error() {
+        let code = r#"
+x = 5.0
+y = 3.0
+result = x | y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch errors
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.len() >= 1);
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_bitwise_xor_with_bools() {
+        let code = r#"
+x = True
+y = False
+result = x ^ y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (bool is subtype of int)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_left_shift_with_integers() {
+        let code = r#"
+x = 5
+result = x << 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_right_shift_with_string_error() {
+        let code = r#"
+x = "hello"
+result = x >> 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_bitwise_and_with_both_operands_invalid() {
+        let code = r#"
+x = "hello"
+y = 3.14
+result = x & y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TWO TypeMismatch errors (one for each operand)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        let type_errors: Vec<_> = errors.iter()
+            .filter(|e| matches!(e, SemanticError::TypeMismatch { .. }))
+            .collect();
+        assert_eq!(type_errors.len(), 2, "Expected 2 type errors (one for each operand), got {}", type_errors.len());
+    }
+
+    #[test]
+    fn test_string_comparison_equal() {
+        let code = r#"
+x = "hello"
+y = "world"
+result = x == y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_string_ordering_valid() {
+        let code = r#"
+x = "apple"
+y = "banana"
+result = x < y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_mixed_type_ordering_error() {
+        let code = r#"
+x = "hello"
+y = 42
+result = x < y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_numeric_ordering_valid() {
+        let code = r#"
+x = 5
+y = 3.14
+result = x > y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors (numeric types are compatible)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_none_ordering_error() {
+        let code = r#"
+x = None
+y = 5
+result = x < y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch error (None cannot be ordered)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_none_equality_valid() {
+        let code = r#"
+x = None
+y = 5
+result = x == y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (None can be compared for equality)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_logical_and_with_any_type() {
+        let code = r#"
+x = 5
+y = "hello"
+result = x and y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (logical operators accept any type)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_logical_or_with_any_type() {
+        let code = r#"
+x = None
+y = False
+result = x or y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (logical operators accept any type)
+        assert!(result.is_ok());
+    }
+
+    // ===== Invalid Assignment Target Tests =====
+    // Note: Parser already catches some invalid assignments (literals, operators, function calls, lambdas)
+    // These tests verify semantic analyzer catches cases that might slip through
+
+    #[test]
+    fn test_valid_identifier_assignment() {
+        let code = "x = 5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (identifier is valid target)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_subscript_assignment() {
+        let code = r#"
+mylist = [1, 2, 3]
+mylist[0] = 10
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (subscript is valid target)
+        if let Err(errors) = &result {
+            eprintln!("Unexpected errors: {:?}", errors);
+        }
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_attribute_assignment() {
+        let code = r#"
+x = None
+x.attr = 5
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (attribute is valid target)
+        if let Err(errors) = &result {
+            eprintln!("Unexpected errors: {:?}", errors);
+        }
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_tuple_unpacking() {
+        let code = "a, b = 1, 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (tuple unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_list_unpacking() {
+        let code = "[a, b] = [1, 2]";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (list unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_starred_unpacking() {
+        let code = "a, *b, c = [1, 2, 3, 4]";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (starred unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_valid_nested_unpacking() {
+        let code = "(a, (b, c)) = (1, (2, 3))";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (nested unpacking is valid)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_invalid_dict_literal_assignment() {
+        let code = r#"{} = x"#;
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_set_literal_assignment() {
+        let code = r#"{1, 2, 3} = x"#;
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_list_comp_assignment() {
+        let code = "[x for x in range(10)] = foo";
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_conditional_expression_assignment() {
+        let code = r#"
+x = 1
+y = 2
+(x if True else y) = 5
+"#;
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_invalid_augmented_assignment_conditional() {
+        let code = r#"
+x = 1
+y = 2
+(x if True else y) += 5
+"#;
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err());
+    }
 }
+
 

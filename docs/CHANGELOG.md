@@ -7,6 +7,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase 3.3: Semantic Validation - Invalid Assignment Target Validation** ✅ (320 tests passing)
+  - Added comprehensive validation for assignment targets in assignments and augmented assignments
+  - Added `InvalidAssignmentTarget` error variant with descriptive target type
+  - Validates assignment targets recursively:
+    * **Valid targets**: identifiers, tuples, lists, subscripts, attributes, starred expressions
+    * **Invalid targets**: literals, function calls, operations, comparisons, lambdas, comprehensions
+  - Validation rules:
+    * Identifier assignments: `x = 5` ✓
+    * Tuple/list unpacking: `a, b = 1, 2` or `[a, b] = [1, 2]` ✓
+    * Starred unpacking: `a, *b, c = [1, 2, 3, 4]` ✓
+    * Subscript assignments: `mylist[0] = 10` ✓
+    * Attribute assignments: `obj.attr = 5` ✓
+    * Nested unpacking recursively validated: `(a, (b, c)) = (1, (2, 3))` ✓
+    * Parenthesized expressions checked recursively: `(x) = 5` ✓
+  - Error cases detected:
+    * Literal assignments: `5 = x`, `"hello" = x`, `True = x`, `None = x` ✗
+    * Operation assignments: `x + y = 5`, `not x = False` ✗
+    * Call assignments: `foo() = x` ✗
+    * Collection literals: `{} = x`, `{1, 2} = x` ✗
+    * Comprehensions: `[x for x in range(10)] = foo` ✗
+    * Conditional expressions: `(x if True else y) = 5` ✗
+    * Lambda assignments: `lambda x: x = foo` ✗
+  - Augmented assignments validated same as regular: `5 += 1` ✗
+  - Added 12 comprehensive tests:
+    * 7 valid target tests (identifier, subscript, attribute, tuple/list/starred/nested unpacking)
+    * 5 invalid target tests (dict, set, comprehension, conditional, augmented conditional)
+  - Works in cooperation with parser - parser catches some invalid assignments early
+  - Clear error messages: "Cannot assign to literal/operator/function call/etc."
+  - **Note**: Handles all core assignment validation - future enhancements may add more specific type-based checks
+
+- **Phase 3.3: Semantic Validation - Operator Usage Validation** ✅ (308 tests passing)
+  - Extended operator type checking to cover all operator categories:
+    * **Bitwise operators** (&, |, ^, <<, >>): Require integer types (int or bool)
+    * **Comparison operators** (==, !=, <, <=, >, >=): Validate type compatibility
+    * **Logical operators** (and, or): Accept any type (truthy/falsy semantics)
+    * **Identity operators** (is, is not): Accept any type (reference comparison)
+  - Comparison validation rules:
+    * Equality (==, !=) operators are permissive - allow any type comparisons
+    * Ordering (<, <=, >, >=) requires compatible types (no str < int mixing)
+    * String ordering: both operands must be strings
+    * Numeric ordering: allows int/float/bool mixing
+    * None cannot be used in ordering operations
+  - Added 14 comprehensive tests:
+    * 4 bitwise operator tests (valid int, error with string/float, valid bool)
+    * 2 shift operator tests (valid int, error with string)
+    * 5 comparison tests (string equality, string ordering, mixed type error, numeric, None)
+    * 2 equality tests (None comparison valid, mixed types valid)
+    * 2 logical operator tests (any type valid)
+  - Clear error messages: "expected int" for bitwise, "expected str/comparable types" for ordering
+  - **Note**: Membership operators (in, not in) deferred until collection types are implemented
+
+- **Phase 3.3: Semantic Validation - Function Call Argument Validation** ✅ (294 tests passing)
+  - Added function signature tracking system:
+    * `FunctionSignature` struct stores function metadata (name, parameters, return type)
+    * `Parameter` struct tracks parameter name, type, and whether it has a default
+    * `function_signatures` HashMap stores all function signatures for validation
+  - Added 3 new error variants:
+    * `UndefinedFunction`: Function called but not defined
+    * `ArgumentCountMismatch`: Wrong number of arguments (shows min-max range for defaults)
+    * `ArgumentTypeMismatch`: Argument type doesn't match parameter type annotation
+  - Validates function calls:
+    * Checks function exists before calling
+    * Validates argument count matches parameter count (accounting for defaults)
+    * Type-checks arguments when both parameter and argument types are known
+  - Skips validation for built-in functions (print, len, range, etc.) - accepts any arguments
+  - Added 18 comprehensive tests:
+    * 4 undefined/count mismatch cases (undefined, too few, too many, no params with args)
+    * 6 correct usage cases (correct count, with defaults, all defaults, no annotations)
+    * 4 type checking cases (mismatch, correct types, multiple errors)
+    * 4 edge cases (nested, recursive, in expressions, built-ins)
+  - Clear error messages with function name, expected/actual counts and types
+  - **Note**: Only validates simple positional arguments with optional defaults - keyword arguments, *args/**kwargs deferred
+
+- **Phase 3.3: Semantic Validation - Unreachable Code Detection** ✅ (276 tests passing)
+  - Added `UnreachableCode` error variant
+  - Detects code that cannot be executed after exit statements (return/break/continue/raise)
+  - Implements sequential statement analysis within statement blocks
+  - Each if/elif/else branch analyzed independently (no cross-branch analysis)
+  - Added helper methods:
+    * `statement_always_exits()`: Checks if a statement is an exit statement
+    * `visit_statement_list()`: Analyzes statement sequences with exit tracking
+  - Updated all statement list processing: module, function body, class body, loops, if/elif/else
+  - Added 10 comprehensive tests:
+    * 5 detection cases (after return, break, continue in various contexts)
+    * 3 non-detection cases (after if-return, else-return, last statement)
+    * 2 edge cases (pass after return, nested loops)
+  - Clear error message: "Unreachable code"
+  - **Note**: Simple sequential analysis only - complex control flow (all branches return, try/except) deferred to Phase 3.4
+
+- **Phase 3.3: Semantic Validation - Return Statement Validation** ✅ (266 tests passing)
+  - Added `ReturnOutsideFunction` error variant
+  - Validates that `return` statements only appear inside function definitions
+  - Uses existing `current_function` tracking from type inference system
+  - Works correctly with nested functions (each tracks its own context)
+  - Added 12 comprehensive tests:
+    * 7 valid cases (return in functions, nested functions, with/without values, in loops/if blocks)
+    * 5 invalid cases (return at module level, in if blocks, after functions, in class bodies)
+  - Clear error message: "'return' outside function"
+
+- **Phase 3.3: Semantic Validation - Break/Continue Validation** ✅ (254 tests passing)
+  - Added `loop_depth` field to SemanticAnalyzer for tracking loop nesting
+  - Added `BreakOutsideLoop` and `ContinueOutsideLoop` error variants
+  - Validates that `break` statements only appear inside loops (while/for)
+  - Validates that `continue` statements only appear inside loops (while/for)
+  - Correctly handles loop else blocks (not considered part of loop)
+  - Supports nested loops with proper depth tracking
+  - Added 15 comprehensive tests:
+    * 6 valid cases (break/continue in while, for, nested loops)
+    * 7 invalid cases (break/continue at module level, in functions, in if blocks, in else blocks)
+    * 2 edge cases (multiple break/continue, function with loops)
+  - Clear error messages: "'break' outside loop", "'continue' not properly in loop"
+
 ### Changed
 - **Integrated type tracking into SymbolTable (Phase 3.2 Refactoring)** ✅ (239 tests passing)
   - Removed separate `TypeTable` structure that caused scope-awareness issues
@@ -20,7 +133,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Architecture improvement**: Single source of truth for both declarations and types
   - **No user-facing changes**: Internal refactoring only, all existing tests pass
 
-### Added
 - **Phase 3.2: Type Inference (Basic)** ✅ COMPLETE (239 tests passing)
   
   **Task 1: Type System Foundation & Literal Type Inference** ✅
