@@ -274,7 +274,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [x] Validate break/continue usage (must be in loop)
 - [x] Validate return usage (must be in function)
 - [x] Check for unreachable code (Phase 1: sequential analysis)
-- [ ] Validate function call arguments
+- [x] Validate function call arguments (positional with defaults)
 - [ ] Validate operator usage
 - [ ] Check for invalid assignments
 

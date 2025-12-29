@@ -69,6 +69,27 @@ pub enum SemanticError {
     UnreachableCode {
         position: SourcePosition,
     },
+    /// function called but not defined
+    UndefinedFunction {
+        name: String,
+        position: SourcePosition,
+    },
+    /// function called with wrong number of arguments
+    ArgumentCountMismatch {
+        function: String,
+        expected_min: usize,
+        expected_max: usize,
+        actual: usize,
+        position: SourcePosition,
+    },
+    /// function called with wrong argument type
+    ArgumentTypeMismatch {
+        function: String,
+        parameter: String,
+        expected: Type,
+        actual: Type,
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -87,6 +108,9 @@ impl SemanticError {
             SemanticError::ContinueOutsideLoop { position } => position,
             SemanticError::ReturnOutsideFunction { position } => position,
             SemanticError::UnreachableCode { position } => position,
+            SemanticError::UndefinedFunction { position, .. } => position,
+            SemanticError::ArgumentCountMismatch { position, .. } => position,
+            SemanticError::ArgumentTypeMismatch { position, .. } => position,
         }
     }
 
@@ -127,8 +151,43 @@ impl SemanticError {
             SemanticError::UnreachableCode { .. } => {
                 "Unreachable code".to_string()
             }
+            SemanticError::UndefinedFunction { name, .. } => {
+                format!("Undefined function: '{}'", name)
+            }
+            SemanticError::ArgumentCountMismatch { function, expected_min, expected_max, actual, .. } => {
+                if expected_min == expected_max {
+                    format!("Function '{}' takes {} argument(s) but {} were given", function, expected_min, actual)
+                } else {
+                    format!("Function '{}' takes {}-{} arguments but {} were given", function, expected_min, expected_max, actual)
+                }
+            }
+            SemanticError::ArgumentTypeMismatch { function, parameter, expected, actual, .. } => {
+                format!("Function '{}' parameter '{}': expected {}, got {}", function, parameter, expected, actual)
+            }
         }
     }
+}
+
+/// Function parameter metadata
+#[derive(Debug, Clone, PartialEq)]
+pub struct Parameter {
+    /// Parameter name
+    pub name: String,
+    /// Parameter type (Unknown if not annotated)
+    pub param_type: Type,
+    /// Whether this parameter has a default value
+    pub has_default: bool,
+}
+
+/// Function signature metadata
+#[derive(Debug, Clone, PartialEq)]
+pub struct FunctionSignature {
+    /// Function name
+    pub name: String,
+    /// Function parameters
+    pub parameters: Vec<Parameter>,
+    /// Function return type (Unknown if not annotated)
+    pub return_type: Type,
 }
 
 /// The semantic analyzer traverses the AST and builds a symbol table
@@ -137,6 +196,8 @@ pub struct SemanticAnalyzer {
     symbol_table: SymbolTable,
     /// Function return types
     function_types: HashMap<String, Type>,
+    /// Function signatures for call validation
+    function_signatures: HashMap<String, FunctionSignature>,
     /// Current function being analyzed
     current_function: Option<String>,
     /// Expected return type annotation for current function
@@ -179,6 +240,7 @@ impl SemanticAnalyzer {
         Self {
             symbol_table,
             function_types: HashMap::new(),
+            function_signatures: HashMap::new(),
             current_function: None,
             expected_return_type: None,
             loop_depth: 0,
@@ -550,6 +612,90 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Validate a function call (argument count and types)
+    fn validate_function_call(&mut self, function_name: &str, arguments: &[Expression], position: &SourcePosition) {
+        // List of built-in functions that we skip validation for
+        const BUILTINS: &[&str] = &[
+            "print", "len", "range", "str", "int", "float", "bool",
+            "list", "dict", "set", "tuple", "type", "isinstance",
+            "hasattr", "getattr", "setattr", "dir", "help",
+            "sum", "min", "max", "abs", "round", "pow",
+            "input", "open", "chr", "ord", "enumerate", "zip",
+            "map", "filter", "sorted", "reversed", "all", "any"
+        ];
+        
+        // Skip validation for built-in functions
+        if BUILTINS.contains(&function_name) {
+            return;
+        }
+        
+        // Check if function exists
+        let signature = match self.function_signatures.get(function_name).cloned() {
+            Some(sig) => sig,
+            None => {
+                // Function not found
+                self.add_error(SemanticError::UndefinedFunction {
+                    name: function_name.to_string(),
+                    position: position.clone(),
+                });
+                return;
+            }
+        };
+        
+        // Count required and total parameters
+        let required_params = signature.parameters.iter()
+            .filter(|p| !p.has_default)
+            .count();
+        let total_params = signature.parameters.len();
+        let actual_args = arguments.len();
+        
+        // Check argument count
+        if actual_args < required_params || actual_args > total_params {
+            self.add_error(SemanticError::ArgumentCountMismatch {
+                function: function_name.to_string(),
+                expected_min: required_params,
+                expected_max: total_params,
+                actual: actual_args,
+                position: position.clone(),
+            });
+            return; // Don't check types if count is wrong
+        }
+        
+        // Check argument types (best-effort, only when both types are known)
+        for (i, arg) in arguments.iter().enumerate() {
+            if i >= signature.parameters.len() {
+                break; // Should not happen after count check
+            }
+            
+            let param = &signature.parameters[i];
+            let expected_type = &param.param_type;
+            
+            // Skip if parameter type is unknown
+            if *expected_type == Type::Unknown {
+                continue;
+            }
+            
+            // Infer argument type
+            let actual_type = self.infer_type(arg);
+            
+            // Skip if argument type is unknown
+            if actual_type == Type::Unknown {
+                continue;
+            }
+            
+            // Check type compatibility
+            if actual_type != *expected_type {
+                self.add_error(SemanticError::ArgumentTypeMismatch {
+                    function: function_name.to_string(),
+                    parameter: param.name.clone(),
+                    expected: expected_type.clone(),
+                    actual: actual_type,
+                    position: arg.position().clone(),
+                });
+            }
+        }
+    }
+
     /// Visit a statement and perform semantic analysis
     fn visit_statement(&mut self, statement: &Statement) {
         match statement {
@@ -655,6 +801,27 @@ impl SemanticAnalyzer {
                 
                 // Initialize function return type to None
                 self.function_types.insert(name.clone(), Type::None);
+
+                // Build function signature for call validation
+                let mut sig_parameters = Vec::new();
+                for param in parameters {
+                    let param_type = param.type_annotation.as_ref()
+                        .map(|ann| self.parse_type_annotation(ann))
+                        .unwrap_or(Type::Unknown);
+                    sig_parameters.push(Parameter {
+                        name: param.name.clone(),
+                        param_type,
+                        has_default: param.default.is_some(),
+                    });
+                }
+                let sig_return_type = return_type.as_ref()
+                    .map(|rt| self.parse_type_annotation(rt))
+                    .unwrap_or(Type::Unknown);
+                self.function_signatures.insert(name.clone(), FunctionSignature {
+                    name: name.clone(),
+                    parameters: sig_parameters,
+                    return_type: sig_return_type,
+                });
 
                 // Enter new function scope
                 self.symbol_table.enter_scope(ScopeKind::Function);
@@ -975,10 +1142,15 @@ impl SemanticAnalyzer {
             }
 
             // Function call - visit function and all arguments
-            Expression::Call { function, arguments, .. } => {
+            Expression::Call { function, arguments, position } => {
                 self.visit_expression(function);
                 for arg in arguments {
                     self.visit_expression(arg);
+                }
+                
+                // Validate function call if it's a simple identifier
+                if let Expression::Identifier { name, .. } = &**function {
+                    self.validate_function_call(name, arguments, position);
                 }
             }
 
@@ -4760,6 +4932,332 @@ for i in range(10):
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    // ======================
+    // Function Call Validation Tests
+    // ======================
+
+    #[test]
+    fn test_call_undefined_function() {
+        let code = r#"
+foo()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UndefinedFunction error (and possibly UndefinedVariable)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        // Check that at least one error is UndefinedFunction
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::UndefinedFunction { .. })));
+        // Find the UndefinedFunction error and check its message
+        let func_error = errors.iter().find(|e| matches!(e, SemanticError::UndefinedFunction { .. })).unwrap();
+        assert_eq!(func_error.message(), "Undefined function: 'foo'");
+    }
+
+    #[test]
+    fn test_call_function_too_few_arguments() {
+        let code = r#"
+def add(a, b):
+    return a + b
+
+add(1)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+        assert!(errors[0].message().contains("takes 2 argument(s) but 1 were given"));
+    }
+
+    #[test]
+    fn test_call_function_too_many_arguments() {
+        let code = r#"
+def add(a, b):
+    return a + b
+
+add(1, 2, 3)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+        assert!(errors[0].message().contains("takes 2 argument(s) but 3 were given"));
+    }
+
+    #[test]
+    fn test_call_function_correct_argument_count() {
+        let code = r#"
+def add(a, b):
+    return a + b
+
+result = add(1, 2)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_with_default_parameter_all_args() {
+        let code = r#"
+def greet(name, greeting="Hello"):
+    return greeting + " " + name
+
+result = greet("World", "Hi")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_with_default_parameter_omit_default() {
+        let code = r#"
+def greet(name, greeting="Hello"):
+    return greeting + " " + name
+
+result = greet("World")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_with_default_parameter_too_few() {
+        let code = r#"
+def greet(name, greeting="Hello"):
+    return greeting + " " + name
+
+result = greet()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+        assert!(errors[0].message().contains("takes 1-2 arguments but 0 were given"));
+    }
+
+    #[test]
+    fn test_call_function_argument_type_mismatch() {
+        let code = r#"
+def add(a: int, b: int) -> int:
+    return a + b
+
+result = add(1, "hello")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentTypeMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentTypeMismatch { .. }));
+        let msg = errors[0].message();
+        assert!(msg.contains("parameter 'b'"));
+        assert!(msg.contains("expected int")); // Display format is lowercase
+        assert!(msg.contains("got str")); // Display format is lowercase
+    }
+
+    #[test]
+    fn test_call_function_correct_argument_types() {
+        let code = r#"
+def add(a: int, b: int) -> int:
+    return a + b
+
+result = add(1, 2)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_builtin_function_any_args() {
+        let code = r#"
+print("hello", "world", 1, 2, 3)
+len([1, 2, 3])
+range(10)
+str(42)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Built-in functions should accept any arguments
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_nested_function() {
+        let code = r#"
+def outer():
+    def inner(x):
+        return x * 2
+    return inner(5)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_no_parameters() {
+        let code = r#"
+def get_value():
+    return 42
+
+x = get_value()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_no_parameters_with_args() {
+        let code = r#"
+def get_value():
+    return 42
+
+x = get_value(1)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ArgumentCountMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ArgumentCountMismatch { .. }));
+    }
+
+    #[test]
+    fn test_call_function_in_expression() {
+        let code = r#"
+def double(x: int) -> int:
+    return x * 2
+
+result = double(5) + double(3)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_recursive_function() {
+        let code = r#"
+def factorial(n: int) -> int:
+    if n <= 1:
+        return 1
+    return n * factorial(n - 1)
+
+result = factorial(5)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_all_defaults() {
+        let code = r#"
+def configure(mode="auto", debug=False):
+    pass
+
+configure()
+configure("manual")
+configure("manual", True)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_without_type_annotations() {
+        let code = r#"
+def process(data):
+    return data
+
+result = process("anything")
+result2 = process(123)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors - no type info to check
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_call_function_multiple_type_errors() {
+        let code = r#"
+def add(a: int, b: int) -> int:
+    return a + b
+
+result = add("hello", "world")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce 2 ArgumentTypeMismatch errors (one for each parameter)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 2);
+        assert!(matches!(errors[0], SemanticError::ArgumentTypeMismatch { .. }));
+        assert!(matches!(errors[1], SemanticError::ArgumentTypeMismatch { .. }));
     }
 }
 

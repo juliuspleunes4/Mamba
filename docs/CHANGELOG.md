@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.3: Semantic Validation - Function Call Argument Validation** ✅ (294 tests passing)
+  - Added function signature tracking system:
+    * `FunctionSignature` struct stores function metadata (name, parameters, return type)
+    * `Parameter` struct tracks parameter name, type, and whether it has a default
+    * `function_signatures` HashMap stores all function signatures for validation
+  - Added 3 new error variants:
+    * `UndefinedFunction`: Function called but not defined
+    * `ArgumentCountMismatch`: Wrong number of arguments (shows min-max range for defaults)
+    * `ArgumentTypeMismatch`: Argument type doesn't match parameter type annotation
+  - Validates function calls:
+    * Checks function exists before calling
+    * Validates argument count matches parameter count (accounting for defaults)
+    * Type-checks arguments when both parameter and argument types are known
+  - Skips validation for built-in functions (print, len, range, etc.) - accepts any arguments
+  - Added 18 comprehensive tests:
+    * 4 undefined/count mismatch cases (undefined, too few, too many, no params with args)
+    * 6 correct usage cases (correct count, with defaults, all defaults, no annotations)
+    * 4 type checking cases (mismatch, correct types, multiple errors)
+    * 4 edge cases (nested, recursive, in expressions, built-ins)
+  - Clear error messages with function name, expected/actual counts and types
+  - **Note**: Only validates simple positional arguments with optional defaults - keyword arguments, *args/**kwargs deferred
+
 - **Phase 3.3: Semantic Validation - Unreachable Code Detection** ✅ (276 tests passing)
   - Added `UnreachableCode` error variant
   - Detects code that cannot be executed after exit statements (return/break/continue/raise)
