@@ -284,7 +284,12 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [ ] Handle unreachable code in try/except blocks
 - [ ] Implement sophisticated control flow graphs for comprehensive analysis
 
-### 3.5 Semantic Testing
+### 3.5 Deferred Semantic Validation
+
+- [ ] Validate membership operators (in, not in) - requires collection type system
+- [ ] Add explicit tests for augmented assignment operators (+=, -=, etc.)
+
+### 3.6 Semantic Testing
 
 - [ ] Test scope resolution
 - [ ] Test type inference accuracy
