@@ -149,7 +149,7 @@ impl SemanticError {
                 "'break' outside loop".to_string()
             }
             SemanticError::ContinueOutsideLoop { .. } => {
-                "'continue' not properly in loop".to_string()
+                "'continue' outside loop".to_string()
             }
             SemanticError::ReturnOutsideFunction { .. } => {
                 "'return' outside function".to_string()
@@ -483,6 +483,9 @@ impl SemanticAnalyzer {
             },
             // Bitwise operators require integer types
             BitwiseAnd | BitwiseOr | BitwiseXor | LeftShift | RightShift => {
+                // Check both operands and collect all errors before returning
+                let mut has_error = false;
+                
                 // Check left operand
                 if !matches!(left, Type::Int | Type::Bool) {
                     self.add_error(SemanticError::TypeMismatch {
@@ -490,7 +493,7 @@ impl SemanticAnalyzer {
                         actual: left.clone(),
                         position: position.clone(),
                     });
-                    return Type::Unknown;
+                    has_error = true;
                 }
                 // Check right operand
                 if !matches!(right, Type::Int | Type::Bool) {
@@ -499,6 +502,10 @@ impl SemanticAnalyzer {
                         actual: right.clone(),
                         position: position.clone(),
                     });
+                    has_error = true;
+                }
+                
+                if has_error {
                     return Type::Unknown;
                 }
             },
@@ -4633,7 +4640,7 @@ for i in range(10):
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0], SemanticError::ContinueOutsideLoop { .. }));
-        assert_eq!(errors[0].message(), "'continue' not properly in loop");
+        assert_eq!(errors[0].message(), "'continue' outside loop");
     }
 
     #[test]
@@ -5568,6 +5575,26 @@ result = x >> 2
     }
 
     #[test]
+    fn test_bitwise_and_with_both_operands_invalid() {
+        let code = r#"
+x = "hello"
+y = 3.14
+result = x & y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TWO TypeMismatch errors (one for each operand)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        let type_errors: Vec<_> = errors.iter()
+            .filter(|e| matches!(e, SemanticError::TypeMismatch { .. }))
+            .collect();
+        assert_eq!(type_errors.len(), 2, "Expected 2 type errors (one for each operand), got {}", type_errors.len());
+    }
+
+    #[test]
     fn test_string_comparison_equal() {
         let code = r#"
 x = "hello"
@@ -5859,11 +5886,16 @@ x = 1
 y = 2
 (x if True else y) += 5
 "#;
-        let module = parse(code);
+        // Try to parse - might fail in parser or semantic analyzer
+        let parse_result = try_parse(code);
+        if parse_result.is_err() {
+            // Parser caught it - that's fine
+            return;
+        }
+        // Parser accepted it - semantic analyzer should catch it
+        let module = parse_result.unwrap();
         let analyzer = SemanticAnalyzer::new();
         let result = analyzer.analyze(&module);
-        
-        // Parser or semantic analyzer should catch this
         assert!(result.is_err());
     }
 }

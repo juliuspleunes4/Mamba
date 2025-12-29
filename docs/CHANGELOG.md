@@ -95,7 +95,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     * 3 non-detection cases (after if-return, else-return, last statement)
     * 2 edge cases (pass after return, nested loops)
   - Clear error message: "Unreachable code"
-  - **Note**: Simple sequential analysis only - complex control flow (all branches return, try/except) deferred to Phase 2
+  - **Note**: Simple sequential analysis only - complex control flow (all branches return, try/except) deferred to Phase 3.4
 
 - **Phase 3.3: Semantic Validation - Return Statement Validation** ✅ (266 tests passing)
   - Added `ReturnOutsideFunction` error variant
