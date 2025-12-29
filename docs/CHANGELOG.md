@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.3: Semantic Validation - Operator Usage Validation** ✅ (308 tests passing)
+  - Extended operator type checking to cover all operator categories:
+    * **Bitwise operators** (&, |, ^, <<, >>): Require integer types (int or bool)
+    * **Comparison operators** (==, !=, <, <=, >, >=): Validate type compatibility
+    * **Logical operators** (and, or): Accept any type (truthy/falsy semantics)
+    * **Identity operators** (is, is not): Accept any type (reference comparison)
+  - Comparison validation rules:
+    * Equality (==, !=) operators are permissive - allow any type comparisons
+    * Ordering (<, <=, >, >=) requires compatible types (no str < int mixing)
+    * String ordering: both operands must be strings
+    * Numeric ordering: allows int/float/bool mixing
+    * None cannot be used in ordering operations
+  - Added 14 comprehensive tests:
+    * 4 bitwise operator tests (valid int, error with string/float, valid bool)
+    * 2 shift operator tests (valid int, error with string)
+    * 5 comparison tests (string equality, string ordering, mixed type error, numeric, None)
+    * 2 equality tests (None comparison valid, mixed types valid)
+    * 2 logical operator tests (any type valid)
+  - Clear error messages: "expected int" for bitwise, "expected str/comparable types" for ordering
+  - **Note**: Membership operators (in, not in) deferred until collection types are implemented
+
 - **Phase 3.3: Semantic Validation - Function Call Argument Validation** ✅ (294 tests passing)
   - Added function signature tracking system:
     * `FunctionSignature` struct stores function metadata (name, parameters, return type)

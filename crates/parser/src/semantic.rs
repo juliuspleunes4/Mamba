@@ -5318,5 +5318,229 @@ result = add("hello", "world")
         assert!(matches!(errors[0], SemanticError::ArgumentTypeMismatch { .. }));
         assert!(matches!(errors[1], SemanticError::ArgumentTypeMismatch { .. }));
     }
+
+    // ======================
+    // Operator Validation Tests
+    // ======================
+
+    #[test]
+    fn test_bitwise_and_with_integers() {
+        let code = r#"
+x = 5
+y = 3
+result = x & y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_bitwise_and_with_string_error() {
+        let code = r#"
+x = "hello"
+y = "world"
+result = x & y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch errors
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.len() >= 1);
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_bitwise_or_with_floats_error() {
+        let code = r#"
+x = 5.0
+y = 3.0
+result = x | y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch errors
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.len() >= 1);
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_bitwise_xor_with_bools() {
+        let code = r#"
+x = True
+y = False
+result = x ^ y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (bool is subtype of int)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_left_shift_with_integers() {
+        let code = r#"
+x = 5
+result = x << 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_right_shift_with_string_error() {
+        let code = r#"
+x = "hello"
+result = x >> 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_string_comparison_equal() {
+        let code = r#"
+x = "hello"
+y = "world"
+result = x == y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_string_ordering_valid() {
+        let code = r#"
+x = "apple"
+y = "banana"
+result = x < y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_mixed_type_ordering_error() {
+        let code = r#"
+x = "hello"
+y = 42
+result = x < y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_numeric_ordering_valid() {
+        let code = r#"
+x = 5
+y = 3.14
+result = x > y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors (numeric types are compatible)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_none_ordering_error() {
+        let code = r#"
+x = None
+y = 5
+result = x < y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce TypeMismatch error (None cannot be ordered)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_none_equality_valid() {
+        let code = r#"
+x = None
+y = 5
+result = x == y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (None can be compared for equality)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_logical_and_with_any_type() {
+        let code = r#"
+x = 5
+y = "hello"
+result = x and y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (logical operators accept any type)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_logical_or_with_any_type() {
+        let code = r#"
+x = None
+y = False
+result = x or y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce errors (logical operators accept any type)
+        assert!(result.is_ok());
+    }
 }
 
