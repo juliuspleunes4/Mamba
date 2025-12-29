@@ -3,9 +3,37 @@
 //! This module performs semantic analysis on the AST, building a symbol table
 //! and detecting semantic errors such as undefined variables, redeclarations, etc.
 
-use crate::ast::{Expression, Module, Statement};
+use crate::ast::{BinaryOperator, Expression, Literal, Module, Statement, UnaryOperator};
 use crate::symbol_table::{ScopeKind, SymbolKind, SymbolTable};
 use crate::token::SourcePosition;
+use crate::types::Type;
+use std::collections::HashMap;
+
+/// Type table for tracking inferred types of variables
+#[derive(Debug, Clone)]
+pub struct TypeTable {
+    /// Maps variable name to its inferred type
+    types: HashMap<String, Type>,
+}
+
+impl TypeTable {
+    /// Create a new type table
+    pub fn new() -> Self {
+        Self {
+            types: HashMap::new(),
+        }
+    }
+
+    /// Assign a type to a variable
+    pub fn assign_type(&mut self, name: String, ty: Type) {
+        self.types.insert(name, ty);
+    }
+
+    /// Get the type of a variable
+    pub fn get_type(&self, name: &str) -> Option<&Type> {
+        self.types.get(name)
+    }
+}
 
 /// Semantic error types
 #[derive(Debug, Clone, PartialEq)]
@@ -41,6 +69,16 @@ pub enum SemanticError {
         name: String,
         position: SourcePosition,
     },
+    /// Type mismatch detected
+    TypeMismatch {
+        expected: String,
+        actual: Type,
+        position: SourcePosition,
+    },
+    /// Division by zero detected
+    DivisionByZero {
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -53,6 +91,8 @@ impl SemanticError {
             SemanticError::NonlocalAtModuleLevel { position, .. } => position,
             SemanticError::NonlocalNotFound { position, .. } => position,
             SemanticError::GlobalAtModuleLevel { position, .. } => position,
+            SemanticError::TypeMismatch { position, .. } => position,
+            SemanticError::DivisionByZero { position } => position,
         }
     }
 
@@ -75,6 +115,12 @@ impl SemanticError {
             SemanticError::GlobalAtModuleLevel { name, .. } => {
                 format!("name '{}' is used prior to global declaration", name)
             }
+            SemanticError::TypeMismatch { expected, actual, .. } => {
+                format!("Type mismatch: expected {}, got {}", expected, actual)
+            }
+            SemanticError::DivisionByZero { .. } => {
+                "Division by zero".to_string()
+            }
         }
     }
 }
@@ -83,6 +129,14 @@ impl SemanticError {
 pub struct SemanticAnalyzer {
     /// Symbol table tracking all declarations and scopes
     symbol_table: SymbolTable,
+    /// Type table tracking inferred types
+    type_table: TypeTable,
+    /// Function return types
+    function_types: HashMap<String, Type>,
+    /// Current function being analyzed
+    current_function: Option<String>,
+    /// Expected return type annotation for current function
+    expected_return_type: Option<Type>,
     /// Collected semantic errors
     errors: Vec<SemanticError>,
 }
@@ -91,6 +145,7 @@ impl SemanticAnalyzer {
     /// Create a new semantic analyzer
     pub fn new() -> Self {
         let mut symbol_table = SymbolTable::new();
+        let mut type_table = TypeTable::new();
         
         // Declare built-in functions in the module scope
         let builtin_pos = SourcePosition::start();
@@ -109,10 +164,19 @@ impl SemanticAnalyzer {
         // Declare built-in constants
         let _ = symbol_table.declare("True".to_string(), SymbolKind::Variable, builtin_pos.clone());
         let _ = symbol_table.declare("False".to_string(), SymbolKind::Variable, builtin_pos.clone());
-        let _ = symbol_table.declare("None".to_string(), SymbolKind::Variable, builtin_pos);
+        let _ = symbol_table.declare("None".to_string(), SymbolKind::Variable, builtin_pos.clone());
+        
+        // Assign types to built-in constants
+        type_table.assign_type("True".to_string(), Type::Bool);
+        type_table.assign_type("False".to_string(), Type::Bool);
+        type_table.assign_type("None".to_string(), Type::None);
         
         Self {
             symbol_table,
+            type_table,
+            function_types: HashMap::new(),
+            current_function: None,
+            expected_return_type: None,
             errors: Vec::new(),
         }
     }
@@ -134,26 +198,368 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// For testing: analyze and return self to access type_table
+    #[cfg(test)]
+    pub fn analyze_with_types(mut self, module: &Module) -> Self {
+        for statement in &module.statements {
+            self.visit_statement(statement);
+        }
+        self
+    }
+
+    /// For testing: get type_table reference
+    #[cfg(test)]
+    pub fn type_table(&self) -> &TypeTable {
+        &self.type_table
+    }
+
+    /// For testing: get function_types reference
+    #[cfg(test)]
+    pub fn function_types(&self) -> &HashMap<String, Type> {
+        &self.function_types
+    }
+
+    /// Infer the type of an expression
+    fn infer_type(&mut self, expr: &Expression) -> Type {
+        match expr {
+            Expression::Literal(lit) => {
+                match lit {
+                    Literal::Integer { .. } => Type::Int,
+                    Literal::Float { .. } => Type::Float,
+                    Literal::String { .. } => Type::String,
+                    Literal::Boolean { .. } => Type::Bool,
+                    Literal::None { .. } => Type::None,
+                    _ => Type::Unknown,
+                }
+            },
+            Expression::Identifier { name, .. } => {
+                // Look up existing type or return Unknown
+                self.type_table.get_type(name).cloned().unwrap_or(Type::Unknown)
+            },
+            Expression::Call { function, .. } => {
+                // If calling a function, return its inferred return type
+                if let Expression::Identifier { name, .. } = &**function {
+                    self.function_types.get(name).cloned().unwrap_or(Type::Unknown)
+                } else {
+                    Type::Unknown
+                }
+            },
+            Expression::BinaryOp { left, op, right, position } => {
+                let left_type = self.infer_type(left);
+                let right_type = self.infer_type(right);
+                self.check_binary_op_types(op, &left_type, &right_type, right, position)
+            },
+            Expression::UnaryOp { op, operand, position } => {
+                let operand_type = self.infer_type(operand);
+                self.check_unary_op_types(op, &operand_type, position)
+            },
+            Expression::Parenthesized { expr, .. } => {
+                // Parentheses don't change the type
+                self.infer_type(expr)
+            },
+            // For other expressions, return Unknown for now
+            _ => Type::Unknown,
+        }
+    }
+
+    /// Infer the result type of a binary operation
+    fn infer_binary_op_type(&self, op: &BinaryOperator, left: &Type, right: &Type) -> Type {
+        use BinaryOperator::*;
+        
+        match op {
+            // Arithmetic operations
+            Add => {
+                match (left, right) {
+                    (Type::Int, Type::Int) => Type::Int,
+                    (Type::Float, Type::Float) => Type::Float,
+                    (Type::Int, Type::Float) | (Type::Float, Type::Int) => Type::Float,
+                    // Bool is a subclass of int in Python
+                    (Type::Bool, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Int) | (Type::Int, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Float) | (Type::Float, Type::Bool) => Type::Float,
+                    (Type::String, Type::String) => Type::String,
+                    _ => Type::Unknown,
+                }
+            },
+            Subtract | Multiply | Modulo | Power | FloorDivide => {
+                match (left, right) {
+                    (Type::Int, Type::Int) => Type::Int,
+                    (Type::Float, Type::Float) => Type::Float,
+                    (Type::Int, Type::Float) | (Type::Float, Type::Int) => Type::Float,
+                    // Bool is a subclass of int in Python
+                    (Type::Bool, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Int) | (Type::Int, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Float) | (Type::Float, Type::Bool) => Type::Float,
+                    _ => Type::Unknown,
+                }
+            },
+            Divide => {
+                // In Python 3, division always returns float
+                match (left, right) {
+                    (Type::Int, Type::Int) | 
+                    (Type::Float, Type::Float) |
+                    (Type::Int, Type::Float) | 
+                    (Type::Float, Type::Int) |
+                    // Bool is a subclass of int in Python
+                    (Type::Bool, Type::Bool) |
+                    (Type::Bool, Type::Int) | (Type::Int, Type::Bool) |
+                    (Type::Bool, Type::Float) | (Type::Float, Type::Bool) => Type::Float,
+                    _ => Type::Unknown,
+                }
+            },
+            // Comparison operations always return bool
+            Equal | NotEqual | LessThan | LessThanEq | GreaterThan | GreaterThanEq => Type::Bool,
+            // Logical operations
+            And | Or => {
+                match (left, right) {
+                    (Type::Bool, Type::Bool) => Type::Bool,
+                    _ => Type::Unknown,
+                }
+            },
+            // Other operations return Unknown for now
+            _ => Type::Unknown,
+        }
+    }
+
+    /// Check binary operation types and report errors for invalid combinations
+    fn check_binary_op_types(&mut self, op: &BinaryOperator, left: &Type, right: &Type, right_expr: &Expression, position: &SourcePosition) -> Type {
+        use BinaryOperator::*;
+        
+        // Skip type checking for Unknown types (conservative approach)
+        if matches!(left, Type::Unknown) || matches!(right, Type::Unknown) {
+            return self.infer_binary_op_type(op, left, right);
+        }
+        
+        // Check for division by zero
+        if matches!(op, Divide | FloorDivide) {
+            if let Expression::Literal(Literal::Integer { value, .. }) = right_expr {
+                if *value == 0 {
+                    self.add_error(SemanticError::DivisionByZero {
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            }
+            if let Expression::Literal(Literal::Float { value, .. }) = right_expr {
+                if *value == 0.0 {
+                    self.add_error(SemanticError::DivisionByZero {
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            }
+        }
+        
+        match op {
+            // Arithmetic operations that don't work with strings or None
+            Subtract | Multiply | Modulo | Power | FloorDivide => {
+                if matches!(left, Type::String) || matches!(right, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: if matches!(left, Type::String) { left.clone() } else { right.clone() },
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+                if matches!(left, Type::None) || matches!(right, Type::None) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            // Add: strings can only be added to strings, None cannot be added to anything
+            Add => {
+                // Check for None in addition
+                if matches!(left, Type::None) || matches!(right, Type::None) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric or string types".to_string(),
+                        actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+                // String type checking
+                if matches!(left, Type::String) && !matches!(right, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "String".to_string(),
+                        actual: right.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+                if matches!(right, Type::String) && !matches!(left, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "String".to_string(),
+                        actual: left.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            // Division also doesn't work with None
+            Divide => {
+                if matches!(left, Type::None) || matches!(right, Type::None) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            _ => {}
+        }
+        
+        // If no errors, proceed with normal type inference
+        self.infer_binary_op_type(op, left, right)
+    }
+
+    /// Parse a type annotation expression into a Type
+    fn parse_type_annotation(&self, annotation: &Expression) -> Type {
+        // For now, only handle simple identifier annotations like int, str, float, bool
+        if let Expression::Identifier { name, .. } = annotation {
+            match name.as_str() {
+                "int" => Type::Int,
+                "float" => Type::Float,
+                "str" => Type::String,
+                "bool" => Type::Bool,
+                "None" => Type::None,
+                _ => Type::Unknown,
+            }
+        } else {
+            Type::Unknown
+        }
+    }
+
+    /// Check unary operation types and report errors for invalid combinations
+    fn check_unary_op_types(&mut self, op: &UnaryOperator, operand: &Type, position: &SourcePosition) -> Type {
+        use UnaryOperator::*;
+        
+        // Skip type checking for Unknown types (conservative approach)
+        if matches!(operand, Type::Unknown) {
+            return self.infer_unary_op_type(op, operand);
+        }
+        
+        // Check for invalid unary operations on strings
+        match op {
+            Minus | Plus => {
+                if matches!(operand, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: operand.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            BitwiseNot => {
+                if !matches!(operand, Type::Int) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "int".to_string(),
+                        actual: operand.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            Not => {
+                // Not operator can work with any type (truthy/falsy)
+            },
+        }
+        
+        // If no errors, proceed with normal type inference
+        self.infer_unary_op_type(op, operand)
+    }
+
+    /// Infer the result type of a unary operation
+    fn infer_unary_op_type(&self, op: &UnaryOperator, operand: &Type) -> Type {
+        use UnaryOperator::*;
+        
+        match op {
+            Not => Type::Bool,
+            Minus | Plus => {
+                match operand {
+                    Type::Int => Type::Int,
+                    Type::Float => Type::Float,
+                    // Bool is a subclass of int in Python
+                    Type::Bool => Type::Int,
+                    _ => Type::Unknown,
+                }
+            },
+            BitwiseNot => {
+                match operand {
+                    Type::Int => Type::Int,
+                    _ => Type::Unknown,
+                }
+            },
+        }
+    }
+
+    /// Recursively assign type to all names in assignment targets
+    fn assign_type_to_names(&mut self, target: &Expression, typ: &Type) {
+        match target {
+            Expression::Identifier { name, .. } => {
+                self.type_table.assign_type(name.clone(), typ.clone());
+            },
+            Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
+                // For unpacking, all variables get the inferred type of the RHS expression
+                // (currently this is typically Unknown for tuple/list literals).
+                for elem in elements {
+                    self.assign_type_to_names(elem, typ);
+                }
+            },
+            _ => {
+                // Other target types (subscript, attribute) - skip for now
+            }
+        }
+    }
+
     /// Visit a statement and perform semantic analysis
     fn visit_statement(&mut self, statement: &Statement) {
         match statement {
-            // Assignment - track variable declarations
+            // Assignment - track variable declarations and types
             Statement::Assignment { targets, value, position } => {
                 // Visit the value expression first
                 self.visit_expression(value);
                 
-                // Extract and declare all target variables
+                // Infer the type of the value
+                let value_type = self.infer_type(value);
+                
+                // Extract and declare all target variables, then assign type
                 for target in targets {
                     self.extract_and_declare_names(target, position);
+                    self.assign_type_to_names(target, &value_type);
                 }
             }
 
-            // AnnAssignment - track typed variable declarations
-            Statement::AnnAssignment { target, value, position, .. } => {
-                // Visit the value expression if present
-                if let Some(val) = value {
+            // AnnAssignment - track typed variable declarations and infer types
+            Statement::AnnAssignment { target, annotation, value, position, .. } => {
+                // Parse annotation to get expected type
+                let expected_type = self.parse_type_annotation(annotation);
+                
+                // Infer type from value if present, otherwise use expected type
+                let inferred_type = if let Some(val) = value {
                     self.visit_expression(val);
-                }
+                    let val_type = self.infer_type(val);
+                    
+                    // Check if value type matches annotation
+                    if !matches!(expected_type, Type::Unknown) && 
+                       !matches!(val_type, Type::Unknown) &&
+                       expected_type != val_type {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: format!("{}", expected_type),
+                            actual: val_type.clone(),
+                            position: position.clone(),
+                        });
+                    }
+                    
+                    val_type
+                } else {
+                    expected_type
+                };
                 
                 // Declare the variable
                 if let Err(existing) = self.symbol_table.declare(
@@ -167,6 +573,9 @@ impl SemanticAnalyzer {
                         second_position: position.clone(),
                     });
                 }
+                
+                // Assign the inferred type
+                self.type_table.assign_type(target.clone(), inferred_type);
             }
 
             // AugmentedAssignment - check variable exists before augmenting
@@ -189,7 +598,7 @@ impl SemanticAnalyzer {
             }
 
             // FunctionDef - track function declarations
-            Statement::FunctionDef { name, parameters, body, position, .. } => {
+            Statement::FunctionDef { name, parameters, body, return_type, position, .. } => {
                 // Declare function in current scope
                 if let Err(existing) = self.symbol_table.declare(
                     name.clone(),
@@ -202,6 +611,17 @@ impl SemanticAnalyzer {
                         second_position: position.clone(),
                     });
                 }
+
+                // Track current function for return type inference
+                let prev_function = self.current_function.take();
+                self.current_function = Some(name.clone());
+                
+                // Parse return type annotation if present
+                let prev_expected_return = self.expected_return_type.take();
+                self.expected_return_type = return_type.as_ref().map(|rt| self.parse_type_annotation(rt));
+                
+                // Initialize function return type to None
+                self.function_types.insert(name.clone(), Type::None);
 
                 // Enter new function scope
                 self.symbol_table.enter_scope(ScopeKind::Function);
@@ -228,6 +648,10 @@ impl SemanticAnalyzer {
 
                 // Exit function scope
                 self.symbol_table.exit_scope();
+                
+                // Restore previous function and return type context
+                self.current_function = prev_function;
+                self.expected_return_type = prev_expected_return;
             }
 
             // ClassDef - track class declarations
@@ -308,6 +732,9 @@ impl SemanticAnalyzer {
                 
                 // Declare loop variable(s) in current scope
                 self.extract_and_declare_names(target, position);
+                
+                // Assign Unknown type to loop variable(s) since we don't track iterable types yet
+                self.assign_type_to_names(target, &Type::Unknown);
                 
                 // Visit body
                 for statement in body {
@@ -413,10 +840,31 @@ impl SemanticAnalyzer {
             }
 
             // Statements with expressions that need semantic analysis
-            Statement::Return { value, .. } => {
+            Statement::Return { value, position } => {
                 if let Some(expr) = value {
                     self.visit_expression(expr);
+                    
+                    // Infer return type and update function type
+                    let return_type = self.infer_type(expr);
+                    
+                    // Check against expected return type annotation
+                    if let Some(expected) = &self.expected_return_type {
+                        if !matches!(expected, Type::Unknown) && 
+                           !matches!(return_type, Type::Unknown) &&
+                           expected != &return_type {
+                            self.add_error(SemanticError::TypeMismatch {
+                                expected: format!("{}", expected),
+                                actual: return_type.clone(),
+                                position: position.clone(),
+                            });
+                        }
+                    }
+                    
+                    if let Some(func_name) = &self.current_function {
+                        self.function_types.insert(func_name.clone(), return_type);
+                    }
                 }
+                // Note: return without value keeps function type as None
             }
 
             Statement::Assert { condition, message, .. } => {
@@ -531,9 +979,13 @@ impl SemanticAnalyzer {
                 self.visit_expression(false_expr);
             }
 
-            // Assignment expression (walrus operator) - declare or reassign
+            // Assignment expression (walrus operator) - declare or reassign and infer type
             Expression::AssignmentExpr { target, value, position } => {
                 self.visit_expression(value);
+                
+                // Infer the type of the value
+                let value_type = self.infer_type(value);
+                
                 // In Python, walrus operator can both introduce new variables and reassign existing ones.
                 // Check if variable exists in current scope - if not, declare it; if yes, it's a reassignment.
                 if self.symbol_table.lookup_current_scope(target).is_none() {
@@ -544,7 +996,8 @@ impl SemanticAnalyzer {
                         position.clone()
                     );
                 }
-                // If it already exists, it's a reassignment (no action needed)
+                // Assign the inferred type (works for both new variables and reassignments)
+                self.type_table.assign_type(target.clone(), value_type);
             }
 
             // Starred expression - visit the value
@@ -1886,6 +2339,1657 @@ mod tests {
             }
             _ => panic!("Expected UndefinedVariable error"),
         }
+    }
+
+    // ===== Type Inference Tests =====
+
+    #[test]
+    fn test_infer_integer_literal() {
+        let code = "42";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        // Get the expression from the module
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Int);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_float_literal() {
+        let code = "3.14";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Float);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_string_literal() {
+        let code = "\"hello\"";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::String);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_bool_literal_true() {
+        let code = "True";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Bool);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_bool_literal_false() {
+        let code = "False";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Bool);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_none_literal() {
+        let code = "None";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::None);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_large_integer() {
+        let code = "999999999";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Int);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_negative_integer() {
+        let code = "-42";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            // UnaryOp with Minus and Int operand should return Int
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::Int);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_empty_string() {
+        let code = "\"\"";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::String);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_infer_multiline_string() {
+        let code = "\"\"\"multi\nline\nstring\"\"\"";
+        let module = parse(code);
+        let mut analyzer = SemanticAnalyzer::new();
+        
+        if let Some(Statement::Expression(expr)) = module.statements.first() {
+            let ty = analyzer.infer_type(expr);
+            assert_eq!(ty, Type::String);
+        } else {
+            panic!("Expected expression statement");
+        }
+    }
+
+    #[test]
+    fn test_type_table_storage() {
+        let mut type_table = TypeTable::new();
+        
+        type_table.assign_type("x".to_string(), Type::Int);
+        type_table.assign_type("y".to_string(), Type::String);
+        type_table.assign_type("z".to_string(), Type::Bool);
+        
+        assert_eq!(type_table.get_type("x"), Some(&Type::Int));
+        assert_eq!(type_table.get_type("y"), Some(&Type::String));
+        assert_eq!(type_table.get_type("z"), Some(&Type::Bool));
+        assert_eq!(type_table.get_type("undefined"), None);
+    }
+
+    #[test]
+    fn test_builtin_constant_types() {
+        let analyzer = SemanticAnalyzer::new();
+        
+        assert_eq!(analyzer.type_table.get_type("True"), Some(&Type::Bool));
+        assert_eq!(analyzer.type_table.get_type("False"), Some(&Type::Bool));
+        assert_eq!(analyzer.type_table.get_type("None"), Some(&Type::None));
+    }
+
+    // ======================
+    // Task 2: Variable Type Inference Tests
+    // ======================
+
+    #[test]
+    fn test_simple_int_assignment() {
+        let code = "x = 42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_simple_float_assignment() {
+        let code = "y = 3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_simple_string_assignment() {
+        let code = "name = \"Alice\"";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("name"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_simple_bool_assignment() {
+        let code = "flag = True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("flag"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_simple_none_assignment() {
+        let code = "value = None";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("value"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_multiple_assignment_same_type() {
+        let code = "x = y = 10";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_multiple_assignment_chain() {
+        let code = "a = b = c = \"test\"";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::String));
+        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::String));
+        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_reassignment_same_type() {
+        let code = "x = 5\nx = 10";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both assignments are int, type should be int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_reassignment_different_type() {
+        let code = "x = 10\nx = \"hello\"";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment wins (Python-style dynamic typing)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_annotated_assignment_with_value() {
+        let code = "x: int = 42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_annotated_assignment_without_value() {
+        let code = "x: int";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Without value, type comes from the annotation
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_unpacking_assignment() {
+        let code = "a, b, c = (1, 2, 3)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // For now, unpacked variables get Unknown type (tuple type not yet implemented)
+        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_walrus_operator_assignment() {
+        let code = "y = (x := 42)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_walrus_operator_string() {
+        let code = "y = (name := \"test\")";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("name"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_assignment_from_identifier() {
+        let code = "x = 10\ny = x";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        // y should get the type from x
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_assignment_from_undefined_identifier() {
+        let code = "y = x";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x is undefined, so y gets Unknown type
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_mixed_types() {
+        let code = "a = 42\nb = \"hello\"\nc = True\nd = None";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("a"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("b"), Some(&Type::String));
+        assert_eq!(analyzer.type_table().get_type("c"), Some(&Type::Bool));
+        assert_eq!(analyzer.type_table().get_type("d"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_chained_identifier_assignment() {
+        let code = "x = 5\ny = x\nz = y";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_complex_expression_unknown_type() {
+        let code = "x = 1 + 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Binary operations are now inferred: Int + Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_walrus_reassignment() {
+        let code = "x = True\ny = (x := 42)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Walrus reassigns x to int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Basic Function Return Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_function_with_no_return() {
+        let code = r#"
+def foo():
+    x = 1
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function with no return should have None type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_function_with_simple_literal_return() {
+        let code = r#"
+def foo():
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning literal int should have Int type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_with_variable_return() {
+        let code = r#"
+def foo():
+    x = 3.14
+    return x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning float variable should have Float type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_function_return_type_empty_function() {
+        let code = r#"
+def foo():
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Empty function should have None type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_function_with_pass_only() {
+        let code = r#"
+def foo():
+    pass
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function with only pass statements should have None type
+        assert_eq!(analyzer.function_types().get("foo"), Some(&Type::None));
+    }
+
+    // ============================================================
+    // Single Return Statement Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_function_return_string_literal() {
+        let code = r#"
+def greet():
+    return "hello"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning string literal
+        assert_eq!(analyzer.function_types().get("greet"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_function_return_float_literal() {
+        let code = r#"
+def pi():
+    return 3.14159
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning float literal
+        assert_eq!(analyzer.function_types().get("pi"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_function_return_bool_literal() {
+        let code = r#"
+def always_true():
+    return True
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning bool literal
+        assert_eq!(analyzer.function_types().get("always_true"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_function_return_none_literal() {
+        let code = r#"
+def return_none():
+    return None
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning None literal
+        assert_eq!(analyzer.function_types().get("return_none"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_function_return_typed_variable() {
+        let code = r#"
+def get_name():
+    name = "Alice"
+    return name
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Function returning string variable
+        assert_eq!(analyzer.function_types().get("get_name"), Some(&Type::String));
+    }
+
+    // ============================================================
+    // Multiple Return Paths Tests
+    // ============================================================
+
+    #[test]
+    fn test_function_multiple_returns_same_type() {
+        let code = r#"
+def abs_value(x):
+    if x >= 0:
+        return x
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return wins for now (simple approach)
+        assert_eq!(analyzer.function_types().get("abs_value"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_if_else_returns() {
+        let code = r#"
+def check(flag):
+    if flag:
+        return True
+    else:
+        return False
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return statement type
+        assert_eq!(analyzer.function_types().get("check"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_function_early_return() {
+        let code = r#"
+def early():
+    return 10
+    return "unreachable"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return statement processed (even if unreachable)
+        assert_eq!(analyzer.function_types().get("early"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_function_nested_if_returns() {
+        let code = r#"
+def nested(x):
+    if x > 0:
+        if x > 10:
+            return "big"
+        return "small"
+    return 0
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last return statement
+        assert_eq!(analyzer.function_types().get("nested"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_mixed_return_and_implicit_none() {
+        let code = r#"
+def maybe_return(x):
+    if x:
+        return 42
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Has explicit return, so takes that type
+        assert_eq!(analyzer.function_types().get("maybe_return"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_function_return_in_loop() {
+        let code = r#"
+def find_first():
+    for i in range(10):
+        return i
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Return type is Unknown since 'i' type is not tracked in for loops yet
+        assert_eq!(analyzer.function_types().get("find_first"), Some(&Type::Unknown));
+    }
+
+    // ============================================================
+    // Using Function Return Types Tests
+    // ============================================================
+
+    #[test]
+    fn test_assign_from_function_call() {
+        let code = r#"
+def get_number():
+    return 42
+
+x = get_number()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned from function call gets function's return type
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_assign_from_string_returning_function() {
+        let code = r#"
+def get_greeting():
+    return "Hello"
+
+msg = get_greeting()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable gets string type from function
+        assert_eq!(analyzer.type_table().get_type("msg"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_assign_from_none_returning_function() {
+        let code = r#"
+def do_nothing():
+    pass
+
+result = do_nothing()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable gets None type from function
+        assert_eq!(analyzer.type_table().get_type("result"), Some(&Type::None));
+    }
+
+    #[test]
+    fn test_chained_function_calls() {
+        let code = r#"
+def get_number():
+    return 100
+
+def double():
+    x = get_number()
+    return x
+
+result = double()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both functions should have Int type
+        assert_eq!(analyzer.function_types().get("get_number"), Some(&Type::Int));
+        // double() returns x which is Int
+        assert_eq!(analyzer.function_types().get("double"), Some(&Type::Int));
+        // result gets Int from double()
+        assert_eq!(analyzer.type_table().get_type("result"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Arithmetic Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_int_plus_int() {
+        let code = "x = 1 + 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int + Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_float_plus_float() {
+        let code = "x = 1.5 + 2.5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float + Float → Float
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_int_plus_float_promotion() {
+        let code = "x = 1 + 2.5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int + Float → Float (type promotion)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_division_always_float() {
+        let code = "x = 10 / 2";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Division always returns Float in Python 3
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_string_concatenation() {
+        let code = r#"x = "hello" + "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // String + String → String
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_bool_plus_float_promotion() {
+        let code = "x = True + 3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool + Float → Float (bool is subclass of int in Python)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_float_plus_bool_promotion() {
+        let code = "y = 2.5 + False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float + Bool → Float
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_bool_plus_int() {
+        let code = "z = True + 5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool + Int → Int (bool is subclass of int)
+        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_bool_plus_bool() {
+        let code = "w = True + False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool + Bool → Int (both bools treated as ints)
+        assert_eq!(analyzer.type_table().get_type("w"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Comparison Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_int_comparison() {
+        let code = "x = 5 < 10";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int < Int → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_float_comparison() {
+        let code = "x = 3.14 > 2.71";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float > Float → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_string_equality() {
+        let code = r#"x = "hello" == "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // String == String → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_mixed_type_comparison() {
+        let code = "x = 5 != 3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Int != Float → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_bool_equality() {
+        let code = "x = True == False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool == Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    // ============================================================
+    // Logical Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_bool_and() {
+        let code = "x = True and False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_bool_or() {
+        let code = "x = True or False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool or Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_literal_bool_and() {
+        let code = "x = False and True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_comparison_in_logical() {
+        let code = "x = (5 > 3) and (10 < 20)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Comparison results are Bool, Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    // ============================================================
+    // Unary Operations Type Inference Tests
+    // ============================================================
+
+    #[test]
+    fn test_unary_not() {
+        let code = "x = not True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // not Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    #[test]
+    fn test_unary_minus_int() {
+        let code = "x = -42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // -Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_unary_minus_float() {
+        let code = "x = -3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // -Float → Float
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_unary_minus_bool() {
+        let code = "x = -True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // -Bool → Int (bool is subclass of int in Python)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_unary_plus_bool() {
+        let code = "y = +False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // +Bool → Int (bool is subclass of int in Python)
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Complex Expression Type Propagation Tests
+    // ============================================================
+
+    #[test]
+    fn test_nested_arithmetic() {
+        let code = "x = (1 + 2) * 3";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // (Int + Int) * Int → Int * Int → Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_mixed_type_nested_arithmetic() {
+        let code = "x = 1.5 + (2 * 3)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float + (Int * Int) → Float + Int → Float
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_nested_logical() {
+        let code = "x = (1 < 2) and (3 > 1)";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // (Int < Int) and (Int > Int) → Bool and Bool → Bool
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    // ============================================================
+    // Basic If Statement Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_variable_assigned_in_if() {
+        let code = r#"
+if True:
+    x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in if block should be tracked
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_reassigned_in_if() {
+        let code = r#"
+x = "hello"
+if True:
+    x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment wins: x is now Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_used_after_if() {
+        let code = r#"
+if True:
+    x = 3.14
+y = x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x assigned in if block, y gets its type
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_variable_before_and_in_if() {
+        let code = r#"
+x = 100
+if True:
+    x = 200
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both assignments are Int, last one wins
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // If-Else Type Merging Tests
+    // ============================================================
+
+    #[test]
+    fn test_same_type_both_branches() {
+        let code = r#"
+if True:
+    x = 42
+else:
+    x = 100
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both branches assign Int, so x is Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_different_types_both_branches() {
+        let code = r#"
+if True:
+    x = 42
+else:
+    x = "hello"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Different types: last write wins (else branch executed last in analysis)
+        // In Python, actual type depends on runtime condition; we track last seen
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_assignment_only_in_if() {
+        let code = r#"
+y = 0
+if True:
+    x = 42
+else:
+    y = 1
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x only assigned in if branch
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        // y assigned before and in else branch
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_assignment_only_in_else() {
+        let code = r#"
+if False:
+    y = 1
+else:
+    x = 3.14
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x only assigned in else branch
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        // y only assigned in if branch
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_reassignment_same_type_both_branches() {
+        let code = r#"
+x = 0
+if True:
+    x = 10
+else:
+    x = 20
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // All assignments are Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Nested If Statements Tests
+    // ============================================================
+
+    #[test]
+    fn test_nested_if_type_changes() {
+        let code = r#"
+if True:
+    if True:
+        x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in nested if
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_in_nested_if() {
+        let code = r#"
+x = "start"
+if True:
+    x = 1
+    if False:
+        x = 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment in nested if wins
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_type_propagation_multiple_levels() {
+        let code = r#"
+if True:
+    x = 3.14
+    if True:
+        y = x
+        if True:
+            z = y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Type propagates through multiple nesting levels
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Float));
+    }
+
+    // ============================================================
+    // While Loop Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_variable_before_and_in_while() {
+        let code = r#"
+x = 1
+while False:
+    x = 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment in loop wins
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_assigned_only_in_while() {
+        let code = r#"
+while False:
+    x = "loop"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in while loop
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_variable_used_after_while() {
+        let code = r#"
+while False:
+    x = 42
+y = x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x assigned in loop, y gets its type
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // For Loop Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_for_loop_with_range() {
+        let code = r#"
+for i in range(10):
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Loop variable gets Unknown type (iterable element types not tracked yet)
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_variable_assigned_in_for_loop() {
+        let code = r#"
+for i in range(5):
+    x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in for loop body
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_for_loop_variable_after_loop() {
+        let code = r#"
+for i in range(3):
+    pass
+x = i
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Loop variable accessible after loop
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_nested_for_loops() {
+        let code = r#"
+for i in range(3):
+    for j in range(2):
+        x = 100
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both loop variables are Unknown
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("j"), Some(&Type::Unknown));
+        // Variable assigned in nested loop
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Binary Operation Type Mismatch Tests
+    // ============================================================
+
+    #[test]
+    fn test_string_subtraction_error() {
+        let code = r#"x = "hello" - "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_string_multiply_string_error() {
+        let code = r#"x = "hello" * "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_bool_plus_string_error() {
+        let code = r#"x = True + "hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_valid_operations_no_errors() {
+        let code = r#"
+x = 1 + 2
+y = 3.14 + 2.71
+z = "hello" + "world"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_none_addition_error() {
+        let code = r#"x = None + 1"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric or string"));
+    }
+
+    #[test]
+    fn test_none_subtraction_error() {
+        let code = r#"y = 5 - None"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric"));
+    }
+
+    #[test]
+    fn test_none_string_addition_error() {
+        let code = r#"z = None + "hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric or string"));
+    }
+
+    // Annotated Assignment Type Mismatches
+    #[test]
+    fn test_int_annotation_string_value_error() {
+        let code = r#"x: int = "hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("int"));
+    }
+
+    #[test]
+    fn test_str_annotation_int_value_error() {
+        let code = r#"name: str = 42"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("str"));
+    }
+
+    #[test]
+    fn test_bool_annotation_float_value_error() {
+        let code = r#"flag: bool = 3.14"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("bool"));
+    }
+
+    #[test]
+    fn test_matching_annotation_no_error() {
+        let code = r#"
+x: int = 42
+y: str = "hello"
+z: float = 3.14
+flag: bool = True
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors when annotations match
+        assert!(result.is_ok());
+    }
+
+    // Subtask 6.3: Division by Zero
+    #[test]
+    fn test_division_by_zero_int_error() {
+        let code = r#"x = 10 / 0"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce division by zero error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message(), "Division by zero");
+    }
+
+    #[test]
+    fn test_division_by_zero_float_error() {
+        let code = r#"y = 5.5 / 0.0"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce division by zero error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].message(), "Division by zero");
+    }
+
+    // Subtask 6.4: Unary Operation Mismatches
+    #[test]
+    fn test_unary_minus_string_error() {
+        let code = r#"x = -"hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric"));
+    }
+
+    #[test]
+    fn test_unary_plus_string_error() {
+        let code = r#"y = +"world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric"));
+    }
+
+    #[test]
+    fn test_bitwise_not_non_int_error() {
+        let code = r#"z = ~3.14"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("int"));
+    }
+
+    // Subtask 6.5: Return Type Annotation Mismatches
+    #[test]
+    fn test_return_type_int_annotation_string_value_error() {
+        let code = r#"
+def get_number() -> int:
+    return "not a number"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("int"));
+    }
+
+    #[test]
+    fn test_return_type_str_annotation_int_value_error() {
+        let code = r#"
+def get_name() -> str:
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("str"));
+    }
+
+    #[test]
+    fn test_return_type_matching_annotation_no_error() {
+        let code = r#"
+def get_number() -> int:
+    return 42
+
+def get_name() -> str:
+    return "hello"
+
+def get_flag() -> bool:
+    return True
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors when return types match
+        assert!(result.is_ok());
     }
 }
 

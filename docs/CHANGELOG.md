@@ -8,7 +8,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (97 tests passing)
+- **Phase 3.2: Type Inference (Basic)** ✅ COMPLETE (226 tests passing)
+  
+  **Task 1: Type System Foundation & Literal Type Inference** ✅
+  - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
+  - Type compatibility checking for Python-style dynamic typing
+  - `TypeTable` for tracking inferred types of variables
+  - Literal type inference for all Python literal types
+  - 18 comprehensive tests (6 type system + 12 type inference)
+  
+  **Type system**:
+    - `Type` enum: Int, Float, String, Bool, None, Unknown
+    - Type compatibility checking (`is_compatible_with`)
+    - Display implementation for type names
+    - Numeric type compatibility (Int ↔ Float, Bool ↔ Int)
+  
+  **Type inference**:
+    - Literal type inference: integers, floats, strings, booleans, None
+    - Built-in constant types: True (bool), False (bool), None (None)
+    - `infer_type` method for expression type inference
+    - Type lookup for identifiers from type table
+  
+  **Task 2: Variable Type Inference from Assignments** ✅
+  - Variable type inference from all assignment forms
+  - `assign_type_to_names()` helper for recursive type assignment to targets
+  - Statement::Assignment: infers value type and assigns to all targets
+  - Statement::AnnAssignment: infers from value or uses Unknown
+  - Expression::AssignmentExpr (walrus): infers and assigns types
+  - Handles multiple assignment chains, reassignment, identifier chain assignment
+  - Supports Python-style dynamic typing (last assignment wins)
+  - 20 comprehensive tests covering all assignment scenarios
+
+  **Task 3: Function Return Type Inference** ✅
+  - Function return type tracking with `function_types` HashMap
+  - Current function context tracking during analysis
+  - Return statement type inference from return expressions
+  - Function call type inference (calls inherit function's return type)
+  - Handles functions with no return (None type)
+  - Handles multiple return paths (last return wins for now)
+  - Type propagation through function calls in assignments
+  - 20 comprehensive tests across 4 subtasks:
+    - Basic return type tracking (5 tests)
+    - Single return statement inference (5 tests)
+    - Multiple return paths (6 tests)
+    - Using function return types in calls (4 tests)
+
+  **Task 4: Binary Operation Result Type Inference** ✅
+  - Binary operation type inference for all arithmetic, comparison, and logical operators
+  - Unary operation type inference (not, -, +, ~)
+  - Type promotion rules (Int + Float → Float)
+  - Python 3 division always returns Float (Int / Int → Float)
+  - String concatenation (String + String → String)
+  - Comparison operations always return Bool
+  - Logical operations (and, or) for Bool types
+  - Parenthesized expression handling
+  - Helper methods: `infer_binary_op_type()` and `infer_unary_op_type()`
+  - 20 comprehensive tests across 5 subtasks:
+    - Arithmetic operations (5 tests)
+    - Comparison operations (5 tests)
+    - Logical operations (4 tests)
+    - Unary operations (3 tests)
+    - Complex nested expressions (3 tests)
+
+  **Task 5: Track Type Through Control Flow** ✅
+  - Type tracking through if/else statements
+  - Type tracking through while and for loops
+  - For-loop variables assigned Unknown type (iterable element types not tracked yet)
+  - "Last write wins" approach for type assignments in branches
+  - Variables assigned in any branch are tracked and accessible after
+  - Type propagation through nested control structures
+  - Comprehensive testing of all control flow patterns
+  - 19 comprehensive tests across 5 subtasks:
+    - Basic if statement tracking (4 tests)
+    - If-else type merging (5 tests)
+    - Nested if statements (3 tests)
+    - While loop tracking (3 tests)
+    - For loop tracking (4 tests)
+
+  **Task 6: Type Mismatch Detection** ✅
+  - Type mismatch error detection for invalid operations
+  - `TypeMismatch` variant added to `SemanticError` enum
+  - `check_binary_op_types()` validates binary operation operands before inference
+  - `check_unary_op_types()` validates unary operation operands
+  - `parse_type_annotation()` helper converts annotation expressions to Type enum
+  - Division by zero detection for Divide and FloorDivide operations
+  - Type annotation checking for annotated assignments
+  - Return type annotation checking for function returns
+  - Expected return type tracking with `expected_return_type` field
+  - Conservative approach: only reports errors when both types are known (not Unknown)
+  - 16 comprehensive tests across 5 subtasks:
+    - Binary operation mismatches (4 tests)
+    - Annotated assignment mismatches (4 tests)
+    - Division by zero (2 tests)
+    - Unary operation mismatches (3 tests)
+    - Return type annotation mismatches (3 tests)
+
+- **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (113 tests passing)
   - Complete symbol table implementation with scope hierarchy management
   - Semantic analyzer with visitor pattern for comprehensive AST analysis
   - Full variable and function tracking across all scopes
@@ -17,7 +112,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Nested scope support for functions, classes, and control flow
   - Closure tracking with global/nonlocal declarations
   - Built-in functions and constants pre-declared
-  - 97 comprehensive tests (11 symbol table + 86 semantic analyzer)
+  - Expression visiting in Return, Assert, Del, Raise statements
+  - Walrus operator (`:=`) reassignment support
+  - 113 comprehensive tests (11 symbol table + 102 semantic analyzer)
   
   **Core symbol table data structures**:
     - `SymbolKind` enum: Variable, Function, Class, Parameter
