@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (191 tests passing)
+- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (210 tests passing)
   
   **Task 1: Type System Foundation & Literal Type Inference** ✅
   - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
@@ -69,6 +69,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Logical operations (4 tests)
     - Unary operations (3 tests)
     - Complex nested expressions (3 tests)
+
+  **Task 5: Track Type Through Control Flow** ✅
+  - Type tracking through if/else statements
+  - Type tracking through while and for loops
+  - For-loop variables assigned Unknown type (iterable element types not tracked yet)
+  - "Last write wins" approach for type assignments in branches
+  - Variables assigned in any branch are tracked and accessible after
+  - Type propagation through nested control structures
+  - Comprehensive testing of all control flow patterns
+  - 19 comprehensive tests across 5 subtasks:
+    - Basic if statement tracking (4 tests)
+    - If-else type merging (5 tests)
+    - Nested if statements (3 tests)
+    - While loop tracking (3 tests)
+    - For loop tracking (4 tests)
 
 - **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (113 tests passing)
   - Complete symbol table implementation with scope hierarchy management

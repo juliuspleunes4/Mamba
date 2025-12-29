@@ -523,6 +523,9 @@ impl SemanticAnalyzer {
                 // Declare loop variable(s) in current scope
                 self.extract_and_declare_names(target, position);
                 
+                // Assign Unknown type to loop variable(s) since we don't track iterable types yet
+                self.assign_type_to_names(target, &Type::Unknown);
+                
                 // Visit body
                 for statement in body {
                     self.visit_statement(statement);
@@ -3070,6 +3073,333 @@ result = double()
         
         // (Int < Int) and (Int > Int) → Bool and Bool → Bool
         assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Bool));
+    }
+
+    // ============================================================
+    // Basic If Statement Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_variable_assigned_in_if() {
+        let code = r#"
+if True:
+    x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in if block should be tracked
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_reassigned_in_if() {
+        let code = r#"
+x = "hello"
+if True:
+    x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment wins: x is now Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_used_after_if() {
+        let code = r#"
+if True:
+    x = 3.14
+y = x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x assigned in if block, y gets its type
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_variable_before_and_in_if() {
+        let code = r#"
+x = 100
+if True:
+    x = 200
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both assignments are Int, last one wins
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // If-Else Type Merging Tests
+    // ============================================================
+
+    #[test]
+    fn test_same_type_both_branches() {
+        let code = r#"
+if True:
+    x = 42
+else:
+    x = 100
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both branches assign Int, so x is Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_different_types_both_branches() {
+        let code = r#"
+if True:
+    x = 42
+else:
+    x = "hello"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Different types: last write wins (else branch executed last in analysis)
+        // In Python, actual type depends on runtime condition; we track last seen
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_assignment_only_in_if() {
+        let code = r#"
+y = 0
+if True:
+    x = 42
+else:
+    y = 1
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x only assigned in if branch
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        // y assigned before and in else branch
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_assignment_only_in_else() {
+        let code = r#"
+if False:
+    y = 1
+else:
+    x = 3.14
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x only assigned in else branch
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        // y only assigned in if branch
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_reassignment_same_type_both_branches() {
+        let code = r#"
+x = 0
+if True:
+    x = 10
+else:
+    x = 20
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // All assignments are Int
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Nested If Statements Tests
+    // ============================================================
+
+    #[test]
+    fn test_nested_if_type_changes() {
+        let code = r#"
+if True:
+    if True:
+        x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in nested if
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_in_nested_if() {
+        let code = r#"
+x = "start"
+if True:
+    x = 1
+    if False:
+        x = 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment in nested if wins
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_type_propagation_multiple_levels() {
+        let code = r#"
+if True:
+    x = 3.14
+    if True:
+        y = x
+        if True:
+            z = y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Type propagates through multiple nesting levels
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Float));
+    }
+
+    // ============================================================
+    // While Loop Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_variable_before_and_in_while() {
+        let code = r#"
+x = 1
+while False:
+    x = 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Last assignment in loop wins
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_variable_assigned_only_in_while() {
+        let code = r#"
+while False:
+    x = "loop"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in while loop
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_variable_used_after_while() {
+        let code = r#"
+while False:
+    x = 42
+y = x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // x assigned in loop, y gets its type
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // For Loop Type Tracking Tests
+    // ============================================================
+
+    #[test]
+    fn test_for_loop_with_range() {
+        let code = r#"
+for i in range(10):
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Loop variable gets Unknown type (iterable element types not tracked yet)
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_variable_assigned_in_for_loop() {
+        let code = r#"
+for i in range(5):
+    x = 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Variable assigned in for loop body
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_for_loop_variable_after_loop() {
+        let code = r#"
+for i in range(3):
+    pass
+x = i
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Loop variable accessible after loop
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Unknown));
+    }
+
+    #[test]
+    fn test_nested_for_loops() {
+        let code = r#"
+for i in range(3):
+    for j in range(2):
+        x = 100
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Both loop variables are Unknown
+        assert_eq!(analyzer.type_table().get_type("i"), Some(&Type::Unknown));
+        assert_eq!(analyzer.type_table().get_type("j"), Some(&Type::Unknown));
+        // Variable assigned in nested loop
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
     }
 }
 

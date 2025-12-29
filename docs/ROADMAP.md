@@ -264,7 +264,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [x] Infer variable types from assignments
 - [x] Infer function return types
 - [x] Infer binary operation result types
-- [ ] Track type through control flow
+- [x] Track type through control flow
 - [ ] Detect type mismatches (basic)
 
 ### 3.3 Semantic Validation
