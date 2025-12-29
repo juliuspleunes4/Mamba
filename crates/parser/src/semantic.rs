@@ -265,6 +265,10 @@ impl SemanticAnalyzer {
                     (Type::Int, Type::Int) => Type::Int,
                     (Type::Float, Type::Float) => Type::Float,
                     (Type::Int, Type::Float) | (Type::Float, Type::Int) => Type::Float,
+                    // Bool is a subclass of int in Python
+                    (Type::Bool, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Int) | (Type::Int, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Float) | (Type::Float, Type::Bool) => Type::Float,
                     (Type::String, Type::String) => Type::String,
                     _ => Type::Unknown,
                 }
@@ -274,6 +278,10 @@ impl SemanticAnalyzer {
                     (Type::Int, Type::Int) => Type::Int,
                     (Type::Float, Type::Float) => Type::Float,
                     (Type::Int, Type::Float) | (Type::Float, Type::Int) => Type::Float,
+                    // Bool is a subclass of int in Python
+                    (Type::Bool, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Int) | (Type::Int, Type::Bool) => Type::Int,
+                    (Type::Bool, Type::Float) | (Type::Float, Type::Bool) => Type::Float,
                     _ => Type::Unknown,
                 }
             },
@@ -283,7 +291,11 @@ impl SemanticAnalyzer {
                     (Type::Int, Type::Int) | 
                     (Type::Float, Type::Float) |
                     (Type::Int, Type::Float) | 
-                    (Type::Float, Type::Int) => Type::Float,
+                    (Type::Float, Type::Int) |
+                    // Bool is a subclass of int in Python
+                    (Type::Bool, Type::Bool) |
+                    (Type::Bool, Type::Int) | (Type::Int, Type::Bool) |
+                    (Type::Bool, Type::Float) | (Type::Float, Type::Bool) => Type::Float,
                     _ => Type::Unknown,
                 }
             },
@@ -458,7 +470,8 @@ impl SemanticAnalyzer {
                 self.type_table.assign_type(name.clone(), typ.clone());
             },
             Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
-                // For unpacking, all variables get the same type (for now)
+                // For unpacking, all variables get the inferred type of the RHS expression
+                // (currently this is typically Unknown for tuple/list literals).
                 for elem in elements {
                     self.assign_type_to_names(elem, typ);
                 }
@@ -3068,6 +3081,50 @@ result = double()
         
         // String + String → String
         assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::String));
+    }
+
+    #[test]
+    fn test_bool_plus_float_promotion() {
+        let code = "x = True + 3.14";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool + Float → Float (bool is subclass of int in Python)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_float_plus_bool_promotion() {
+        let code = "y = 2.5 + False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Float + Bool → Float
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_bool_plus_int() {
+        let code = "z = True + 5";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool + Int → Int (bool is subclass of int)
+        assert_eq!(analyzer.type_table().get_type("z"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_bool_plus_bool() {
+        let code = "w = True + False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // Bool + Bool → Int (both bools treated as ints)
+        assert_eq!(analyzer.type_table().get_type("w"), Some(&Type::Int));
     }
 
     // ============================================================

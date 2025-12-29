@@ -40,6 +40,9 @@ impl Type {
             // Bool can be treated as Int in some contexts (Python behavior)
             (Type::Bool, Type::Int) | (Type::Int, Type::Bool) => true,
             
+            // Bool is a subclass of int in Python, so it's compatible with Float too
+            (Type::Bool, Type::Float) | (Type::Float, Type::Bool) => true,
+            
             // Everything else is incompatible
             _ => false,
         }
@@ -96,6 +99,8 @@ mod tests {
         assert!(Type::Float.is_compatible_with(&Type::Int));
         assert!(Type::Bool.is_compatible_with(&Type::Int));
         assert!(Type::Int.is_compatible_with(&Type::Bool));
+        assert!(Type::Bool.is_compatible_with(&Type::Float));
+        assert!(Type::Float.is_compatible_with(&Type::Bool));
     }
 
     #[test]
