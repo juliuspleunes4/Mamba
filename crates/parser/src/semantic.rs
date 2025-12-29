@@ -351,7 +351,7 @@ impl SemanticAnalyzer {
         }
         
         match op {
-            // Arithmetic operations that don't work with strings
+            // Arithmetic operations that don't work with strings or None
             Subtract | Multiply | Modulo | Power | FloorDivide => {
                 if matches!(left, Type::String) || matches!(right, Type::String) {
                     self.add_error(SemanticError::TypeMismatch {
@@ -361,9 +361,27 @@ impl SemanticAnalyzer {
                     });
                     return Type::Unknown;
                 }
+                if matches!(left, Type::None) || matches!(right, Type::None) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
             },
-            // Add: strings can only be added to strings
+            // Add: strings can only be added to strings, None cannot be added to anything
             Add => {
+                // Check for None in addition
+                if matches!(left, Type::None) || matches!(right, Type::None) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric or string types".to_string(),
+                        actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+                // String type checking
                 if matches!(left, Type::String) && !matches!(right, Type::String) {
                     self.add_error(SemanticError::TypeMismatch {
                         expected: "String".to_string(),
@@ -376,6 +394,17 @@ impl SemanticAnalyzer {
                     self.add_error(SemanticError::TypeMismatch {
                         expected: "String".to_string(),
                         actual: left.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            // Division also doesn't work with None
+            Divide => {
+                if matches!(left, Type::None) || matches!(right, Type::None) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
                         position: position.clone(),
                     });
                     return Type::Unknown;
@@ -3722,6 +3751,51 @@ z = "hello" + "world"
         
         // Should not produce any errors
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_none_addition_error() {
+        let code = r#"x = None + 1"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric or string"));
+    }
+
+    #[test]
+    fn test_none_subtraction_error() {
+        let code = r#"y = 5 - None"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric"));
+    }
+
+    #[test]
+    fn test_none_string_addition_error() {
+        let code = r#"z = None + "hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric or string"));
     }
 
     // Annotated Assignment Type Mismatches
