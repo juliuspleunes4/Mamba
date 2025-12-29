@@ -75,6 +75,10 @@ pub enum SemanticError {
         actual: Type,
         position: SourcePosition,
     },
+    /// Division by zero detected
+    DivisionByZero {
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -88,6 +92,7 @@ impl SemanticError {
             SemanticError::NonlocalNotFound { position, .. } => position,
             SemanticError::GlobalAtModuleLevel { position, .. } => position,
             SemanticError::TypeMismatch { position, .. } => position,
+            SemanticError::DivisionByZero { position } => position,
         }
     }
 
@@ -112,6 +117,9 @@ impl SemanticError {
             }
             SemanticError::TypeMismatch { expected, actual, .. } => {
                 format!("Type mismatch: expected {}, got {}", expected, actual)
+            }
+            SemanticError::DivisionByZero { .. } => {
+                "Division by zero".to_string()
             }
         }
     }
@@ -326,9 +334,7 @@ impl SemanticAnalyzer {
         if matches!(op, Divide | FloorDivide) {
             if let Expression::Literal(Literal::Integer { value, .. }) = right_expr {
                 if *value == 0 {
-                    self.add_error(SemanticError::TypeMismatch {
-                        expected: "non-zero divisor".to_string(),
-                        actual: Type::Int,
+                    self.add_error(SemanticError::DivisionByZero {
                         position: position.clone(),
                     });
                     return Type::Unknown;
@@ -336,9 +342,7 @@ impl SemanticAnalyzer {
             }
             if let Expression::Literal(Literal::Float { value, .. }) = right_expr {
                 if *value == 0.0 {
-                    self.add_error(SemanticError::TypeMismatch {
-                        expected: "non-zero divisor".to_string(),
-                        actual: Type::Float,
+                    self.add_error(SemanticError::DivisionByZero {
                         position: position.clone(),
                     });
                     return Type::Unknown;
@@ -3794,8 +3798,7 @@ flag: bool = True
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].message().contains("Type mismatch"));
-        assert!(errors[0].message().contains("non-zero"));
+        assert_eq!(errors[0].message(), "Division by zero");
     }
 
     #[test]
@@ -3809,8 +3812,7 @@ flag: bool = True
         assert!(result.is_err());
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 1);
-        assert!(errors[0].message().contains("Type mismatch"));
-        assert!(errors[0].message().contains("non-zero"));
+        assert_eq!(errors[0].message(), "Division by zero");
     }
 
     // Subtask 6.4: Unary Operation Mismatches
