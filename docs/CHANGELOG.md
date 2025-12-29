@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.2: Type Inference (Basic)** 🚧 IN PROGRESS (210 tests passing)
+- **Phase 3.2: Type Inference (Basic)** ✅ COMPLETE (226 tests passing)
   
   **Task 1: Type System Foundation & Literal Type Inference** ✅
   - Type system foundation with `Type` enum (Int, Float, String, Bool, None, Unknown)
@@ -84,6 +84,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - Nested if statements (3 tests)
     - While loop tracking (3 tests)
     - For loop tracking (4 tests)
+
+  **Task 6: Type Mismatch Detection** ✅
+  - Type mismatch error detection for invalid operations
+  - `TypeMismatch` variant added to `SemanticError` enum
+  - `check_binary_op_types()` validates binary operation operands before inference
+  - `check_unary_op_types()` validates unary operation operands
+  - `parse_type_annotation()` helper converts annotation expressions to Type enum
+  - Division by zero detection for Divide and FloorDivide operations
+  - Type annotation checking for annotated assignments
+  - Return type annotation checking for function returns
+  - Expected return type tracking with `expected_return_type` field
+  - Conservative approach: only reports errors when both types are known (not Unknown)
+  - 16 comprehensive tests across 5 subtasks:
+    - Binary operation mismatches (4 tests)
+    - Annotated assignment mismatches (4 tests)
+    - Division by zero (2 tests)
+    - Unary operation mismatches (3 tests)
+    - Return type annotation mismatches (3 tests)
 
 - **Phase 3.1: Symbol Table & Semantic Analysis** ✅ Complete (113 tests passing)
   - Complete symbol table implementation with scope hierarchy management

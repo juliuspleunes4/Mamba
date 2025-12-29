@@ -69,6 +69,12 @@ pub enum SemanticError {
         name: String,
         position: SourcePosition,
     },
+    /// Type mismatch detected
+    TypeMismatch {
+        expected: String,
+        actual: Type,
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -81,6 +87,7 @@ impl SemanticError {
             SemanticError::NonlocalAtModuleLevel { position, .. } => position,
             SemanticError::NonlocalNotFound { position, .. } => position,
             SemanticError::GlobalAtModuleLevel { position, .. } => position,
+            SemanticError::TypeMismatch { position, .. } => position,
         }
     }
 
@@ -103,6 +110,9 @@ impl SemanticError {
             SemanticError::GlobalAtModuleLevel { name, .. } => {
                 format!("name '{}' is used prior to global declaration", name)
             }
+            SemanticError::TypeMismatch { expected, actual, .. } => {
+                format!("Type mismatch: expected {}, got {}", expected, actual)
+            }
         }
     }
 }
@@ -117,6 +127,8 @@ pub struct SemanticAnalyzer {
     function_types: HashMap<String, Type>,
     /// Current function being analyzed
     current_function: Option<String>,
+    /// Expected return type annotation for current function
+    expected_return_type: Option<Type>,
     /// Collected semantic errors
     errors: Vec<SemanticError>,
 }
@@ -156,6 +168,7 @@ impl SemanticAnalyzer {
             type_table,
             function_types: HashMap::new(),
             current_function: None,
+            expected_return_type: None,
             errors: Vec::new(),
         }
     }
@@ -199,7 +212,7 @@ impl SemanticAnalyzer {
     }
 
     /// Infer the type of an expression
-    fn infer_type(&self, expr: &Expression) -> Type {
+    fn infer_type(&mut self, expr: &Expression) -> Type {
         match expr {
             Expression::Literal(lit) => {
                 match lit {
@@ -223,14 +236,14 @@ impl SemanticAnalyzer {
                     Type::Unknown
                 }
             },
-            Expression::BinaryOp { left, op, right, .. } => {
+            Expression::BinaryOp { left, op, right, position } => {
                 let left_type = self.infer_type(left);
                 let right_type = self.infer_type(right);
-                self.infer_binary_op_type(op, &left_type, &right_type)
+                self.check_binary_op_types(op, &left_type, &right_type, right, position)
             },
-            Expression::UnaryOp { op, operand, .. } => {
+            Expression::UnaryOp { op, operand, position } => {
                 let operand_type = self.infer_type(operand);
-                self.infer_unary_op_type(op, &operand_type)
+                self.check_unary_op_types(op, &operand_type, position)
             },
             Expression::Parenthesized { expr, .. } => {
                 // Parentheses don't change the type
@@ -286,6 +299,134 @@ impl SemanticAnalyzer {
             // Other operations return Unknown for now
             _ => Type::Unknown,
         }
+    }
+
+    /// Check binary operation types and report errors for invalid combinations
+    fn check_binary_op_types(&mut self, op: &BinaryOperator, left: &Type, right: &Type, right_expr: &Expression, position: &SourcePosition) -> Type {
+        use BinaryOperator::*;
+        
+        // Skip type checking for Unknown types (conservative approach)
+        if matches!(left, Type::Unknown) || matches!(right, Type::Unknown) {
+            return self.infer_binary_op_type(op, left, right);
+        }
+        
+        // Check for division by zero
+        if matches!(op, Divide | FloorDivide) {
+            if let Expression::Literal(Literal::Integer { value, .. }) = right_expr {
+                if *value == 0 {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "non-zero divisor".to_string(),
+                        actual: Type::Int,
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            }
+            if let Expression::Literal(Literal::Float { value, .. }) = right_expr {
+                if *value == 0.0 {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "non-zero divisor".to_string(),
+                        actual: Type::Float,
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            }
+        }
+        
+        match op {
+            // Arithmetic operations that don't work with strings
+            Subtract | Multiply | Modulo | Power | FloorDivide => {
+                if matches!(left, Type::String) || matches!(right, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: if matches!(left, Type::String) { left.clone() } else { right.clone() },
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            // Add: strings can only be added to strings
+            Add => {
+                if matches!(left, Type::String) && !matches!(right, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "String".to_string(),
+                        actual: right.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+                if matches!(right, Type::String) && !matches!(left, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "String".to_string(),
+                        actual: left.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            _ => {}
+        }
+        
+        // If no errors, proceed with normal type inference
+        self.infer_binary_op_type(op, left, right)
+    }
+
+    /// Parse a type annotation expression into a Type
+    fn parse_type_annotation(&self, annotation: &Expression) -> Type {
+        // For now, only handle simple identifier annotations like int, str, float, bool
+        if let Expression::Identifier { name, .. } = annotation {
+            match name.as_str() {
+                "int" => Type::Int,
+                "float" => Type::Float,
+                "str" => Type::String,
+                "bool" => Type::Bool,
+                "None" => Type::None,
+                _ => Type::Unknown,
+            }
+        } else {
+            Type::Unknown
+        }
+    }
+
+    /// Check unary operation types and report errors for invalid combinations
+    fn check_unary_op_types(&mut self, op: &UnaryOperator, operand: &Type, position: &SourcePosition) -> Type {
+        use UnaryOperator::*;
+        
+        // Skip type checking for Unknown types (conservative approach)
+        if matches!(operand, Type::Unknown) {
+            return self.infer_unary_op_type(op, operand);
+        }
+        
+        // Check for invalid unary operations on strings
+        match op {
+            Minus | Plus => {
+                if matches!(operand, Type::String) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "numeric types (int or float)".to_string(),
+                        actual: operand.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            BitwiseNot => {
+                if !matches!(operand, Type::Int) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "int".to_string(),
+                        actual: operand.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            Not => {
+                // Not operator can work with any type (truthy/falsy)
+            },
+        }
+        
+        // If no errors, proceed with normal type inference
+        self.infer_unary_op_type(op, operand)
     }
 
     /// Infer the result type of a unary operation
@@ -347,13 +488,29 @@ impl SemanticAnalyzer {
             }
 
             // AnnAssignment - track typed variable declarations and infer types
-            Statement::AnnAssignment { target, value, position, .. } => {
-                // Infer type from value if present, otherwise Unknown
+            Statement::AnnAssignment { target, annotation, value, position, .. } => {
+                // Parse annotation to get expected type
+                let expected_type = self.parse_type_annotation(annotation);
+                
+                // Infer type from value if present, otherwise use expected type
                 let inferred_type = if let Some(val) = value {
                     self.visit_expression(val);
-                    self.infer_type(val)
+                    let val_type = self.infer_type(val);
+                    
+                    // Check if value type matches annotation
+                    if !matches!(expected_type, Type::Unknown) && 
+                       !matches!(val_type, Type::Unknown) &&
+                       expected_type != val_type {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: format!("{}", expected_type),
+                            actual: val_type.clone(),
+                            position: position.clone(),
+                        });
+                    }
+                    
+                    val_type
                 } else {
-                    Type::Unknown
+                    expected_type
                 };
                 
                 // Declare the variable
@@ -393,7 +550,7 @@ impl SemanticAnalyzer {
             }
 
             // FunctionDef - track function declarations
-            Statement::FunctionDef { name, parameters, body, position, .. } => {
+            Statement::FunctionDef { name, parameters, body, return_type, position, .. } => {
                 // Declare function in current scope
                 if let Err(existing) = self.symbol_table.declare(
                     name.clone(),
@@ -410,6 +567,10 @@ impl SemanticAnalyzer {
                 // Track current function for return type inference
                 let prev_function = self.current_function.take();
                 self.current_function = Some(name.clone());
+                
+                // Parse return type annotation if present
+                let prev_expected_return = self.expected_return_type.take();
+                self.expected_return_type = return_type.as_ref().map(|rt| self.parse_type_annotation(rt));
                 
                 // Initialize function return type to None
                 self.function_types.insert(name.clone(), Type::None);
@@ -440,8 +601,9 @@ impl SemanticAnalyzer {
                 // Exit function scope
                 self.symbol_table.exit_scope();
                 
-                // Restore previous function context
+                // Restore previous function and return type context
                 self.current_function = prev_function;
+                self.expected_return_type = prev_expected_return;
             }
 
             // ClassDef - track class declarations
@@ -630,13 +792,27 @@ impl SemanticAnalyzer {
             }
 
             // Statements with expressions that need semantic analysis
-            Statement::Return { value, .. } => {
+            Statement::Return { value, position } => {
                 if let Some(expr) = value {
                     self.visit_expression(expr);
                     
                     // Infer return type and update function type
+                    let return_type = self.infer_type(expr);
+                    
+                    // Check against expected return type annotation
+                    if let Some(expected) = &self.expected_return_type {
+                        if !matches!(expected, Type::Unknown) && 
+                           !matches!(return_type, Type::Unknown) &&
+                           expected != &return_type {
+                            self.add_error(SemanticError::TypeMismatch {
+                                expected: format!("{}", expected),
+                                actual: return_type.clone(),
+                                position: position.clone(),
+                            });
+                        }
+                    }
+                    
                     if let Some(func_name) = &self.current_function {
-                        let return_type = self.infer_type(expr);
                         self.function_types.insert(func_name.clone(), return_type);
                     }
                 }
@@ -2400,8 +2576,8 @@ mod tests {
         let analyzer = SemanticAnalyzer::new();
         let analyzer = analyzer.analyze_with_types(&module);
         
-        // Without value, type is Unknown (we don't parse annotations yet)
-        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Unknown));
+        // Without value, type comes from the annotation
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
     }
 
     #[test]
@@ -3400,6 +3576,263 @@ for i in range(3):
         assert_eq!(analyzer.type_table().get_type("j"), Some(&Type::Unknown));
         // Variable assigned in nested loop
         assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    // ============================================================
+    // Binary Operation Type Mismatch Tests
+    // ============================================================
+
+    #[test]
+    fn test_string_subtraction_error() {
+        let code = r#"x = "hello" - "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_string_multiply_string_error() {
+        let code = r#"x = "hello" * "world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_bool_plus_string_error() {
+        let code = r#"x = True + "hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+    }
+
+    #[test]
+    fn test_valid_operations_no_errors() {
+        let code = r#"
+x = 1 + 2
+y = 3.14 + 2.71
+z = "hello" + "world"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    // Annotated Assignment Type Mismatches
+    #[test]
+    fn test_int_annotation_string_value_error() {
+        let code = r#"x: int = "hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("int"));
+    }
+
+    #[test]
+    fn test_str_annotation_int_value_error() {
+        let code = r#"name: str = 42"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("str"));
+    }
+
+    #[test]
+    fn test_bool_annotation_float_value_error() {
+        let code = r#"flag: bool = 3.14"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("bool"));
+    }
+
+    #[test]
+    fn test_matching_annotation_no_error() {
+        let code = r#"
+x: int = 42
+y: str = "hello"
+z: float = 3.14
+flag: bool = True
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors when annotations match
+        assert!(result.is_ok());
+    }
+
+    // Subtask 6.3: Division by Zero
+    #[test]
+    fn test_division_by_zero_int_error() {
+        let code = r#"x = 10 / 0"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce division by zero error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("non-zero"));
+    }
+
+    #[test]
+    fn test_division_by_zero_float_error() {
+        let code = r#"y = 5.5 / 0.0"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce division by zero error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("non-zero"));
+    }
+
+    // Subtask 6.4: Unary Operation Mismatches
+    #[test]
+    fn test_unary_minus_string_error() {
+        let code = r#"x = -"hello""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric"));
+    }
+
+    #[test]
+    fn test_unary_plus_string_error() {
+        let code = r#"y = +"world""#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("numeric"));
+    }
+
+    #[test]
+    fn test_bitwise_not_non_int_error() {
+        let code = r#"z = ~3.14"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("int"));
+    }
+
+    // Subtask 6.5: Return Type Annotation Mismatches
+    #[test]
+    fn test_return_type_int_annotation_string_value_error() {
+        let code = r#"
+def get_number() -> int:
+    return "not a number"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("int"));
+    }
+
+    #[test]
+    fn test_return_type_str_annotation_int_value_error() {
+        let code = r#"
+def get_name() -> str:
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce type mismatch error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message().contains("Type mismatch"));
+        assert!(errors[0].message().contains("str"));
+    }
+
+    #[test]
+    fn test_return_type_matching_annotation_no_error() {
+        let code = r#"
+def get_number() -> int:
+    return 42
+
+def get_name() -> str:
+    return "hello"
+
+def get_flag() -> bool:
+    return True
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors when return types match
+        assert!(result.is_ok());
     }
 }
 
