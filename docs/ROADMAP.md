@@ -273,12 +273,18 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 - [x] Validate break/continue usage (must be in loop)
 - [x] Validate return usage (must be in function)
-- [ ] Check for unreachable code
+- [x] Check for unreachable code (Phase 1: sequential analysis)
 - [ ] Validate function call arguments
 - [ ] Validate operator usage
 - [ ] Check for invalid assignments
 
-### 3.4 Semantic Testing
+### 3.4 Advanced Control Flow Analysis
+
+- [ ] Detect unreachable code after if/else with returns in all branches
+- [ ] Handle unreachable code in try/except blocks
+- [ ] Implement sophisticated control flow graphs for comprehensive analysis
+
+### 3.5 Semantic Testing
 
 - [ ] Test scope resolution
 - [ ] Test type inference accuracy
