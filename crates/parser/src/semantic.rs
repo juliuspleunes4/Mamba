@@ -451,6 +451,8 @@ impl SemanticAnalyzer {
                 match operand {
                     Type::Int => Type::Int,
                     Type::Float => Type::Float,
+                    // Bool is a subclass of int in Python
+                    Type::Bool => Type::Int,
                     _ => Type::Unknown,
                 }
             },
@@ -3269,6 +3271,28 @@ result = double()
         
         // -Float → Float
         assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Float));
+    }
+
+    #[test]
+    fn test_unary_minus_bool() {
+        let code = "x = -True";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // -Bool → Int (bool is subclass of int in Python)
+        assert_eq!(analyzer.type_table().get_type("x"), Some(&Type::Int));
+    }
+
+    #[test]
+    fn test_unary_plus_bool() {
+        let code = "y = +False";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let analyzer = analyzer.analyze_with_types(&module);
+        
+        // +Bool → Int (bool is subclass of int in Python)
+        assert_eq!(analyzer.type_table().get_type("y"), Some(&Type::Int));
     }
 
     // ============================================================
