@@ -472,6 +472,65 @@ impl SemanticAnalyzer {
                     return Type::Unknown;
                 }
             },
+            // Bitwise operators require integer types
+            BitwiseAnd | BitwiseOr | BitwiseXor | LeftShift | RightShift => {
+                // Check left operand
+                if !matches!(left, Type::Int | Type::Bool) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "int".to_string(),
+                        actual: left.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+                // Check right operand
+                if !matches!(right, Type::Int | Type::Bool) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "int".to_string(),
+                        actual: right.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
+            // Comparison operators require compatible types
+            Equal | NotEqual | LessThan | LessThanEq | GreaterThan | GreaterThanEq => {
+                // None can be compared with anything (for equality)
+                if matches!(op, Equal | NotEqual) {
+                    // Equality operators are permissive
+                } else {
+                    // Ordering operators require compatible types
+                    // String comparisons: both must be strings
+                    if matches!(left, Type::String) && !matches!(right, Type::String) {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: "str".to_string(),
+                            actual: right.clone(),
+                            position: position.clone(),
+                        });
+                        return Type::Unknown;
+                    }
+                    if matches!(right, Type::String) && !matches!(left, Type::String) {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: "str".to_string(),
+                            actual: left.clone(),
+                            position: position.clone(),
+                        });
+                        return Type::Unknown;
+                    }
+                    // None cannot be ordered
+                    if matches!(left, Type::None) || matches!(right, Type::None) {
+                        self.add_error(SemanticError::TypeMismatch {
+                            expected: "comparable types".to_string(),
+                            actual: if matches!(left, Type::None) { left.clone() } else { right.clone() },
+                            position: position.clone(),
+                        });
+                        return Type::Unknown;
+                    }
+                }
+            },
+            // Logical operators (And, Or) accept any type - truthy/falsy semantics
+            // Identity operators (Is, IsNot) accept any type - reference comparison
+            // Membership operators (In, NotIn) - deferred until we have collection types
             _ => {}
         }
         
@@ -5084,8 +5143,8 @@ result = add(1, "hello")
         assert!(matches!(errors[0], SemanticError::ArgumentTypeMismatch { .. }));
         let msg = errors[0].message();
         assert!(msg.contains("parameter 'b'"));
-        assert!(msg.contains("expected int")); // Display format is lowercase
-        assert!(msg.contains("got str")); // Display format is lowercase
+        assert!(msg.contains("expected int")); 
+        assert!(msg.contains("got str"));
     }
 
     #[test]
