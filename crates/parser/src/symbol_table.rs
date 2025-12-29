@@ -4,6 +4,7 @@
 //! managing scopes, and performing semantic analysis on Mamba code.
 
 use crate::token::SourcePosition;
+use crate::types::Type;
 use std::collections::HashMap;
 
 /// Unique identifier for a scope
@@ -33,6 +34,8 @@ pub struct Symbol {
     pub position: SourcePosition,
     /// Which scope it belongs to
     pub scope_id: ScopeId,
+    /// The inferred type of this symbol
+    pub inferred_type: Type,
     /// Whether this variable is captured by a nested function (for closures)
     pub is_captured: bool,
     /// Whether this variable was declared with `global` keyword
@@ -49,6 +52,7 @@ impl Symbol {
             kind,
             position,
             scope_id,
+            inferred_type: Type::Unknown,
             is_captured: false,
             is_global: false,
             is_nonlocal: false,
@@ -68,6 +72,16 @@ impl Symbol {
     /// Mark this symbol as nonlocal
     pub fn mark_nonlocal(&mut self) {
         self.is_nonlocal = true;
+    }
+    
+    /// Set the inferred type for this symbol
+    pub fn set_type(&mut self, ty: Type) {
+        self.inferred_type = ty;
+    }
+    
+    /// Get the inferred type for this symbol
+    pub fn get_type(&self) -> &Type {
+        &self.inferred_type
     }
 }
 
@@ -334,6 +348,40 @@ impl SymbolTable {
                 return None;
             }
         }
+    }
+    
+    /// Assign a type to a symbol in the current scope or any parent scope
+    ///
+    /// This searches through the scope hierarchy to find the symbol and update its type.
+    /// If the symbol doesn't exist, this does nothing (symbols should be declared first).
+    pub fn assign_type(&mut self, name: &str, ty: Type) {
+        let mut current_id = self.current_scope;
+        
+        loop {
+            if let Some(scope) = self.scopes.get_mut(&current_id) {
+                if let Some(symbol) = scope.symbols.get_mut(name) {
+                    symbol.set_type(ty);
+                    return;
+                }
+                
+                // Try parent scope
+                if let Some(parent_id) = scope.parent {
+                    current_id = parent_id;
+                } else {
+                    // Symbol not found in any scope
+                    return;
+                }
+            } else {
+                return;
+            }
+        }
+    }
+    
+    /// Get the type of a symbol by searching through the scope hierarchy
+    ///
+    /// Returns the type if found, None if the symbol doesn't exist
+    pub fn get_type(&self, name: &str) -> Option<Type> {
+        self.lookup(name).map(|symbol| symbol.inferred_type.clone())
     }
 
     /// Get all scopes
