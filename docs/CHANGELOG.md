@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.3: Semantic Validation - Return Statement Validation** ✅ (266 tests passing)
+  - Added `ReturnOutsideFunction` error variant
+  - Validates that `return` statements only appear inside function definitions
+  - Uses existing `current_function` tracking from type inference system
+  - Works correctly with nested functions (each tracks its own context)
+  - Added 12 comprehensive tests:
+    * 7 valid cases (return in functions, nested functions, with/without values, in loops/if blocks)
+    * 5 invalid cases (return at module level, in if blocks, after functions, in class bodies)
+  - Clear error message: "'return' outside function"
+
 - **Phase 3.3: Semantic Validation - Break/Continue Validation** ✅ (254 tests passing)
   - Added `loop_depth` field to SemanticAnalyzer for tracking loop nesting
   - Added `BreakOutsideLoop` and `ContinueOutsideLoop` error variants

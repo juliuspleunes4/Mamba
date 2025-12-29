@@ -61,6 +61,10 @@ pub enum SemanticError {
     ContinueOutsideLoop {
         position: SourcePosition,
     },
+    /// return statement outside of function
+    ReturnOutsideFunction {
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -77,6 +81,7 @@ impl SemanticError {
             SemanticError::DivisionByZero { position } => position,
             SemanticError::BreakOutsideLoop { position } => position,
             SemanticError::ContinueOutsideLoop { position } => position,
+            SemanticError::ReturnOutsideFunction { position } => position,
         }
     }
 
@@ -110,6 +115,9 @@ impl SemanticError {
             }
             SemanticError::ContinueOutsideLoop { .. } => {
                 "'continue' not properly in loop".to_string()
+            }
+            SemanticError::ReturnOutsideFunction { .. } => {
+                "'return' outside function".to_string()
             }
         }
     }
@@ -841,6 +849,13 @@ impl SemanticAnalyzer {
 
             // Statements with expressions that need semantic analysis
             Statement::Return { value, position } => {
+                // Validate return is inside a function
+                if self.current_function.is_none() {
+                    self.add_error(SemanticError::ReturnOutsideFunction {
+                        position: position.clone(),
+                    });
+                }
+                
                 if let Some(expr) = value {
                     self.visit_expression(expr);
                     
@@ -4345,6 +4360,201 @@ def process():
         
         // Should not produce any errors
         assert!(result.is_ok());
+    }
+
+    // ======================
+    // Return Statement Validation Tests
+    // ======================
+
+    #[test]
+    fn test_return_in_simple_function() {
+        let code = r#"
+def foo():
+    return 42
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_none_in_function() {
+        let code = r#"
+def foo():
+    return None
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_no_value_in_function() {
+        let code = r#"
+def foo():
+    return
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_in_nested_function() {
+        let code = r#"
+def outer():
+    def inner():
+        return 10
+    return inner()
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_multiple_returns_in_function() {
+        let code = r#"
+def check(x):
+    if x > 0:
+        return "positive"
+    elif x < 0:
+        return "negative"
+    else:
+        return "zero"
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_in_loop_inside_function() {
+        let code = r#"
+def find(items, target):
+    for item in items:
+        if item == target:
+            return item
+    return None
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_in_if_inside_function() {
+        let code = r#"
+def get_value(flag):
+    if flag:
+        return 1
+    return 0
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_return_at_module_level() {
+        let code = "return 42";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+        assert_eq!(errors[0].message(), "'return' outside function");
+    }
+
+    #[test]
+    fn test_return_no_value_at_module_level() {
+        let code = "return";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_return_in_if_at_module_level() {
+        let code = r#"
+if True:
+    return 1
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_return_after_function_definition() {
+        let code = r#"
+def foo():
+    pass
+return 10
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ReturnOutsideFunction { .. }));
+    }
+
+    #[test]
+    fn test_return_in_class_body_not_method() {
+        let code = r#"
+class MyClass:
+    x = 10
+    return x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ReturnOutsideFunction error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::ReturnOutsideFunction { .. })));
     }
 }
 
