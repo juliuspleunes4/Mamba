@@ -53,6 +53,14 @@ pub enum SemanticError {
     DivisionByZero {
         position: SourcePosition,
     },
+    /// break statement outside of loop
+    BreakOutsideLoop {
+        position: SourcePosition,
+    },
+    /// continue statement outside of loop
+    ContinueOutsideLoop {
+        position: SourcePosition,
+    },
 }
 
 impl SemanticError {
@@ -67,6 +75,8 @@ impl SemanticError {
             SemanticError::GlobalAtModuleLevel { position, .. } => position,
             SemanticError::TypeMismatch { position, .. } => position,
             SemanticError::DivisionByZero { position } => position,
+            SemanticError::BreakOutsideLoop { position } => position,
+            SemanticError::ContinueOutsideLoop { position } => position,
         }
     }
 
@@ -95,6 +105,12 @@ impl SemanticError {
             SemanticError::DivisionByZero { .. } => {
                 "Division by zero".to_string()
             }
+            SemanticError::BreakOutsideLoop { .. } => {
+                "'break' outside loop".to_string()
+            }
+            SemanticError::ContinueOutsideLoop { .. } => {
+                "'continue' not properly in loop".to_string()
+            }
         }
     }
 }
@@ -109,6 +125,8 @@ pub struct SemanticAnalyzer {
     current_function: Option<String>,
     /// Expected return type annotation for current function
     expected_return_type: Option<Type>,
+    /// Loop nesting depth for break/continue validation
+    loop_depth: usize,
     /// Collected semantic errors
     errors: Vec<SemanticError>,
 }
@@ -147,6 +165,7 @@ impl SemanticAnalyzer {
             function_types: HashMap::new(),
             current_function: None,
             expected_return_type: None,
+            loop_depth: 0,
             errors: Vec::new(),
         }
     }
@@ -681,12 +700,18 @@ impl SemanticAnalyzer {
                 // Visit condition
                 self.visit_expression(condition);
                 
+                // Enter loop context
+                self.loop_depth += 1;
+                
                 // Visit body
                 for statement in body {
                     self.visit_statement(statement);
                 }
                 
-                // Visit else block if present
+                // Exit loop context
+                self.loop_depth -= 1;
+                
+                // Visit else block if present (not in loop context)
                 if let Some(else_body) = else_block {
                     for statement in else_body {
                         self.visit_statement(statement);
@@ -705,12 +730,18 @@ impl SemanticAnalyzer {
                 // Assign Unknown type to loop variable(s) since we don't track iterable types yet
                 self.assign_type_to_names(target, &Type::Unknown);
                 
+                // Enter loop context
+                self.loop_depth += 1;
+                
                 // Visit body
                 for statement in body {
                     self.visit_statement(statement);
                 }
                 
-                // Visit else block if present
+                // Exit loop context
+                self.loop_depth -= 1;
+                
+                // Visit else block if present (not in loop context)
                 if let Some(else_body) = else_block {
                     for statement in else_body {
                         self.visit_statement(statement);
@@ -855,10 +886,26 @@ impl SemanticAnalyzer {
                 }
             }
 
+            // Break statement - must be in a loop
+            Statement::Break(position) => {
+                if self.loop_depth == 0 {
+                    self.add_error(SemanticError::BreakOutsideLoop {
+                        position: position.clone(),
+                    });
+                }
+            }
+
+            // Continue statement - must be in a loop
+            Statement::Continue(position) => {
+                if self.loop_depth == 0 {
+                    self.add_error(SemanticError::ContinueOutsideLoop {
+                        position: position.clone(),
+                    });
+                }
+            }
+
             // Statements with no expressions to visit
-            Statement::Pass(_)
-            | Statement::Break(_)
-            | Statement::Continue(_) => {
+            Statement::Pass(_) => {
                 // No child expressions
             }
         }
@@ -4049,6 +4096,255 @@ def outer():
         // Function-scoped variables not accessible from module scope
         assert_eq!(analyzer.get_type("y"), None);
         assert_eq!(analyzer.get_type("z"), None);
+    }
+
+    // ======================
+    // Break/Continue Validation Tests
+    // ======================
+
+    #[test]
+    fn test_break_in_while_loop() {
+        let code = r#"
+while True:
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_continue_in_while_loop() {
+        let code = r#"
+while True:
+    continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_in_for_loop() {
+        let code = r#"
+for i in range(10):
+    if i == 5:
+        break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_continue_in_for_loop() {
+        let code = r#"
+for i in range(10):
+    if i % 2 == 0:
+        continue
+    print(i)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_in_nested_loops() {
+        let code = r#"
+for i in range(10):
+    for j in range(10):
+        if i == j:
+            break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_continue_in_nested_loops() {
+        let code = r#"
+for i in range(10):
+    for j in range(10):
+        if i == j:
+            continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_at_module_level() {
+        let code = "break";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+        assert_eq!(errors[0].message(), "'break' outside loop");
+    }
+
+    #[test]
+    fn test_continue_at_module_level() {
+        let code = "continue";
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ContinueOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ContinueOutsideLoop { .. }));
+        assert_eq!(errors[0].message(), "'continue' not properly in loop");
+    }
+
+    #[test]
+    fn test_break_in_function_not_in_loop() {
+        let code = r#"
+def foo():
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_continue_in_function_not_in_loop() {
+        let code = r#"
+def foo():
+    continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ContinueOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ContinueOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_break_in_if_not_in_loop() {
+        let code = r#"
+if True:
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_continue_in_while_else_block() {
+        let code = r#"
+while True:
+    pass
+else:
+    continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce ContinueOutsideLoop error (else block is not in loop)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::ContinueOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_break_in_for_else_block() {
+        let code = r#"
+for i in range(10):
+    pass
+else:
+    break
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce BreakOutsideLoop error (else block is not in loop)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::BreakOutsideLoop { .. }));
+    }
+
+    #[test]
+    fn test_multiple_break_continue_in_loop() {
+        let code = r#"
+for i in range(10):
+    if i == 5:
+        break
+    if i % 2 == 0:
+        continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_break_continue_in_function_with_loop() {
+        let code = r#"
+def process():
+    for i in range(10):
+        if i == 5:
+            break
+        if i % 2 == 0:
+            continue
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should not produce any errors
+        assert!(result.is_ok());
     }
 }
 

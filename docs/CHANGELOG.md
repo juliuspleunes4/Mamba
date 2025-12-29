@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Phase 3.3: Semantic Validation - Break/Continue Validation** ✅ (254 tests passing)
+  - Added `loop_depth` field to SemanticAnalyzer for tracking loop nesting
+  - Added `BreakOutsideLoop` and `ContinueOutsideLoop` error variants
+  - Validates that `break` statements only appear inside loops (while/for)
+  - Validates that `continue` statements only appear inside loops (while/for)
+  - Correctly handles loop else blocks (not considered part of loop)
+  - Supports nested loops with proper depth tracking
+  - Added 15 comprehensive tests:
+    * 6 valid cases (break/continue in while, for, nested loops)
+    * 7 invalid cases (break/continue at module level, in functions, in if blocks, in else blocks)
+    * 2 edge cases (multiple break/continue, function with loops)
+  - Clear error messages: "'break' outside loop", "'continue' not properly in loop"
+
 ### Changed
 - **Integrated type tracking into SymbolTable (Phase 3.2 Refactoring)** ✅ (239 tests passing)
   - Removed separate `TypeTable` structure that caused scope-awareness issues
@@ -20,7 +34,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Architecture improvement**: Single source of truth for both declarations and types
   - **No user-facing changes**: Internal refactoring only, all existing tests pass
 
-### Added
 - **Phase 3.2: Type Inference (Basic)** ✅ COMPLETE (239 tests passing)
   
   **Task 1: Type System Foundation & Literal Type Inference** ✅

@@ -271,7 +271,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.3 Semantic Validation
 
-- [ ] Validate break/continue usage (must be in loop)
+- [x] Validate break/continue usage (must be in loop)
 - [ ] Validate return usage (must be in function)
 - [ ] Check for unreachable code
 - [ ] Validate function call arguments
