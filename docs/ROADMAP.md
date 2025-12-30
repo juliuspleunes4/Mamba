@@ -289,9 +289,9 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
   - [x] Session 2: CFG Builder for Linear Code (7 tests - build_function_cfg, linear statements, return/raise)
   - [x] Session 3: CFG Builder for Conditionals (5 tests - if/elif/else with merge blocks, nested if, edge cases)
   - [x] Session 4: CFG Builder for Loops (6 tests - while loops with break/continue, while-else, nested loops)
-  - [x] Session 5: CFG Builder for Try/Except
-  - [ ] Session 6: CFG Reachability Analysis
-  - [ ] Session 7: Advanced CFG Analysis (optional - future work)
+  - [x] Session 5: CFG Builder for Try/Except (8 tests - exception handling, finally blocks, nested try, raise)
+  - [x] Session 6: CFG Reachability Analysis (12 tests - DFS reachability, unreachable code detection)
+  - [ ] Session 7: Advanced CFG Analysis (optional - dominance, liveness, future work)
   - [ ] Session 8: Testing & Integration
 
 ### 3.5 Deferred Semantic Validation

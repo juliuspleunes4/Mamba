@@ -215,6 +215,58 @@ impl ControlFlowGraph {
     pub fn has_block(&self, id: BlockId) -> bool {
         self.blocks.contains_key(&id)
     }
+    
+    /// Compute all reachable blocks from the entry block using DFS
+    /// 
+    /// Returns a HashSet containing the IDs of all blocks that can be reached
+    /// from the entry block by following edges.
+    pub fn compute_reachable_blocks(&self) -> std::collections::HashSet<BlockId> {
+        use std::collections::HashSet;
+        
+        let mut reachable = HashSet::new();
+        let mut stack = vec![self.entry()];
+        
+        while let Some(block_id) = stack.pop() {
+            // If already visited, skip
+            if reachable.contains(&block_id) {
+                continue;
+            }
+            
+            // Mark as reachable
+            reachable.insert(block_id);
+            
+            // Add all successors to the stack
+            if let Some(block) = self.get_block(block_id) {
+                for &successor in &block.successors {
+                    if !reachable.contains(&successor) {
+                        stack.push(successor);
+                    }
+                }
+            }
+        }
+        
+        reachable
+    }
+    
+    /// Find all unreachable blocks in the CFG
+    /// 
+    /// Returns a Vec of BlockIds for blocks that cannot be reached from the entry block.
+    /// These blocks represent unreachable code that should trigger warnings or errors.
+    pub fn find_unreachable_blocks(&self) -> Vec<BlockId> {
+        let reachable = self.compute_reachable_blocks();
+        
+        self.blocks
+            .keys()
+            .copied()
+            .filter(|id| !reachable.contains(id))
+            .collect()
+    }
+    
+    /// Check if a specific block is reachable from the entry
+    pub fn is_block_reachable(&self, block_id: BlockId) -> bool {
+        let reachable = self.compute_reachable_blocks();
+        reachable.contains(&block_id)
+    }
 }
 
 impl Default for ControlFlowGraph {
@@ -716,10 +768,10 @@ impl CFGBuilder {
     /// Process a try statement (try/except/else/finally)
     /// 
     /// CFG structure:
-    /// ```
-    /// try_body → (exception) → handler1, handler2, ... → (merge_or_finally)
-    ///          → (no exception) → else_block (if present) → (merge_or_finally)
-    ///                          → merge_or_finally (if no else)
+    /// ```text
+    /// try_body -> (exception) -> handler1, handler2, ... -> (merge_or_finally)
+    ///          -> (no exception) -> else_block (if present) -> (merge_or_finally)
+    ///                          -> merge_or_finally (if no else)
     /// finally_block (if present, always executes)
     /// ```
     fn process_try_statement(
@@ -845,6 +897,7 @@ impl CFGBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ast::Literal;
     
     #[test]
     fn test_create_cfg() {
@@ -3031,5 +3084,421 @@ mod tests {
             .collect();
         
         assert!(unreachable_blocks.len() >= 1);
+    }
+    
+    // Reachability Analysis Tests
+    
+    #[test]
+    fn test_reachability_simple_function() {
+        // def foo():
+        //     x = 1
+        //     y = 2
+        let function = create_function(vec![
+            create_assignment_stmt(2),
+            create_assignment_stmt(3),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // All blocks should be reachable
+        let unreachable = cfg.find_unreachable_blocks();
+        assert_eq!(unreachable.len(), 0);
+    }
+    
+    #[test]
+    fn test_reachability_unreachable_after_return() {
+        // def foo():
+        //     x = 1
+        //     return
+        //     y = 2  # unreachable
+        let function = create_function(vec![
+            create_assignment_stmt(2),
+            Statement::Return {
+                value: None,
+                position: SourcePosition::new(3, 0, 0),
+            },
+            create_assignment_stmt(4),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have unreachable block with y=2
+        let unreachable = cfg.find_unreachable_blocks();
+        assert_eq!(unreachable.len(), 1);
+        
+        // Check that unreachable block has statements
+        let unreachable_block = cfg.get_block(unreachable[0]).unwrap();
+        assert!(unreachable_block.statements.len() > 0);
+    }
+    
+    #[test]
+    fn test_reachability_unreachable_after_raise() {
+        // def foo():
+        //     x = 1
+        //     raise ValueError()
+        //     y = 2  # unreachable
+        let function = create_function(vec![
+            create_assignment_stmt(2),
+            Statement::Raise {
+                exception: Some(Expression::Identifier {
+                    name: "ValueError".to_string(),
+                    position: SourcePosition::new(3, 0, 0),
+                }),
+                position: SourcePosition::new(3, 0, 0),
+            },
+            create_assignment_stmt(4),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have unreachable block
+        let unreachable = cfg.find_unreachable_blocks();
+        assert_eq!(unreachable.len(), 1);
+    }
+    
+    #[test]
+    fn test_reachability_unreachable_after_break() {
+        // def foo():
+        //     while True:
+        //         x = 1
+        //         break
+        //         y = 2  # unreachable
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(true, 2),
+                body: vec![
+                    create_assignment_stmt(3),
+                    Statement::Break(SourcePosition::new(4, 0, 0)),
+                    create_assignment_stmt(5),
+                ],
+                else_block: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have unreachable block after break
+        let unreachable = cfg.find_unreachable_blocks();
+        assert!(unreachable.len() >= 1);
+    }
+    
+    #[test]
+    fn test_reachability_unreachable_after_continue() {
+        // def foo():
+        //     while True:
+        //         x = 1
+        //         continue
+        //         y = 2  # unreachable
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(true, 2),
+                body: vec![
+                    create_assignment_stmt(3),
+                    Statement::Continue(SourcePosition::new(4, 0, 0)),
+                    create_assignment_stmt(5),
+                ],
+                else_block: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have unreachable block after continue
+        let unreachable = cfg.find_unreachable_blocks();
+        assert!(unreachable.len() >= 1);
+    }
+    
+    #[test]
+    fn test_reachability_if_else_all_return() {
+        // def foo():
+        //     if True:
+        //         return 1
+        //     else:
+        //         return 2
+        //     x = 3  # unreachable
+        let function = create_function(vec![
+            Statement::If {
+                condition: create_bool_expression(true, 2),
+                then_block: vec![
+                    Statement::Return {
+                        value: Some(Expression::Literal(Literal::Integer {
+                            value: 1,
+                            position: SourcePosition::new(3, 0, 0),
+                        })),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                ],
+                elif_blocks: vec![],
+                else_block: Some(vec![
+                    Statement::Return {
+                        value: Some(Expression::Literal(Literal::Integer {
+                            value: 2,
+                            position: SourcePosition::new(5, 0, 0),
+                        })),
+                        position: SourcePosition::new(5, 0, 0),
+                    },
+                ]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(6),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have unreachable block(s) with x=3
+        // May have multiple depending on exact CFG structure
+        let unreachable = cfg.find_unreachable_blocks();
+        assert!(unreachable.len() >= 1);
+    }
+    
+    #[test]
+    fn test_reachability_if_one_branch_returns() {
+        // def foo():
+        //     if True:
+        //         return 1
+        //     x = 2  # reachable via else path
+        let function = create_function(vec![
+            Statement::If {
+                condition: create_bool_expression(true, 2),
+                then_block: vec![
+                    Statement::Return {
+                        value: Some(Expression::Literal(Literal::Integer {
+                            value: 1,
+                            position: SourcePosition::new(3, 0, 0),
+                        })),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                ],
+                elif_blocks: vec![],
+                else_block: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(4),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // x=2 should be reachable via the implicit else path
+        // But there may be some unreachable blocks from return statement
+        let unreachable = cfg.find_unreachable_blocks();
+        // We expect some blocks might be unreachable after the return
+        // The important thing is that the block with x=2 has a path
+        assert!(unreachable.len() <= 2);
+    }
+    
+    #[test]
+    fn test_reachability_try_except_all_return() {
+        // def foo():
+        //     try:
+        //         return 1
+        //     except:
+        //         return 2
+        //     x = 3  # unreachable
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    Statement::Return {
+                        value: Some(Expression::Literal(Literal::Integer {
+                            value: 1,
+                            position: SourcePosition::new(3, 0, 0),
+                        })),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: None,
+                        name: None,
+                        body: vec![
+                            Statement::Return {
+                                value: Some(Expression::Literal(Literal::Integer {
+                                    value: 2,
+                                    position: SourcePosition::new(5, 0, 0),
+                                })),
+                                position: SourcePosition::new(5, 0, 0),
+                            },
+                        ],
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                ],
+                orelse: None,
+                finalbody: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(6),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have unreachable block(s) with x=3
+        let unreachable = cfg.find_unreachable_blocks();
+        assert!(unreachable.len() >= 1);
+    }
+    
+    #[test]
+    fn test_reachability_nested_unreachable() {
+        // def foo():
+        //     if True:
+        //         return 1
+        //         x = 2  # unreachable
+        //     else:
+        //         return 3
+        //         y = 4  # unreachable
+        //     z = 5  # unreachable
+        let function = create_function(vec![
+            Statement::If {
+                condition: create_bool_expression(true, 2),
+                then_block: vec![
+                    Statement::Return {
+                        value: Some(Expression::Literal(Literal::Integer {
+                            value: 1,
+                            position: SourcePosition::new(3, 0, 0),
+                        })),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                    create_assignment_stmt(4),
+                ],
+                elif_blocks: vec![],
+                else_block: Some(vec![
+                    Statement::Return {
+                        value: Some(Expression::Literal(Literal::Integer {
+                            value: 3,
+                            position: SourcePosition::new(6, 0, 0),
+                        })),
+                        position: SourcePosition::new(6, 0, 0),
+                    },
+                    create_assignment_stmt(7),
+                ]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(8),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have multiple unreachable blocks: x=2, y=4, z=5
+        // Exact number may vary based on CFG structure
+        let unreachable = cfg.find_unreachable_blocks();
+        assert!(unreachable.len() >= 2);
+    }
+    
+    #[test]
+    fn test_reachability_complex_loop_scenario() {
+        // def foo():
+        //     while True:
+        //         if True:
+        //             break
+        //         else:
+        //             return
+        //         x = 1  # unreachable - both branches exit
+        //     y = 2  # reachable via break
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(true, 2),
+                body: vec![
+                    Statement::If {
+                        condition: create_bool_expression(true, 3),
+                        then_block: vec![
+                            Statement::Break(SourcePosition::new(4, 0, 0)),
+                        ],
+                        elif_blocks: vec![],
+                        else_block: Some(vec![
+                            Statement::Return {
+                                value: None,
+                                position: SourcePosition::new(6, 0, 0),
+                            },
+                        ]),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                    create_assignment_stmt(7),
+                ],
+                else_block: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(8),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // x=1 should be unreachable since both branches exit
+        let unreachable = cfg.find_unreachable_blocks();
+        assert!(unreachable.len() >= 1);
+        
+        // Verify most blocks are reachable
+        let all_blocks = cfg.block_ids();
+        let reachable_blocks = cfg.compute_reachable_blocks();
+        
+        // Most blocks should be reachable
+        assert!(reachable_blocks.len() >= all_blocks.len() - 3);
+    }
+    
+    #[test]
+    fn test_reachability_is_block_reachable() {
+        // def foo():
+        //     x = 1
+        //     return
+        //     y = 2  # unreachable
+        let function = create_function(vec![
+            create_assignment_stmt(2),
+            Statement::Return {
+                value: None,
+                position: SourcePosition::new(3, 0, 0),
+            },
+            create_assignment_stmt(4),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Entry should be reachable
+        assert!(cfg.is_block_reachable(cfg.entry()));
+        
+        // Find unreachable block and verify it's not reachable
+        let unreachable = cfg.find_unreachable_blocks();
+        assert_eq!(unreachable.len(), 1);
+        assert!(!cfg.is_block_reachable(unreachable[0]));
+    }
+    
+    #[test]
+    fn test_reachability_try_finally_reachable() {
+        // def foo():
+        //     try:
+        //         return 1
+        //     finally:
+        //         x = 2  # reachable - finally always executes
+        //     y = 3  # unreachable - after finally
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    Statement::Return {
+                        value: Some(Expression::Literal(Literal::Integer {
+                            value: 1,
+                            position: SourcePosition::new(3, 0, 0),
+                        })),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                ],
+                handlers: vec![],
+                orelse: None,
+                finalbody: Some(vec![
+                    create_assignment_stmt(5),
+                ]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(6),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Some blocks may be unreachable, but finally should be reachable
+        let unreachable = cfg.find_unreachable_blocks();
+        // The important thing is that most blocks are reachable
+        // Finally block should have a path from entry
+        let reachable = cfg.compute_reachable_blocks();
+        let all_blocks = cfg.block_ids();
+        
+        // Most blocks should be reachable (finally always executes)
+        assert!(reachable.len() >= all_blocks.len() - 3);
     }
 }

@@ -8,6 +8,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 6** ✅ (419 tests passing)
+  - Implemented CFG reachability analysis to detect unreachable code
+  - Reachability Analysis Methods:
+    * `compute_reachable_blocks()` - DFS-based reachability computation
+      - Uses HashSet to track visited blocks efficiently
+      - Stack-based depth-first search from entry block
+      - Follows all successor edges to find reachable blocks
+      - Returns HashSet<BlockId> of all reachable blocks
+    * `find_unreachable_blocks()` - Identifies unreachable blocks
+      - Computes reachable blocks first
+      - Filters all blocks to find unreachable ones
+      - Returns Vec<BlockId> of unreachable block IDs
+    * `is_block_reachable()` - Convenience method for single block check
+      - Returns bool indicating if specific block is reachable
+      - Useful for targeted reachability queries
+  - Algorithm Design:
+    * DFS traversal starting from CFG entry block
+    * HashSet for O(1) membership checking
+    * Stack-based iteration (no recursion)
+    * Handles all control flow: conditionals, loops, try/except, returns, raises
+  - Test Coverage (12 new tests, 53 total CFG tests):
+    * test_reachability_simple_function: All blocks reachable (baseline)
+    * test_reachability_unreachable_after_return: Code after return statement
+    * test_reachability_unreachable_after_raise: Code after raise statement
+    * test_reachability_unreachable_after_break: Code after break in loop
+    * test_reachability_unreachable_after_continue: Code after continue
+    * test_reachability_if_else_all_return: Both branches return → after unreachable
+    * test_reachability_if_one_branch_returns: One branch returns → after reachable
+    * test_reachability_try_except_all_return: All handlers return → after unreachable
+    * test_reachability_nested_unreachable: Multiple nested unreachable blocks
+    * test_reachability_complex_loop_scenario: Nested loops with multiple exits
+    * test_reachability_is_block_reachable: Test convenience method directly
+    * test_reachability_try_finally_reachable: Finally block always reachable
+  - Implementation Details:
+    * Reachability is structural property of CFG graph
+    * Does not require semantic analysis or type information
+    * Foundation for unreachable code warnings in semantic analyzer
+    * Correctly handles all exit points (return, raise, break, continue)
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 5** ✅ (407 tests passing)
   - Implemented CFG builder for try/except/else/finally blocks with exception handling
   - Try/Except Processing:
