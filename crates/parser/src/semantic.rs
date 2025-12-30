@@ -667,6 +667,9 @@ impl SemanticAnalyzer {
             // If/else where all branches exit
             Statement::If { .. } => self.check_if_all_branches_exit(statement),
             
+            // Try/except where all paths exit
+            Statement::Try { .. } => self.check_try_all_branches_exit(statement),
+            
             // All other statements don't always exit
             _ => false,
         }
@@ -709,6 +712,52 @@ impl SemanticAnalyzer {
             }
             
             // All branches exit!
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if a try/except/else/finally statement has all branches exiting
+    /// Returns true if:
+    /// 1. Finally block exits (always executes last), OR
+    /// 2. Try body exits AND all except handlers exit AND (no else OR else exits)
+    fn check_try_all_branches_exit(&self, statement: &Statement) -> bool {
+        if let Statement::Try {
+            body,
+            handlers,
+            orelse,
+            finalbody,
+            ..
+        } = statement
+        {
+            // If finally block exists and exits, the entire try statement exits
+            if let Some(finally) = finalbody {
+                if self.block_contains_exit(finally) {
+                    return true;
+                }
+            }
+            
+            // Otherwise, check if try body exits
+            if !self.block_contains_exit(body) {
+                return false;
+            }
+            
+            // Check that all except handlers exit
+            for handler in handlers {
+                if !self.block_contains_exit(&handler.body) {
+                    return false;
+                }
+            }
+            
+            // If there's an else block, it must also exit
+            if let Some(else_body) = orelse {
+                if !self.block_contains_exit(else_body) {
+                    return false;
+                }
+            }
+            
+            // All paths exit!
             true
         } else {
             false
@@ -1141,6 +1190,60 @@ impl SemanticAnalyzer {
 
                 // Exit class scope
                 self.symbol_table.exit_scope();
+            }
+
+            // Try statement - handle try/except/else/finally blocks
+            Statement::Try { body, handlers, orelse, finalbody, .. } => {
+                // Visit try body
+                self.visit_statement_list(body);
+                
+                // Visit each except handler
+                for handler in handlers {
+                    // If handler has an 'as' clause, create a new scope for the exception variable
+                    let has_exception_var = handler.name.is_some();
+                    
+                    if has_exception_var {
+                        self.symbol_table.enter_scope(ScopeKind::Block);
+                        
+                        // Declare the exception variable in the handler scope
+                        if let Some(ref exc_name) = handler.name {
+                            if let Err(existing) = self.symbol_table.declare(
+                                exc_name.clone(),
+                                SymbolKind::Variable,
+                                handler.position.clone()
+                            ) {
+                                self.add_error(SemanticError::Redeclaration {
+                                    name: exc_name.clone(),
+                                    first_position: existing.position.clone(),
+                                    second_position: handler.position.clone(),
+                                });
+                            }
+                        }
+                    }
+                    
+                    // Visit exception type expression if present
+                    if let Some(ref exc_type) = handler.exception_type {
+                        self.visit_expression(exc_type);
+                    }
+                    
+                    // Visit handler body
+                    self.visit_statement_list(&handler.body);
+                    
+                    // Exit exception variable scope if we created one
+                    if has_exception_var {
+                        self.symbol_table.exit_scope();
+                    }
+                }
+                
+                // Visit else block if present
+                if let Some(else_stmts) = orelse {
+                    self.visit_statement_list(else_stmts);
+                }
+                
+                // Visit finally block if present
+                if let Some(finally_stmts) = finalbody {
+                    self.visit_statement_list(finally_stmts);
+                }
             }
 
             // If - no new scope in Python, just visit all parts
@@ -6394,6 +6497,517 @@ y = 2
         let analyzer = SemanticAnalyzer::new();
         let result = analyzer.analyze(&module);
         assert!(result.is_err());
+    }
+
+    // ============================================================
+    // Try/Except Semantic Analysis Tests
+    // ============================================================
+
+    #[test]
+    fn test_try_except_basic_analysis() {
+        let code = r#"
+try:
+    x = 1
+except:
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Basic try/except should analyze successfully");
+    }
+
+    #[test]
+    fn test_try_except_exception_variable_scoping() {
+        let code = r#"
+class ValueError:
+    pass
+
+try:
+    x = 1
+except ValueError as e:
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Exception variable should be declared in handler scope");
+    }
+
+    #[test]
+    fn test_try_except_exception_variable_not_visible_outside() {
+        let code = r#"
+class ValueError:
+    pass
+
+try:
+    x = 1
+except ValueError as e:
+    pass
+print(e)
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Exception variable should not be visible outside handler");
+    }
+
+    #[test]
+    fn test_try_except_variable_from_outer_scope() {
+        let code = r#"
+x = 10
+try:
+    y = x + 1
+except:
+    z = x + 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Should access variables from outer scope");
+    }
+
+    #[test]
+    fn test_try_except_else_finally() {
+        let code = r#"
+class ValueError:
+    pass
+
+try:
+    x = 1
+except ValueError:
+    y = 2
+else:
+    z = 3
+finally:
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Full try/except/else/finally should analyze");
+    }
+
+    #[test]
+    fn test_nested_try_except() {
+        let code = r#"
+class ValueError:
+    pass
+
+class TypeError:
+    pass
+
+try:
+    try:
+        x = 1
+    except ValueError as e1:
+        pass
+except TypeError as e2:
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Nested try/except with different exception variables");
+    }
+
+    #[test]
+    fn test_try_except_undefined_variable_in_try_body() {
+        let code = r#"
+try:
+    x = undefined_var
+except:
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Should detect undefined variable in try body");
+    }
+
+    #[test]
+    fn test_try_except_undefined_variable_in_handler() {
+        let code = r#"
+class ValueError:
+    pass
+
+try:
+    x = 1
+except ValueError:
+    y = undefined_var
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_err(), "Should detect undefined variable in except handler");
+    }
+
+    #[test]
+    fn test_try_except_multiple_handlers_with_variables() {
+        let code = r#"
+class ValueError:
+    pass
+
+class TypeError:
+    pass
+
+try:
+    x = 1
+except ValueError as e1:
+    pass
+except TypeError as e2:
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Multiple handlers with different exception variables");
+    }
+
+    #[test]
+    fn test_try_finally_without_except() {
+        let code = r#"
+try:
+    x = 1
+finally:
+    pass
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "try/finally without except should analyze");
+    }
+
+    #[test]
+    fn test_try_except_variable_defined_in_try_visible_in_except() {
+        let code = r#"
+try:
+    x = 1
+except:
+    y = x
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Variable defined in try should be visible in except");
+    }
+
+    #[test]
+    fn test_try_except_variable_defined_in_except_visible_in_finally() {
+        let code = r#"
+class ValueError:
+    pass
+
+try:
+    x = 1
+except ValueError:
+    y = 2
+finally:
+    z = y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(result.is_ok(), "Variable from except should be visible in finally");
+    }
+
+    // ============================================================
+    // Try/Except Unreachable Code Detection Tests
+    // ============================================================
+
+    #[test]
+    fn test_unreachable_after_try_except_all_return() {
+        let code = r#"
+def foo():
+    try:
+        return 1
+    except:
+        return 2
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code after try/except where all paths return is unreachable");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_after_try_except_try_no_return() {
+        let code = r#"
+def foo():
+    try:
+        x = 1
+    except:
+        return 2
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_ok(), "Code after try/except is reachable when try doesn't return");
+    }
+
+    #[test]
+    fn test_reachable_after_try_except_except_no_return() {
+        let code = r#"
+def foo():
+    try:
+        return 1
+    except:
+        x = 2
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_ok(), "Code after try/except is reachable when except doesn't return");
+    }
+
+    #[test]
+    fn test_unreachable_after_try_multiple_except_all_return() {
+        let code = r#"
+class ValueError:
+    pass
+
+class TypeError:
+    pass
+
+def foo():
+    try:
+        return 1
+    except ValueError:
+        return 2
+    except TypeError:
+        return 3
+    except:
+        return 4
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code after try with multiple except handlers all returning is unreachable");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_after_try_multiple_except_one_no_return() {
+        let code = r#"
+class ValueError:
+    pass
+
+class TypeError:
+    pass
+
+def foo():
+    try:
+        return 1
+    except ValueError:
+        return 2
+    except TypeError:
+        x = 3
+    except:
+        return 4
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_ok(), "Code is reachable when one except handler doesn't return");
+    }
+
+    #[test]
+    fn test_unreachable_after_try_except_else_all_return() {
+        let code = r#"
+class ValueError:
+    pass
+
+def foo():
+    try:
+        return 1
+    except ValueError:
+        return 2
+    else:
+        return 3
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code after try/except/else where all paths return is unreachable");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_after_try_except_else_no_return() {
+        let code = r#"
+class ValueError:
+    pass
+
+def foo():
+    try:
+        return 1
+    except ValueError:
+        return 2
+    else:
+        x = 3
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_ok(), "Code is reachable when else block doesn't return");
+    }
+
+    #[test]
+    fn test_unreachable_after_try_finally_with_finally_return() {
+        let code = r#"
+def foo():
+    try:
+        x = 1
+    finally:
+        return 2
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code after try/finally with finally return is unreachable");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_try_except_finally_no_finally_return() {
+        let code = r#"
+class ValueError:
+    pass
+
+def foo():
+    try:
+        return 1
+    except ValueError:
+        return 2
+    finally:
+        x = 3
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code is unreachable when try and all except return, even if finally doesn't");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_try_except_finally_finally_returns() {
+        let code = r#"
+class ValueError:
+    pass
+
+def foo():
+    try:
+        x = 1
+    except ValueError:
+        y = 2
+    finally:
+        return 3
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code after finally with return is always unreachable");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_nested_try_except() {
+        let code = r#"
+class ValueError:
+    pass
+
+class TypeError:
+    pass
+
+def foo():
+    try:
+        try:
+            return 1
+        except ValueError:
+            return 2
+    except TypeError:
+        return 3
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code after nested try/except with all paths returning is unreachable");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_try_except_with_break_not_return() {
+        let code = r#"
+def foo():
+    while True:
+        try:
+            break
+        except:
+            break
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_ok(), "Code after while loop is reachable even if try/except break");
+    }
+
+    #[test]
+    fn test_try_except_with_raise() {
+        let code = r#"
+def foo():
+    try:
+        raise
+    except:
+        raise
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        assert!(result.is_err(), "Code after try/except where all paths raise is unreachable");
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
     }
 }
 

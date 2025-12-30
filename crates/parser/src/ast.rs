@@ -147,6 +147,26 @@ pub enum Statement {
         metaclass: Option<Expression>,
         position: SourcePosition,
     },
+    /// Try statement (try/except/else/finally)
+    Try {
+        body: Vec<Statement>,
+        handlers: Vec<ExceptHandler>,
+        orelse: Option<Vec<Statement>>,
+        finalbody: Option<Vec<Statement>>,
+        position: SourcePosition,
+    },
+}
+
+/// Exception handler for try/except statements
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExceptHandler {
+    /// Exception type to catch (None means bare except that catches all)
+    pub exception_type: Option<Expression>,
+    /// Variable name to bind exception to (from 'as' clause)
+    pub name: Option<String>,
+    /// Body of the except clause
+    pub body: Vec<Statement>,
+    pub position: SourcePosition,
 }
 
 /// Represents any expression in Mamba
@@ -454,6 +474,7 @@ impl Statement {
             Statement::For { position, .. } => position,
             Statement::FunctionDef { position, .. } => position,
             Statement::ClassDef { position, .. } => position,
+            Statement::Try { position, .. } => position,
         }
     }
 }

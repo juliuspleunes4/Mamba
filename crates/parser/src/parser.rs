@@ -98,6 +98,7 @@ impl Parser {
             Some(TokenKind::If) => self.parse_if(),
             Some(TokenKind::While) => self.parse_while(),
             Some(TokenKind::For) => self.parse_for(),
+            Some(TokenKind::Try) => self.parse_try(),
             Some(TokenKind::At) => {
                 // Parse decorators followed by function or class definition
                 let decorators = self.parse_decorators()?;
@@ -880,6 +881,123 @@ impl Parser {
         } else {
             Ok(first)
         }
+    }
+
+    /// Parse try statement (try/except/else/finally)
+    fn parse_try(&mut self) -> ParseResult<Statement> {
+        let pos = self.current_position();
+        self.advance(); // consume 'try'
+        
+        // Expect colon
+        if !self.match_token(&TokenKind::Colon) {
+            return Err(self.expected_after("':'", "'try'"));
+        }
+        
+        // Parse try body
+        let body = self.parse_block()?;
+        
+        // Parse except handlers (at least one required, or finally must be present)
+        let mut handlers = Vec::new();
+        while self.check(&TokenKind::Except) {
+            handlers.push(self.parse_except_handler()?);
+        }
+        
+        // Parse optional else block (only valid if there's at least one except)
+        let orelse = if self.match_token(&TokenKind::Else) {
+            if handlers.is_empty() {
+                return Err(MambaError::ParseError(
+                    format!("'else' clause requires at least one 'except' clause at {}:{}", 
+                        self.current_position().line, 
+                        self.current_position().column)
+                ));
+            }
+            
+            if !self.match_token(&TokenKind::Colon) {
+                return Err(self.expected_after("':'", "'else'"));
+            }
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+        
+        // Parse optional finally block
+        let finalbody = if self.match_token(&TokenKind::Finally) {
+            if !self.match_token(&TokenKind::Colon) {
+                return Err(self.expected_after("':'", "'finally'"));
+            }
+            Some(self.parse_block()?)
+        } else {
+            None
+        };
+        
+        // Validate: must have at least one except or finally
+        if handlers.is_empty() && finalbody.is_none() {
+            return Err(MambaError::ParseError(
+                format!("try statement must have at least one 'except' or 'finally' clause at {}:{}", 
+                    pos.line, 
+                    pos.column)
+            ));
+        }
+        
+        Ok(Statement::Try {
+            body,
+            handlers,
+            orelse,
+            finalbody,
+            position: pos,
+        })
+    }
+
+    /// Parse except handler (except [type [as name]]:)
+    fn parse_except_handler(&mut self) -> ParseResult<ExceptHandler> {
+        let pos = self.current_position();
+        self.advance(); // consume 'except'
+        
+        // Parse optional exception type and name binding
+        let (exception_type, name) = if self.check(&TokenKind::Colon) {
+            // Bare except (catches all exceptions)
+            (None, None)
+        } else {
+            // Parse exception type expression
+            let exc_type = self.parse_expression()?;
+            
+            // Parse optional 'as' clause
+            let exc_name = if self.match_token(&TokenKind::As) {
+                match self.current_kind() {
+                    Some(TokenKind::Identifier(n)) => {
+                        let name = n.clone();
+                        self.advance();
+                        Some(name)
+                    }
+                    _ => {
+                        return Err(MambaError::ParseError(
+                            format!("Expected identifier after 'as' in except clause at {}:{}", 
+                                self.current_position().line, 
+                                self.current_position().column)
+                        ));
+                    }
+                }
+            } else {
+                None
+            };
+            
+            (Some(exc_type), exc_name)
+        };
+        
+        // Expect colon
+        if !self.match_token(&TokenKind::Colon) {
+            return Err(self.expected_after("':'", "except clause"));
+        }
+        
+        // Parse handler body
+        let body = self.parse_block()?;
+        
+        Ok(ExceptHandler {
+            exception_type,
+            name,
+            body,
+            position: pos,
+        })
     }
 
     /// Parse decorators (@decorator followed by newline)

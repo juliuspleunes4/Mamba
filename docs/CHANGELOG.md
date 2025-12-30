@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 2: Try/Except Statement Support** ✅
+  - Implemented full try/except/else/finally syntax support
+  - AST Definition:
+    * Added `Statement::Try` variant with body, handlers, orelse, finalbody fields
+    * Added `ExceptHandler` struct with exception_type, name, body, position
+  - Parser Implementation:
+    * Added `parse_try()` method to parse try/except/else/finally statements
+    * Added `parse_except_handler()` method to parse exception handlers
+    * Supports bare `except:` and typed `except ExceptionType:` handlers
+    * Supports exception variable binding with `as` clause
+    * Validates `else` requires at least one except handler
+    * Validates at least one except or finally required
+  - Semantic Analysis:
+    * Implemented `visit_try_statement()` with proper exception variable scoping
+    * Exception variables (from `as` clause) scoped to handler block only
+    * Detects undefined variables in all try/except/else/finally blocks
+    * Handles redeclaration errors for exception variables
+  - Unreachable Code Detection:
+    * Extended `statement_always_exits()` to handle Try statements
+    * Added `check_try_all_branches_exit()` for control flow analysis
+    * Detects unreachable code when:
+      - Try body exits AND all except handlers exit AND (no else OR else exits)
+      - Finally block exits (always executes last)
+    * Works with return, break, continue, raise statements
+  - Test Coverage: 38 comprehensive tests
+    * 14 parser tests (syntax validation, nesting, error cases)
+    * 11 semantic tests (scoping, variable visibility, undefined variables)
+    * 13 unreachable code tests (all exit combinations, finally behavior)
+
 - **Phase 3.4: Advanced Control Flow Analysis - Unreachable Code Detection Phase 2** ✅ (324 tests passing)
   - Extended unreachable code detection to handle branch analysis
   - Detects unreachable code after if/else blocks where all branches exit
