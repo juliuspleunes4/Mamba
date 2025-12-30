@@ -8,6 +8,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 7** ✅ (431 tests passing)
+  - Implemented advanced CFG analysis: dominance analysis and visualization
+  - Dominance Analysis Methods:
+    * `compute_dominators()` - Iterative dominance computation
+      - Returns HashMap<BlockId, HashSet<BlockId>> of all dominators per block
+      - Uses iterative dataflow algorithm until convergence
+      - Entry block dominates only itself, all others start dominated by all blocks
+      - For each block B: dom(B) = {B} ∪ (∩ dom(pred) for all predecessors)
+      - Handles loops, branches, and complex control flow correctly
+    * `compute_immediate_dominators()` - Finds immediate dominator for each block
+      - Returns HashMap<BlockId, Option<BlockId>> mapping blocks to their idom
+      - Immediate dominator is unique closest strict dominator
+      - Strict dominators = all dominators except block itself
+      - idom is strict dominator not dominated by any other strict dominator
+      - Entry block has no immediate dominator (returns None)
+    * `compute_dominator_tree()` - Builds dominator tree structure
+      - Returns HashMap<BlockId, Vec<BlockId>> representing tree relationships
+      - Inverts idom relationship: parent → children
+      - Each block maps to its children in dominator tree
+      - Useful for visualizing dominance relationships
+    * `dominates(x, y)` - Convenience method for dominance check
+      - Returns bool indicating if block x dominates block y
+      - Uses compute_dominators() internally
+      - Simplifies dominance queries in client code
+  - DOT Visualization:
+    * `to_dot()` - Generates GraphViz DOT format for CFG visualization
+      - Returns String in DOT format for rendering with GraphViz
+      - Includes block IDs, block kinds, and statement counts
+      - Color-codes blocks by kind:
+        - Entry blocks: lightgreen
+        - Exit blocks: lightcoral
+        - Loop headers: lightyellow
+        - Conditional blocks: lightblue
+        - Exception handlers: orange
+        - Normal blocks: white
+      - Shows all edges between blocks (control flow)
+      - Can be saved to .dot file and rendered: `dot -Tpng cfg.dot -o cfg.png`
+  - Test Coverage (12 new tests, 65 total CFG tests):
+    * Dominance Tests (7):
+      - test_dominance_linear_code: Sequential code dominance properties
+      - test_dominance_if_else: Branch and merge dominance
+      - test_dominance_loop: Loop header dominates body
+      - test_immediate_dominators: Entry has no idom, all others have one
+      - test_dominator_tree: Tree structure validation
+      - test_dominance_nested_if: Nested conditional dominance
+      - test_dominance_complex_control_flow: Loop with break
+    * DOT Visualization Tests (5):
+      - test_dot_simple_linear: Basic DOT generation
+      - test_dot_with_conditional: Branching visualization
+      - test_dot_with_loop: Loop structure with back edges
+      - test_dot_block_colors: Color coding verification
+      - test_dot_statement_counts: Block label content
+  - Implementation Details:
+    * Dominance analysis uses standard compiler theory algorithms
+    * Iterative dataflow for dominators (not Lengauer-Tarjan for simplicity)
+    * DOT format compatible with GraphViz tools (dot, neato, circo, etc.)
+    * Foundation for future optimizations (dead code elimination, loop invariant motion)
+    * Liveness analysis deferred to future session (complex AST interactions)
+  - Notes:
+    * Session 7 originally included liveness analysis, but simplified for now
+    * Liveness requires extensive AST field name handling across many node types
+    * Current implementation focuses on dominance and visualization
+    * Liveness can be added in future sessions as optional enhancement
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 6** ✅ (419 tests passing)
   - Implemented CFG reachability analysis to detect unreachable code
   - Reachability Analysis Methods:

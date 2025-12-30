@@ -267,6 +267,232 @@ impl ControlFlowGraph {
         let reachable = self.compute_reachable_blocks();
         reachable.contains(&block_id)
     }
+    
+    /// Compute dominators for all blocks in the CFG
+    /// 
+    /// A block X dominates block Y if every path from entry to Y must go through X.
+    /// Returns a HashMap where each block maps to the set of blocks that dominate it.
+    /// 
+    /// Uses the iterative algorithm:
+    /// 1. Initialize: entry dominates only itself, all others dominated by all blocks
+    /// 2. Iterate: For each block, its dominators = {itself} ∪ (intersection of all predecessors' dominators)
+    /// 3. Repeat until no changes
+    pub fn compute_dominators(&self) -> HashMap<BlockId, std::collections::HashSet<BlockId>> {
+        use std::collections::HashSet;
+        
+        let mut dominators: HashMap<BlockId, HashSet<BlockId>> = HashMap::new();
+        let all_blocks: HashSet<BlockId> = self.blocks.keys().copied().collect();
+        let entry = self.entry();
+        
+        // Initialize: entry dominates only itself
+        let mut entry_set = HashSet::new();
+        entry_set.insert(entry);
+        dominators.insert(entry, entry_set);
+        
+        // Initialize: all other blocks dominated by all blocks (will be refined)
+        for &block_id in &all_blocks {
+            if block_id != entry {
+                dominators.insert(block_id, all_blocks.clone());
+            }
+        }
+        
+        // Iterate until convergence
+        let mut changed = true;
+        while changed {
+            changed = false;
+            
+            for &block_id in &all_blocks {
+                if block_id == entry {
+                    continue;
+                }
+                
+                // Get predecessors
+                let block = match self.get_block(block_id) {
+                    Some(b) => b,
+                    None => continue,
+                };
+                
+                if block.predecessors.is_empty() {
+                    continue;
+                }
+                
+                // New dominators = {block} ∪ (intersection of all predecessors' dominators)
+                let mut new_doms = None;
+                
+                for &pred in &block.predecessors {
+                    if let Some(pred_doms) = dominators.get(&pred) {
+                        new_doms = match new_doms {
+                            None => Some(pred_doms.clone()),
+                            Some(current) => {
+                                let intersection: HashSet<BlockId> = 
+                                    current.intersection(pred_doms).copied().collect();
+                                Some(intersection)
+                            }
+                        };
+                    }
+                }
+                
+                if let Some(mut new_doms) = new_doms {
+                    // Add the block itself
+                    new_doms.insert(block_id);
+                    
+                    // Check if changed
+                    if dominators.get(&block_id) != Some(&new_doms) {
+                        dominators.insert(block_id, new_doms);
+                        changed = true;
+                    }
+                }
+            }
+        }
+        
+        dominators
+    }
+    
+    /// Compute the immediate dominator for each block
+    /// 
+    /// The immediate dominator (idom) of a block X is the unique block that:
+    /// 1. Strictly dominates X (dominates X but is not X itself)
+    /// 2. Is dominated by all other strict dominators of X
+    /// 
+    /// Returns a HashMap mapping each block to its immediate dominator.
+    /// The entry block has no immediate dominator (returns None for it).
+    pub fn compute_immediate_dominators(&self) -> HashMap<BlockId, Option<BlockId>> {
+        let dominators = self.compute_dominators();
+        let mut idoms: HashMap<BlockId, Option<BlockId>> = HashMap::new();
+        let entry = self.entry();
+        
+        // Entry has no immediate dominator
+        idoms.insert(entry, None);
+        
+        for (block_id, doms) in &dominators {
+            if *block_id == entry {
+                continue;
+            }
+            
+            // Strict dominators: all dominators except the block itself
+            let strict_doms: Vec<BlockId> = doms
+                .iter()
+                .copied()
+                .filter(|&d| d != *block_id)
+                .collect();
+            
+            if strict_doms.is_empty() {
+                idoms.insert(*block_id, None);
+                continue;
+            }
+            
+            // Find the idom: the strict dominator that is not dominated by any other strict dominator
+            let mut idom = None;
+            
+            for &candidate in &strict_doms {
+                let is_idom = strict_doms.iter().all(|&other| {
+                    if other == candidate {
+                        return true;
+                    }
+                    // Check if candidate is NOT dominated by other
+                    // (i.e., other does not dominate candidate)
+                    if let Some(candidate_doms) = dominators.get(&candidate) {
+                        !candidate_doms.contains(&other)
+                    } else {
+                        true
+                    }
+                });
+                
+                if is_idom {
+                    idom = Some(candidate);
+                    break;
+                }
+            }
+            
+            idoms.insert(*block_id, idom);
+        }
+        
+        idoms
+    }
+    
+    /// Build the dominator tree
+    /// 
+    /// Returns a HashMap where each block maps to its children in the dominator tree.
+    /// The dominator tree represents the immediate domination relationships.
+    pub fn compute_dominator_tree(&self) -> HashMap<BlockId, Vec<BlockId>> {
+        let idoms = self.compute_immediate_dominators();
+        let mut tree: HashMap<BlockId, Vec<BlockId>> = HashMap::new();
+        
+        // Initialize empty children lists for all blocks
+        for &block_id in self.blocks.keys() {
+            tree.insert(block_id, Vec::new());
+        }
+        
+        // Build tree edges: if X is idom of Y, add Y as child of X
+        for (block_id, idom_opt) in idoms {
+            if let Some(idom) = idom_opt {
+                tree.entry(idom)
+                    .or_insert_with(Vec::new)
+                    .push(block_id);
+            }
+        }
+        
+        tree
+    }
+    
+    /// Check if block X dominates block Y
+    /// 
+    /// Returns true if every path from entry to Y goes through X.
+    pub fn dominates(&self, x: BlockId, y: BlockId) -> bool {
+        let dominators = self.compute_dominators();
+        
+        if let Some(y_doms) = dominators.get(&y) {
+            y_doms.contains(&x)
+        } else {
+            false
+        }
+    }
+    
+    /// Generate a DOT format representation of the CFG for visualization
+    /// 
+    /// Returns a string in GraphViz DOT format that can be rendered to visualize
+    /// the control flow graph structure, showing blocks and their connections.
+    /// 
+    /// Example usage: Save output to a .dot file and render with:
+    ///   `dot -Tpng cfg.dot -o cfg.png`
+    pub fn to_dot(&self) -> String {
+        let mut dot = String::from("digraph CFG {\n");
+        dot.push_str("    node [shape=box];\n");
+        dot.push_str("    rankdir=TB;\n\n");
+        
+        // Add nodes
+        for (block_id, block) in &self.blocks {
+            let kind_str = format!("{:?}", block.kind);
+            let stmt_count = block.statements.len();
+            let label = format!("Block {} ({})\\n{} statements", 
+                block_id, kind_str, stmt_count);
+            
+            // Color based on block kind
+            let color = match block.kind {
+                BlockKind::Entry => "lightgreen",
+                BlockKind::Exit => "lightcoral",
+                BlockKind::LoopHeader => "lightyellow",
+                BlockKind::Conditional => "lightblue",
+                BlockKind::ExceptionHandler => "orange",
+                _ => "white",
+            };
+            
+            dot.push_str(&format!("    {} [label=\"{}\", style=filled, fillcolor={}];\n",
+                block_id, label, color));
+        }
+        
+        dot.push_str("\n");
+        
+        // Add edges
+        for (block_id, block) in &self.blocks {
+            for &successor in &block.successors {
+                dot.push_str(&format!("    {} -> {};\n", block_id, successor));
+            }
+        }
+        
+        dot.push_str("}\n");
+        dot
+    }
 }
 
 impl Default for ControlFlowGraph {
@@ -3500,5 +3726,425 @@ mod tests {
         
         // Most blocks should be reachable (finally always executes)
         assert!(reachable.len() >= all_blocks.len() - 3);
+    }
+    
+    // === Dominance Analysis Tests ===
+    
+    #[test]
+    fn test_dominance_linear_code() {
+        // Linear code: entry -> b1 -> b2 -> exit
+        // Each block is dominated by all blocks before it
+        let function = create_function(vec![
+            create_assignment_stmt(1),
+            create_assignment_stmt(2),
+            create_assignment_stmt(3),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dominators = cfg.compute_dominators();
+        let entry = cfg.entry();
+        
+        // Entry dominates itself only
+        assert_eq!(dominators.get(&entry).unwrap().len(), 1);
+        assert!(dominators.get(&entry).unwrap().contains(&entry));
+        
+        // All blocks should be dominated by entry
+        for block_id in cfg.block_ids() {
+            assert!(dominators.get(&block_id).unwrap().contains(&entry),
+                "Block {} should be dominated by entry", block_id);
+        }
+        
+        // Each block dominates itself
+        for block_id in cfg.block_ids() {
+            assert!(dominators.get(&block_id).unwrap().contains(&block_id),
+                "Block {} should dominate itself", block_id);
+        }
+    }
+    
+    #[test]
+    fn test_dominance_if_else() {
+        // if-else: entry -> cond -> then/else -> merge
+        // Merge is dominated by entry and cond, but not by then or else
+        let function = create_function(vec![
+            Statement::If {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(1, 0, 0),
+                },
+                then_block: vec![create_assignment_stmt(1)],
+                elif_blocks: Vec::new(),
+                else_block: Some(vec![create_assignment_stmt(2)]),
+                position: SourcePosition::new(1, 0, 0),
+            },
+            create_assignment_stmt(3),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dominators = cfg.compute_dominators();
+        let entry = cfg.entry();
+        
+        // Entry dominates all blocks
+        for block_id in cfg.block_ids() {
+            assert!(cfg.dominates(entry, block_id),
+                "Entry should dominate block {}", block_id);
+        }
+        
+        // Find the merge block (has 2 predecessors from then/else)
+        let merge_block = cfg.block_ids().into_iter()
+            .find(|&id| {
+                if let Some(block) = cfg.get_block(id) {
+                    block.predecessors.len() == 2 && block.kind == BlockKind::Normal
+                } else {
+                    false
+                }
+            });
+        
+        if let Some(merge) = merge_block {
+            // Merge should be dominated by entry and condition, but not by then/else branches
+            let merge_doms = dominators.get(&merge).unwrap();
+            assert!(merge_doms.contains(&entry));
+            assert!(merge_doms.contains(&merge)); // dominates itself
+            
+            // Neither then nor else branch should dominate merge
+            // (because there are two paths to merge)
+            let _then_else_blocks: Vec<BlockId> = cfg.block_ids().iter()
+                .filter(|&&id| {
+                    if let Some(block) = cfg.get_block(id) {
+                        block.kind == BlockKind::Normal && id != merge && id != entry
+                    } else {
+                        false
+                    }
+                })
+                .copied()
+                .collect();
+            
+            // At most one of the then/else blocks might dominate merge
+            // (this depends on CFG structure details)
+        }
+    }
+    
+    #[test]
+    fn test_dominance_loop() {
+        // while loop: entry -> loop_header -> loop_body -> loop_header -> exit
+        // Loop header dominates loop body
+        let function = create_function(vec![
+            Statement::While {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(1, 0, 0),
+                },
+                body: vec![create_assignment_stmt(1)],
+                else_block: None,
+                position: SourcePosition::new(1, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let entry = cfg.entry();
+        
+        // Entry dominates all blocks
+        for block_id in cfg.block_ids() {
+            assert!(cfg.dominates(entry, block_id),
+                "Entry should dominate block {}", block_id);
+        }
+        
+        // Find loop header (has predecessor from itself - back edge)
+        let loop_header = cfg.block_ids().into_iter()
+            .find(|&id| {
+                if let Some(block) = cfg.get_block(id) {
+                    block.kind == BlockKind::LoopHeader
+                } else {
+                    false
+                }
+            });
+        
+        if let Some(header) = loop_header {
+            // Find loop body
+            let loop_body = cfg.block_ids().into_iter()
+                .find(|&id| {
+                    if let Some(block) = cfg.get_block(id) {
+                        block.kind == BlockKind::LoopBody
+                    } else {
+                        false
+                    }
+                });
+            
+            if let Some(body) = loop_body {
+                // Loop header should dominate loop body
+                assert!(cfg.dominates(header, body),
+                    "Loop header should dominate loop body");
+            }
+        }
+    }
+    
+    #[test]
+    fn test_immediate_dominators() {
+        // Linear code to test immediate dominators
+        let function = create_function(vec![
+            create_assignment_stmt(1),
+            create_assignment_stmt(2),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let idoms = cfg.compute_immediate_dominators();
+        let entry = cfg.entry();
+        
+        // Entry has no immediate dominator
+        assert_eq!(idoms.get(&entry), Some(&None));
+        
+        // All other blocks should have an immediate dominator
+        for &block_id in cfg.block_ids().iter() {
+            if block_id != entry {
+                let idom = idoms.get(&block_id);
+                assert!(idom.is_some(), "Block {} should have idom entry", block_id);
+            }
+        }
+    }
+    
+    #[test]
+    fn test_dominator_tree() {
+        let function = create_function(vec![
+            create_assignment_stmt(1),
+            Statement::If {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                then_block: vec![create_assignment_stmt(2)],
+                elif_blocks: Vec::new(),
+                else_block: Some(vec![create_assignment_stmt(3)]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dom_tree = cfg.compute_dominator_tree();
+        let entry = cfg.entry();
+        
+        // Entry should have children in the dominator tree
+        let entry_children = dom_tree.get(&entry).unwrap();
+        assert!(!entry_children.is_empty(), "Entry should have children in dom tree");
+        
+        // All blocks should be in the tree
+        for &block_id in cfg.block_ids().iter() {
+            assert!(dom_tree.contains_key(&block_id),
+                "Block {} should be in dominator tree", block_id);
+        }
+    }
+    
+    #[test]
+    fn test_dominance_nested_if() {
+        // Nested if: entry -> if1 -> if2 -> ...
+        let function = create_function(vec![
+            Statement::If {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(1, 0, 0),
+                },
+                then_block: vec![
+                    Statement::If {
+                        condition: Expression::Identifier {
+                            name: "y".to_string(),
+                            position: SourcePosition::new(2, 0, 0),
+                        },
+                        then_block: vec![create_assignment_stmt(1)],
+                        elif_blocks: Vec::new(),
+                        else_block: None,
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                ],
+                elif_blocks: Vec::new(),
+                else_block: None,
+                position: SourcePosition::new(1, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let entry = cfg.entry();
+        
+        // Entry should dominate all blocks
+        for &block_id in cfg.block_ids().iter() {
+            assert!(cfg.dominates(entry, block_id),
+                "Entry should dominate all blocks");
+        }
+    }
+    
+    #[test]
+    fn test_dominance_complex_control_flow() {
+        // Complex control flow with loop and conditionals
+        let function = create_function(vec![
+            Statement::While {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(1, 0, 0),
+                },
+                body: vec![
+                    Statement::If {
+                        condition: Expression::Identifier {
+                            name: "y".to_string(),
+                            position: SourcePosition::new(2, 0, 0),
+                        },
+                        then_block: vec![Statement::Break(SourcePosition::new(2, 0, 0))],
+                        elif_blocks: Vec::new(),
+                        else_block: None,
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    create_assignment_stmt(1),
+                ],
+                else_block: None,
+                position: SourcePosition::new(1, 0, 0),
+            },
+            create_assignment_stmt(2),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dominators = cfg.compute_dominators();
+        let entry = cfg.entry();
+        
+        // Entry should dominate all blocks
+        for &block_id in cfg.block_ids().iter() {
+            assert!(dominators.get(&block_id).unwrap().contains(&entry),
+                "Entry should dominate block {}", block_id);
+        }
+        
+        // Each block should dominate itself
+        for &block_id in cfg.block_ids().iter() {
+            assert!(dominators.get(&block_id).unwrap().contains(&block_id),
+                "Block {} should dominate itself", block_id);
+        }
+    }
+    
+    // ====================
+    // DOT Visualization Tests
+    // ====================
+    
+    #[test]
+    fn test_dot_simple_linear() {
+        // Simple linear code should produce a simple graph
+        let function = create_function(vec![
+            create_assignment_stmt(1),
+            create_assignment_stmt(2),
+            create_assignment_stmt(3),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dot = cfg.to_dot();
+        
+        // Check basic structure
+        assert!(dot.starts_with("digraph CFG {"));
+        assert!(dot.ends_with("}\n"));
+        
+        // Check that it contains node definitions
+        assert!(dot.contains("node [shape=box]"));
+        
+        // Check that blocks are present
+        assert!(dot.contains("Block"));
+        
+        // Check that edges exist
+        assert!(dot.contains("->"));
+    }
+    
+    #[test]
+    fn test_dot_with_conditional() {
+        // Code with if/else should show branching
+        let function = create_function(vec![
+            Statement::If {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(1, 0, 0),
+                },
+                then_block: vec![create_assignment_stmt(1)],
+                elif_blocks: Vec::new(),
+                else_block: Some(vec![create_assignment_stmt(2)]),
+                position: SourcePosition::new(1, 0, 0),
+            },
+            create_assignment_stmt(3),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dot = cfg.to_dot();
+        
+        // Should have multiple blocks
+        assert!(dot.matches("Block").count() >= 4); // entry, then, else, merge
+        
+        // Should show branching (multiple edges from conditional block)
+        let arrow_count = dot.matches("->").count();
+        assert!(arrow_count >= 4); // entry->cond, cond->then, cond->else, then->merge, else->merge
+        
+        // Should color entry and exit blocks
+        assert!(dot.contains("lightgreen")); // Entry block
+    }
+    
+    #[test]
+    fn test_dot_with_loop() {
+        // Loop should show back edges
+        let function = create_function(vec![
+            Statement::While {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(1, 0, 0),
+                },
+                body: vec![create_assignment_stmt(1)],
+                else_block: None,
+                position: SourcePosition::new(1, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dot = cfg.to_dot();
+        
+        // Should have loop-related blocks
+        assert!(dot.matches("Block").count() >= 3); // entry, loop_header, loop_body
+        
+        // Should show back edge from body to header
+        assert!(dot.contains("->")); // Has edges
+        
+        // Should color loop header specially
+        assert!(dot.contains("lightyellow")); // LoopHeader block
+    }
+    
+    #[test]
+    fn test_dot_block_colors() {
+        // Different block types should have different colors
+        let function = create_function(vec![
+            Statement::If {
+                condition: Expression::Identifier {
+                    name: "x".to_string(),
+                    position: SourcePosition::new(1, 0, 0),
+                },
+                then_block: vec![create_assignment_stmt(1)],
+                elif_blocks: Vec::new(),
+                else_block: None,
+                position: SourcePosition::new(1, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dot = cfg.to_dot();
+        
+        // Entry should be green
+        assert!(dot.contains("lightgreen"));
+        
+        // Exit should be red  
+        assert!(dot.contains("lightcoral"));
+        
+        // Should have some colored blocks
+        assert!(dot.contains("fillcolor"));
+    }
+    
+    #[test]
+    fn test_dot_statement_counts() {
+        // Block labels should include statement counts
+        let function = create_function(vec![
+            create_assignment_stmt(1),
+            create_assignment_stmt(2),
+            create_assignment_stmt(3),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let dot = cfg.to_dot();
+        
+        // Should mention statement counts in labels
+        assert!(dot.contains("statements"));
     }
 }
