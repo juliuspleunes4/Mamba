@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 1** ✅ (375 tests passing)
+  - Implemented core CFG data structures for sophisticated program analysis
+  - Data Structures:
+    * `BasicBlock` struct with id, kind, statements, successors, predecessors, position
+    * `ControlFlowGraph` struct managing blocks, entry/exit points, block generation
+    * `BlockKind` enum: Entry, Exit, Normal, Conditional, LoopHeader, LoopBody, ExceptionHandler
+    * `BlockId` type alias for unique block identification
+  - CFG Operations:
+    * `new_block()` - Create new basic blocks with unique IDs
+    * `add_edge()` - Create directed edges between blocks (bidirectional linking)
+    * `remove_edge()` - Remove edges between blocks
+    * `add_exit_block()` - Mark blocks as function exits
+    * Query methods: `get_block()`, `block_count()`, `entry()`, `exits()`
+  - Basic Block Operations:
+    * `add_statement()` - Add statements to blocks
+    * `add_successor()` / `add_predecessor()` - Manage edges
+    * Query methods: `is_empty()`, `has_successors()`, `has_predecessors()`
+  - Features:
+    * Automatic entry block creation
+    * Duplicate edge prevention
+    * Bidirectional edge tracking (successors and predecessors)
+    * Support for multiple exit blocks
+  - Test Coverage: 9 comprehensive CFG tests
+    * CFG creation and entry block
+    * Block ID generation
+    * Edge addition and removal
+    * Exit block management
+    * Basic block operations
+    * Duplicate edge handling
+    * Linear CFG construction (entry → blocks → exit)
+    * Branching CFG construction (if/else with merge points)
+  - Foundation for future analysis: reachability, dominance, liveness, dead code elimination
+
 - **Phase 2: Try/Except Statement Support** ✅
   - Implemented full try/except/else/finally syntax support
   - AST Definition:

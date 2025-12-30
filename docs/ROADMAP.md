@@ -285,6 +285,14 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 - [x] Detect unreachable code after if/else with returns in all branches
 - [x] Handle unreachable code in try/except blocks (38 tests: parser, semantic, unreachable detection)
 - [ ] Implement sophisticated control flow graphs for comprehensive analysis
+  - [x] Session 1: CFG Data Structures (9 tests - BasicBlock, ControlFlowGraph, BlockKind)
+  - [ ] Session 2: CFG Builder for Linear Code
+  - [ ] Session 3: CFG Builder for Conditionals (if/elif/else)
+  - [ ] Session 4: CFG Builder for Loops (while/for with break/continue)
+  - [ ] Session 5: CFG Builder for Try/Except
+  - [ ] Session 6: CFG Reachability Analysis
+  - [ ] Session 7: Advanced CFG Analysis (optional - future work)
+  - [ ] Session 8: Testing & Integration
 
 ### 3.5 Deferred Semantic Validation
 
