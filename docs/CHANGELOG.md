@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 3** ✅ (387 tests passing)
+  - Implemented CFG builder for conditional statements (if/elif/else)
+  - Conditional Processing:
+    * `process_if_statement()` - Main handler for if statements
+      - Adds condition evaluation to current block
+      - Creates then-block and processes statements
+      - Calls process_elif_else_chain for elif/else handling
+      - Collects all branch exits (then, elif, else) in vector
+      - Creates merge block for branch convergence
+      - Connects reachable branches to merge
+      - Handles false branch to merge if no else block
+    * `process_elif_else_chain()` - Handles elif/else chains
+      - Creates elif condition blocks (BlockKind::Conditional)
+      - Chains conditions: if condition false → elif condition
+      - Creates elif then-blocks for each elif statement
+      - Processes else block if present
+      - Returns Vec<BlockId> of all branch exits and has_else flag
+  - Branching Patterns:
+    * Simple if (no else): condition → then → merge
+    * If-else: condition → then/else → merge
+    * If-elif-else: chained conditions → multiple branches → merge
+    * Nested if: recursive processing with correct block structure
+  - Edge Cases Handled:
+    * Return/raise in branches: unreachable detection
+    * All branches exit: merge block still created (unreachable)
+    * Mixed reachability: only reachable branches connect to merge
+  - Test Coverage (5 new tests, 21 total CFG tests):
+    * test_simple_if_no_else: Basic if without else (5 blocks)
+    * test_if_else: If with else block (6 blocks)
+    * test_if_elif_else: Full elif chain (8 blocks)
+    * test_nested_if: Nested conditionals (7+ blocks)
+    * test_if_with_return_in_then: Return in then branch
+    * test_if_else_both_return: Returns in both branches (unreachable after)
+  - Bug Fix:
+    * Fixed elif branch tracking: changed return type from (Option<BlockId>, bool) to (Vec<BlockId>, bool)
+    * All branch exits now properly connect to merge block
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 2** ✅ (382 tests passing)
   - Implemented CFG builder for linear code (sequences without control flow)
   - CFG Builder Structure:

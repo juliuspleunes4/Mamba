@@ -1,7 +1,7 @@
 // Control Flow Graph (CFG) implementation
 // Represents all possible execution paths through a function
 
-use crate::ast::Statement;
+use crate::ast::{Statement, Expression};
 use crate::token::SourcePosition;
 use std::collections::HashMap;
 
@@ -351,8 +351,11 @@ impl CFGBuilder {
             }
             
             // Control flow statements - to be implemented in later sessions
-            Statement::If { .. }
-            | Statement::While { .. }
+            Statement::If { condition, then_block, elif_blocks, else_block, position } => {
+                self.process_if_statement(condition, then_block, elif_blocks, else_block, position)
+            }
+            
+            Statement::While { .. }
             | Statement::For { .. }
             | Statement::Try { .. } => {
                 Err("Control flow statements not yet supported in CFG builder".to_string())
@@ -375,6 +378,126 @@ impl CFGBuilder {
                 self.add_statement_to_current_block(statement.clone());
                 Ok(())
             }
+        }
+    }
+    
+    /// Process an if/elif/else statement
+    fn process_if_statement(
+        &mut self,
+        condition: &Expression,
+        then_block: &[Statement],
+        elif_blocks: &[(Expression, Vec<Statement>)],
+        else_block: &Option<Vec<Statement>>,
+        position: &SourcePosition,
+    ) -> Result<(), String> {
+        // Add condition evaluation to current block as an expression statement
+        let condition_stmt = Statement::Expression(condition.clone());
+        self.add_statement_to_current_block(condition_stmt);
+        
+        let condition_block = self.current_block;
+        
+        // Create then-block
+        let then_block_id = self.cfg.new_block(BlockKind::Normal, position.clone());
+        self.cfg.add_edge(condition_block, then_block_id);
+        self.current_block = then_block_id;
+        
+        // Process then-block statements
+        for stmt in then_block {
+            self.process_statement(stmt)?;
+        }
+        let then_exit = self.current_block;
+        
+        // Collect all branch exits
+        let mut all_branch_exits = vec![then_exit];
+        
+        // Handle elif and else chains
+        let has_else = if !elif_blocks.is_empty() || else_block.is_some() {
+            let (elif_exits, has_else_block) = self.process_elif_else_chain(condition_block, elif_blocks, else_block, position)?;
+            all_branch_exits.extend(elif_exits);
+            has_else_block
+        } else {
+            // No elif or else - false branch goes directly to merge
+            false
+        };
+        
+        // Create merge block
+        let merge_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+        
+        // Connect all branch exits to merge (if they don't already have successors)
+        for exit_id in all_branch_exits {
+            if let Some(block_ref) = self.cfg.get_block(exit_id) {
+                if !block_ref.has_successors() {
+                    self.cfg.add_edge(exit_id, merge_block);
+                }
+            }
+        }
+        
+        // If no else, connect condition directly to merge (false branch)
+        if !has_else {
+            self.cfg.add_edge(condition_block, merge_block);
+        }
+        
+        // Continue with merge block
+        self.current_block = merge_block;
+        Ok(())
+    }
+    
+    /// Process elif/else chain, returns (branch_exits, has_else)
+    fn process_elif_else_chain(
+        &mut self,
+        mut previous_condition_block: BlockId,
+        elif_blocks: &[(Expression, Vec<Statement>)],
+        else_block: &Option<Vec<Statement>>,
+        position: &SourcePosition,
+    ) -> Result<(Vec<BlockId>, bool), String> {
+        let mut branch_exits = Vec::new();
+        
+        // Process each elif
+        for (elif_condition, elif_body) in elif_blocks {
+            // Create elif condition block
+            let elif_condition_block = self.cfg.new_block(BlockKind::Conditional, position.clone());
+            
+            // Previous false branch goes to this elif condition
+            self.cfg.add_edge(previous_condition_block, elif_condition_block);
+            
+            // Add condition evaluation
+            let condition_stmt = Statement::Expression(elif_condition.clone());
+            if let Some(block) = self.cfg.get_block_mut(elif_condition_block) {
+                block.add_statement(condition_stmt);
+            }
+            
+            // Create elif then-block
+            let elif_then_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+            self.cfg.add_edge(elif_condition_block, elif_then_block);
+            self.current_block = elif_then_block;
+            
+            // Process elif body
+            for stmt in elif_body {
+                self.process_statement(stmt)?;
+            }
+            
+            branch_exits.push(self.current_block);
+            previous_condition_block = elif_condition_block;
+        }
+        
+        // Process else block if it exists
+        if let Some(else_body) = else_block {
+            let else_block_id = self.cfg.new_block(BlockKind::Normal, position.clone());
+            
+            // Last condition's false branch goes to else
+            self.cfg.add_edge(previous_condition_block, else_block_id);
+            self.current_block = else_block_id;
+            
+            // Process else body
+            for stmt in else_body {
+                self.process_statement(stmt)?;
+            }
+            
+            branch_exits.push(self.current_block);
+            Ok((branch_exits, true))
+        } else {
+            // No else block
+            Ok((branch_exits, false))
         }
     }
     
@@ -920,11 +1043,100 @@ mod tests {
     }
     
     #[test]
-    fn test_control_flow_not_yet_supported() {
-        // Test that control flow statements return errors (to be implemented later)
+    fn test_simple_if_no_else() {
+        // def foo():
+        //     x = 1
+        //     if True:
+        //         y = 2
+        //     z = 3
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "one".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::If {
+                    condition: Expression::Identifier {
+                        name: "True".to_string(),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                    then_block: vec![Statement::Assignment {
+                        targets: Vec::new(),
+                        value: Expression::Identifier {
+                            name: "two".to_string(),
+                            position: SourcePosition::new(4, 0, 0),
+                        },
+                        position: SourcePosition::new(4, 0, 0),
+                    }],
+                    elif_blocks: Vec::new(),
+                    else_block: None,
+                    position: SourcePosition::new(3, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "three".to_string(),
+                        position: SourcePosition::new(5, 0, 0),
+                    },
+                    position: SourcePosition::new(5, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have: entry, normal(x=1, if cond), then(y=2), merge(z=3), exit
+        assert_eq!(cfg.block_count(), 5);
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+        
+        // First normal block has x=1 and condition
+        let first_normal = entry_block.successors[0];
+        let first_normal_block = cfg.get_block(first_normal).unwrap();
+        assert_eq!(first_normal_block.statements.len(), 2); // x=1, condition
+        assert_eq!(first_normal_block.successors.len(), 2); // then and merge
+        
+        // Find then and merge blocks
+        let successors = &first_normal_block.successors;
+        let then_id = successors[0];
+        let then_block = cfg.get_block(then_id).unwrap();
+        assert_eq!(then_block.statements.len(), 1); // y=2
+        
+        // Then block should connect to merge
+        assert_eq!(then_block.successors.len(), 1);
+        let merge_from_then = then_block.successors[0];
+        
+        // Merge block should have z=3
+        let merge_block = cfg.get_block(merge_from_then).unwrap();
+        assert_eq!(merge_block.statements.len(), 1); // z=3
+        
+        // Merge should connect to exit
+        assert_eq!(merge_block.successors.len(), 1);
+        
+        // Merge should have 2 predecessors: then and condition (false branch)
+        assert_eq!(merge_block.predecessors.len(), 2);
+    }
+    
+    #[test]
+    fn test_if_else() {
         // def foo():
         //     if True:
-        //         pass
+        //         x = 1
+        //     else:
+        //         x = 2
+        //     y = 3
         let func = Statement::FunctionDef {
             name: "foo".to_string(),
             parameters: Vec::new(),
@@ -934,10 +1146,32 @@ mod tests {
                         name: "True".to_string(),
                         position: SourcePosition::new(2, 0, 0),
                     },
-                    then_block: vec![Statement::Pass(SourcePosition::new(3, 0, 0))],
+                    then_block: vec![Statement::Assignment {
+                        targets: Vec::new(),
+                        value: Expression::Identifier {
+                            name: "one".to_string(),
+                            position: SourcePosition::new(3, 0, 0),
+                        },
+                        position: SourcePosition::new(3, 0, 0),
+                    }],
                     elif_blocks: Vec::new(),
-                    else_block: None,
+                    else_block: Some(vec![Statement::Assignment {
+                        targets: Vec::new(),
+                        value: Expression::Identifier {
+                            name: "two".to_string(),
+                            position: SourcePosition::new(5, 0, 0),
+                        },
+                        position: SourcePosition::new(5, 0, 0),
+                    }]),
                     position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "three".to_string(),
+                        position: SourcePosition::new(6, 0, 0),
+                    },
+                    position: SourcePosition::new(6, 0, 0),
                 },
             ],
             decorators: Vec::new(),
@@ -946,8 +1180,362 @@ mod tests {
             position: SourcePosition::new(1, 0, 0),
         };
         
-        let result = CFGBuilder::build_function_cfg(&func);
-        assert!(result.is_err());
-        assert!(result.err().unwrap().contains("Control flow statements not yet supported"));
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have: entry, normal(condition), then(x=1), else(x=2), merge(y=3), exit
+        assert_eq!(cfg.block_count(), 6);
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+        
+        // Condition block
+        let condition_block_id = entry_block.successors[0];
+        let condition_block = cfg.get_block(condition_block_id).unwrap();
+        assert_eq!(condition_block.statements.len(), 1); // condition
+        assert_eq!(condition_block.successors.len(), 2); // then and else
+        
+        let then_id = condition_block.successors[0];
+        let then_block = cfg.get_block(then_id).unwrap();
+        assert_eq!(then_block.statements.len(), 1); // x=1
+        assert_eq!(then_block.successors.len(), 1); // to merge
+        
+        let else_id = condition_block.successors[1];
+        let else_block = cfg.get_block(else_id).unwrap();
+        assert_eq!(else_block.statements.len(), 1); // x=2
+        assert_eq!(else_block.successors.len(), 1); // to merge
+        
+        // Both should go to same merge
+        let merge_id = then_block.successors[0];
+        assert_eq!(else_block.successors[0], merge_id);
+        
+        let merge_block = cfg.get_block(merge_id).unwrap();
+        assert_eq!(merge_block.statements.len(), 1); // y=3
+        assert_eq!(merge_block.predecessors.len(), 2); // from then and else
+    }
+    
+    #[test]
+    fn test_if_elif_else() {
+        // def foo():
+        //     if cond1:
+        //         x = 1
+        //     elif cond2:
+        //         x = 2
+        //     else:
+        //         x = 3
+        //     y = 4
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::If {
+                    condition: Expression::Identifier {
+                        name: "cond1".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    then_block: vec![Statement::Assignment {
+                        targets: Vec::new(),
+                        value: Expression::Identifier {
+                            name: "one".to_string(),
+                            position: SourcePosition::new(3, 0, 0),
+                        },
+                        position: SourcePosition::new(3, 0, 0),
+                    }],
+                    elif_blocks: vec![(
+                        Expression::Identifier {
+                            name: "cond2".to_string(),
+                            position: SourcePosition::new(4, 0, 0),
+                        },
+                        vec![Statement::Assignment {
+                            targets: Vec::new(),
+                            value: Expression::Identifier {
+                                name: "two".to_string(),
+                                position: SourcePosition::new(5, 0, 0),
+                            },
+                            position: SourcePosition::new(5, 0, 0),
+                        }],
+                    )],
+                    else_block: Some(vec![Statement::Assignment {
+                        targets: Vec::new(),
+                        value: Expression::Identifier {
+                            name: "three".to_string(),
+                            position: SourcePosition::new(7, 0, 0),
+                        },
+                        position: SourcePosition::new(7, 0, 0),
+                    }]),
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "four".to_string(),
+                        position: SourcePosition::new(8, 0, 0),
+                    },
+                    position: SourcePosition::new(8, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have: entry, normal(if cond), then, elif_cond, elif_then, else, merge(y=4), exit
+        assert_eq!(cfg.block_count(), 8);
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        
+        // First condition block
+        let if_cond_id = entry_block.successors[0];
+        let if_cond = cfg.get_block(if_cond_id).unwrap();
+        assert_eq!(if_cond.successors.len(), 2); // then and elif
+        
+        // Then block
+        let then_id = if_cond.successors[0];
+        let then_block = cfg.get_block(then_id).unwrap();
+        assert_eq!(then_block.statements.len(), 1); // x=1
+        
+        // Elif condition block (false branch from if)
+        let elif_cond_id = if_cond.successors[1];
+        let elif_cond = cfg.get_block(elif_cond_id).unwrap();
+        assert_eq!(elif_cond.kind, BlockKind::Conditional);
+        assert_eq!(elif_cond.statements.len(), 1); // elif condition
+        assert_eq!(elif_cond.successors.len(), 2); // elif then and else
+        
+        // Elif then block
+        let elif_then_id = elif_cond.successors[0];
+        let elif_then = cfg.get_block(elif_then_id).unwrap();
+        assert_eq!(elif_then.statements.len(), 1); // x=2
+        
+        // Else block
+        let else_id = elif_cond.successors[1];
+        let else_block = cfg.get_block(else_id).unwrap();
+        assert_eq!(else_block.statements.len(), 1); // x=3
+        
+        // All should connect to merge
+        let merge_id = then_block.successors[0];
+        assert_eq!(elif_then.successors[0], merge_id);
+        assert_eq!(else_block.successors[0], merge_id);
+        
+        let merge_block = cfg.get_block(merge_id).unwrap();
+        assert_eq!(merge_block.statements.len(), 1); // y=4
+        assert_eq!(merge_block.predecessors.len(), 3); // then, elif_then, else
+    }
+    
+    #[test]
+    fn test_nested_if() {
+        // def foo():
+        //     if outer:
+        //         if inner:
+        //             x = 1
+        //         y = 2
+        //     z = 3
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::If {
+                    condition: Expression::Identifier {
+                        name: "outer".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    then_block: vec![
+                        Statement::If {
+                            condition: Expression::Identifier {
+                                name: "inner".to_string(),
+                                position: SourcePosition::new(3, 0, 0),
+                            },
+                            then_block: vec![Statement::Assignment {
+                                targets: Vec::new(),
+                                value: Expression::Identifier {
+                                    name: "one".to_string(),
+                                    position: SourcePosition::new(4, 0, 0),
+                                },
+                                position: SourcePosition::new(4, 0, 0),
+                            }],
+                            elif_blocks: Vec::new(),
+                            else_block: None,
+                            position: SourcePosition::new(3, 0, 0),
+                        },
+                        Statement::Assignment {
+                            targets: Vec::new(),
+                            value: Expression::Identifier {
+                                name: "two".to_string(),
+                                position: SourcePosition::new(5, 0, 0),
+                            },
+                            position: SourcePosition::new(5, 0, 0),
+                        },
+                    ],
+                    elif_blocks: Vec::new(),
+                    else_block: None,
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "three".to_string(),
+                        position: SourcePosition::new(6, 0, 0),
+                    },
+                    position: SourcePosition::new(6, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Complex structure with nested ifs
+        // Entry -> outer_cond -> outer_then(inner_cond) -> inner_then -> inner_merge(y=2) -> outer_merge(z=3) -> exit
+        assert!(cfg.block_count() >= 7); // At least: entry, outer_cond, outer_then, inner_then, inner_merge, outer_merge, exit
+        
+        // Verify structure
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+    }
+    
+    #[test]
+    fn test_if_with_return_in_then() {
+        // def foo():
+        //     if True:
+        //         return 1
+        //     x = 2
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::If {
+                    condition: Expression::Identifier {
+                        name: "True".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    then_block: vec![Statement::Return {
+                        value: None,
+                        position: SourcePosition::new(3, 0, 0),
+                    }],
+                    elif_blocks: Vec::new(),
+                    else_block: None,
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "two".to_string(),
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                    position: SourcePosition::new(4, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Then block should connect to exit (return)
+        // Merge should still be created and have x=2
+        // False branch goes to merge
+        assert!(cfg.block_count() >= 5);
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let condition_id = entry_block.successors[0];
+        let condition_block = cfg.get_block(condition_id).unwrap();
+        
+        // Then block
+        let then_id = condition_block.successors[0];
+        let then_block = cfg.get_block(then_id).unwrap();
+        assert!(matches!(then_block.statements.last().unwrap(), Statement::Return { .. }));
+        
+        // Then connects to exit (via return)
+        let exit_blocks = cfg.exits();
+        assert!(then_block.successors.iter().any(|&s| exit_blocks.contains(&s)));
+    }
+    
+    #[test]
+    fn test_if_else_both_return() {
+        // def foo():
+        //     if True:
+        //         return 1
+        //     else:
+        //         return 2
+        //     x = 3  # unreachable
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::If {
+                    condition: Expression::Identifier {
+                        name: "True".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    then_block: vec![Statement::Return {
+                        value: None,
+                        position: SourcePosition::new(3, 0, 0),
+                    }],
+                    elif_blocks: Vec::new(),
+                    else_block: Some(vec![Statement::Return {
+                        value: None,
+                        position: SourcePosition::new(5, 0, 0),
+                    }]),
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "three".to_string(),
+                        position: SourcePosition::new(6, 0, 0),
+                    },
+                    position: SourcePosition::new(6, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Both branches return, so merge block should have no predecessors (unreachable)
+        // x=3 should be in an unreachable block
+        assert!(cfg.block_count() >= 6);
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let condition_id = entry_block.successors[0];
+        let condition_block = cfg.get_block(condition_id).unwrap();
+        
+        let then_id = condition_block.successors[0];
+        let then_block = cfg.get_block(then_id).unwrap();
+        assert!(matches!(then_block.statements.last().unwrap(), Statement::Return { .. }));
+        
+        let else_id = condition_block.successors[1];
+        let else_block = cfg.get_block(else_id).unwrap();
+        assert!(matches!(else_block.statements.last().unwrap(), Statement::Return { .. }));
+        
+        // Both should connect to exit
+        let exit_blocks = cfg.exits();
+        assert!(then_block.successors.iter().any(|&s| exit_blocks.contains(&s)));
+        assert!(else_block.successors.iter().any(|&s| exit_blocks.contains(&s)));
+        
+        // Find the unreachable block with x=3
+        let unreachable_blocks: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                !block.has_predecessors() && !exit_blocks.contains(&id) && id != entry
+            })
+            .collect();
+        
+        assert!(unreachable_blocks.len() >= 1);
     }
 }
