@@ -8,6 +8,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 2** ✅ (382 tests passing)
+  - Implemented CFG builder for linear code (sequences without control flow)
+  - CFG Builder Structure:
+    * `CFGBuilder` struct with cfg, current_block, exit_block, loop targets
+    * `new()` constructor initializing with entry block
+    * `add_statement_to_current_block()` helper method
+  - CFG Building:
+    * `build_function_cfg(function)` - Entry point for building function CFGs
+    * Returns `Result<ControlFlowGraph, String>` with error handling
+    * Automatically creates entry, exit, and normal blocks
+    * Detects unreachable code (blocks with no predecessors)
+  - Statement Processing:
+    * Linear statements: Assignment, AugmentedAssignment, AnnAssignment, Expression, Pass
+    * Control transfer: Return (edge to exit), Raise (edge to exit)
+    * Unreachable block creation after return/raise
+    * Other statements: Import, FromImport, Global, Nonlocal, Assert, Del
+    * Function/class definitions treated as statements
+    * Error reporting for unsupported control flow (if/while/for/try)
+  - Features:
+    * Automatic entry → first block edge creation
+    * Exit block connection for reachable code
+    * Unreachable block detection (no predecessors, no exit edge)
+    * Proper handling of multiple returns/raises
+  - Test Coverage: 7 new CFG builder tests (16 total CFG tests)
+    * Empty function with pass statement
+    * Function with multiple assignments
+    * Function with return in middle (unreachable code after)
+    * Function with multiple returns
+    * Function with raise statement
+    * Rejection of non-function statements
+    * Error for unsupported control flow statements
+  - Foundation for Session 3: conditionals (if/elif/else)
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 1** ✅ (375 tests passing)
   - Implemented core CFG data structures for sophisticated program analysis
   - Data Structures:

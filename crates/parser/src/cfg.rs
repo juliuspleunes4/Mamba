@@ -223,6 +223,169 @@ impl Default for ControlFlowGraph {
     }
 }
 
+/// CFG Builder - constructs control flow graphs from AST statements
+pub struct CFGBuilder {
+    /// The CFG being built
+    cfg: ControlFlowGraph,
+    
+    /// The current block being populated with statements
+    current_block: BlockId,
+    
+    /// Stack of exit blocks (for functions)
+    exit_block: Option<BlockId>,
+    
+    /// Stack of loop break targets (for break statements)
+    break_targets: Vec<BlockId>,
+    
+    /// Stack of loop continue targets (for continue statements)
+    continue_targets: Vec<BlockId>,
+}
+
+impl CFGBuilder {
+    /// Create a new CFG builder
+    fn new() -> Self {
+        let cfg = ControlFlowGraph::new();
+        let entry = cfg.entry();
+        
+        Self {
+            cfg,
+            current_block: entry,
+            exit_block: None,
+            break_targets: Vec::new(),
+            continue_targets: Vec::new(),
+        }
+    }
+    
+    /// Build a CFG from a function definition
+    pub fn build_function_cfg(function: &Statement) -> Result<ControlFlowGraph, String> {
+        if let Statement::FunctionDef { body, position, .. } = function {
+            let mut builder = CFGBuilder::new();
+            
+            // Create a normal block to start adding statements
+            let first_block = builder.cfg.new_block(BlockKind::Normal, position.clone());
+            builder.cfg.add_edge(builder.current_block, first_block);
+            builder.current_block = first_block;
+            
+            // Create exit block
+            let exit = builder.cfg.new_block(BlockKind::Exit, position.clone());
+            builder.exit_block = Some(exit);
+            builder.cfg.add_exit_block(exit);
+            
+            // Process function body
+            for statement in body {
+                builder.process_statement(statement)?;
+            }
+            
+            // If current block doesn't end with a return and is reachable, connect to exit
+            if let Some(current) = builder.cfg.get_block(builder.current_block) {
+                // Only connect to exit if block has no successors and has predecessors (is reachable)
+                if current.has_successors() == false && current.has_predecessors() {
+                    builder.cfg.add_edge(builder.current_block, exit);
+                }
+            }
+            
+            Ok(builder.cfg)
+        } else {
+            Err("Expected FunctionDef statement".to_string())
+        }
+    }
+    
+    /// Process a single statement
+    fn process_statement(&mut self, statement: &Statement) -> Result<(), String> {
+        match statement {
+            // Linear statements - just add to current block
+            Statement::Assignment { .. }
+            | Statement::AugmentedAssignment { .. }
+            | Statement::AnnAssignment { .. }
+            | Statement::Expression { .. }
+            | Statement::Pass(_) => {
+                self.add_statement_to_current_block(statement.clone());
+                Ok(())
+            }
+            
+            // Return statement - add edge to exit and start new block
+            Statement::Return { position, .. } => {
+                self.add_statement_to_current_block(statement.clone());
+                
+                if let Some(exit) = self.exit_block {
+                    self.cfg.add_edge(self.current_block, exit);
+                }
+                
+                // Start new block for any unreachable code after return
+                let new_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+                self.current_block = new_block;
+                
+                Ok(())
+            }
+            
+            // Raise statement - add edge to exit (unhandled exception)
+            Statement::Raise { position, .. } => {
+                self.add_statement_to_current_block(statement.clone());
+                
+                if let Some(exit) = self.exit_block {
+                    self.cfg.add_edge(self.current_block, exit);
+                }
+                
+                // Start new block for any unreachable code after raise
+                let new_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+                self.current_block = new_block;
+                
+                Ok(())
+            }
+            
+            // Break/Continue - these should already be validated by semantic analyzer
+            Statement::Break(_) => {
+                if self.break_targets.is_empty() {
+                    Err("Break statement outside loop (should be caught by semantic analyzer)".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            
+            Statement::Continue(_) => {
+                if self.continue_targets.is_empty() {
+                    Err("Continue statement outside loop (should be caught by semantic analyzer)".to_string())
+                } else {
+                    Ok(())
+                }
+            }
+            
+            // Control flow statements - to be implemented in later sessions
+            Statement::If { .. }
+            | Statement::While { .. }
+            | Statement::For { .. }
+            | Statement::Try { .. } => {
+                Err("Control flow statements not yet supported in CFG builder".to_string())
+            }
+            
+            // Other statements - treat as linear for now
+            Statement::Import { .. }
+            | Statement::FromImport { .. }
+            | Statement::Global { .. }
+            | Statement::Nonlocal { .. }
+            | Statement::Assert { .. }
+            | Statement::Del { .. } => {
+                self.add_statement_to_current_block(statement.clone());
+                Ok(())
+            }
+            
+            // Function and class definitions - treat as statements
+            Statement::FunctionDef { .. }
+            | Statement::ClassDef { .. } => {
+                self.add_statement_to_current_block(statement.clone());
+                Ok(())
+            }
+        }
+    }
+    
+    /// Add a statement to the current block
+    fn add_statement_to_current_block(&mut self, statement: Statement) {
+        if let Some(block) = self.cfg.get_block_mut(self.current_block) {
+            block.add_statement(statement);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -414,5 +577,377 @@ mod tests {
         assert_eq!(merge_block.predecessors.len(), 2);
         assert!(merge_block.predecessors.contains(&then_block));
         assert!(merge_block.predecessors.contains(&else_block));
+    }
+    
+    // ===== CFG Builder Tests =====
+    
+    use crate::ast::Expression;  // Only needed for test data
+    
+    #[test]
+    fn test_build_empty_function_cfg() {
+        // def foo():
+        //     pass
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![Statement::Pass(SourcePosition::new(2, 0, 0))],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have entry, exit, and one normal block for pass
+        assert_eq!(cfg.block_count(), 3);
+        
+        // Entry block should exist
+        let entry = cfg.entry();
+        assert!(cfg.has_block(entry));
+        
+        // Entry should have successor (the normal block)
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+        
+        // Normal block should have pass statement
+        let normal_block_id = entry_block.successors[0];
+        let normal_block = cfg.get_block(normal_block_id).unwrap();
+        assert_eq!(normal_block.statements.len(), 1);
+        assert!(matches!(normal_block.statements[0], Statement::Pass(_)));
+        
+        // Normal block should connect to exit
+        assert_eq!(normal_block.successors.len(), 1);
+        let exit_id = normal_block.successors[0];
+        let exit_block = cfg.get_block(exit_id).unwrap();
+        assert_eq!(exit_block.kind, BlockKind::Exit);
+    }
+    
+    #[test]
+    fn test_build_function_with_assignments() {
+        // def foo():
+        //     x = 1
+        //     y = 2
+        //     z = x + y
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "dummy".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "dummy".to_string(),
+                        position: SourcePosition::new(3, 0, 0),
+                    },
+                    position: SourcePosition::new(3, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "dummy".to_string(),
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                    position: SourcePosition::new(4, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have entry, exit, and one normal block
+        assert_eq!(cfg.block_count(), 3);
+        
+        // Entry should connect to normal block
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+        
+        // Normal block should have 3 assignment statements
+        let normal_block_id = entry_block.successors[0];
+        let normal_block = cfg.get_block(normal_block_id).unwrap();
+        assert_eq!(normal_block.statements.len(), 3);
+        
+        // All statements should be assignments
+        for stmt in &normal_block.statements {
+            assert!(matches!(stmt, Statement::Assignment { .. }));
+        }
+        
+        // Normal block should connect to exit
+        assert_eq!(normal_block.successors.len(), 1);
+    }
+    
+    #[test]
+    fn test_build_function_with_return() {
+        // def foo():
+        //     x = 1
+        //     return x
+        //     y = 2  # unreachable
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "dummy".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Return {
+                    value: None,
+                    position: SourcePosition::new(3, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "dummy".to_string(),
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                    position: SourcePosition::new(4, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have entry, exit, normal block, and unreachable block
+        assert_eq!(cfg.block_count(), 4);
+        
+        // Entry should connect to normal block
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+        
+        // Normal block should have assignment and return
+        let normal_block_id = entry_block.successors[0];
+        let normal_block = cfg.get_block(normal_block_id).unwrap();
+        assert_eq!(normal_block.statements.len(), 2);
+        assert!(matches!(normal_block.statements[0], Statement::Assignment { .. }));
+        assert!(matches!(normal_block.statements[1], Statement::Return { .. }));
+        
+        // Normal block should connect to exit
+        assert_eq!(normal_block.successors.len(), 1);
+        let exit_id = normal_block.successors[0];
+        let exit_block = cfg.get_block(exit_id).unwrap();
+        assert_eq!(exit_block.kind, BlockKind::Exit);
+        
+        // Unreachable block should exist with one assignment
+        let unreachable_id = cfg.block_ids()
+            .into_iter()
+            .find(|&id| id != entry && id != normal_block_id && id != exit_id)
+            .expect("Should have unreachable block");
+        let unreachable_block = cfg.get_block(unreachable_id).unwrap();
+        assert_eq!(unreachable_block.statements.len(), 1);
+        assert!(matches!(unreachable_block.statements[0], Statement::Assignment { .. }));
+        
+        // Unreachable block should have no successors
+        assert_eq!(unreachable_block.successors.len(), 0);
+    }
+    
+    #[test]
+    fn test_build_function_with_multiple_returns() {
+        // def foo():
+        //     if condition:
+        //         return 1
+        //     return 2
+        // Note: We can't build if statements yet, so just test multiple sequential returns
+        // def foo():
+        //     return 1
+        //     return 2
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::Return {
+                    value: None,
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Return {
+                    value: None,
+                    position: SourcePosition::new(3, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have: entry, normal (first return), exit, unreachable1 (second return), unreachable2 (empty)
+        // Note: The second return creates an extra unreachable block, which is acceptable for now
+        assert_eq!(cfg.block_count(), 5);
+        
+        // Entry should connect to first block
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+        
+        // First block should have first return
+        let block1_id = entry_block.successors[0];
+        let block1 = cfg.get_block(block1_id).unwrap();
+        assert_eq!(block1.statements.len(), 1);
+        assert!(matches!(block1.statements[0], Statement::Return { .. }));
+        
+        // First block should connect to exit
+        assert_eq!(block1.successors.len(), 1);
+        
+        // Second return should be in unreachable block
+        let exit_id = block1.successors[0];
+        
+        // Find the unreachable blocks (there will be 2: one with second return, one empty)
+        let unreachable_ids: Vec<BlockId> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| id != entry && id != block1_id && id != exit_id)
+            .collect();
+        assert_eq!(unreachable_ids.len(), 2);
+        
+        // Find the block with the second return statement
+        let block2_id = unreachable_ids.iter()
+            .find(|&&id| {
+                cfg.get_block(id).unwrap().statements.len() == 1
+            })
+            .copied()
+            .expect("Should have block with second return");
+        
+        let block2 = cfg.get_block(block2_id).unwrap();
+        assert!(matches!(block2.statements[0], Statement::Return { .. }));
+        
+        // Second return block connects to exit (it's still a return statement)
+        assert_eq!(block2.successors.len(), 1);
+        assert_eq!(block2.successors[0], exit_id);
+    }
+    
+    #[test]
+    fn test_build_function_with_raise() {
+        // def foo():
+        //     x = 1
+        //     raise Exception()
+        //     y = 2  # unreachable
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "dummy".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    position: SourcePosition::new(2, 0, 0),
+                },
+                Statement::Raise {
+                    exception: None,
+                    position: SourcePosition::new(3, 0, 0),
+                },
+                Statement::Assignment {
+                    targets: Vec::new(),
+                    value: Expression::Identifier {
+                        name: "dummy".to_string(),
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                    position: SourcePosition::new(4, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let cfg = CFGBuilder::build_function_cfg(&func).unwrap();
+        
+        // Should have entry, exit, normal block, and unreachable block
+        assert_eq!(cfg.block_count(), 4);
+        
+        // Entry should connect to normal block
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        assert_eq!(entry_block.successors.len(), 1);
+        
+        // Normal block should have assignment and raise
+        let normal_block_id = entry_block.successors[0];
+        let normal_block = cfg.get_block(normal_block_id).unwrap();
+        assert_eq!(normal_block.statements.len(), 2);
+        assert!(matches!(normal_block.statements[0], Statement::Assignment { .. }));
+        assert!(matches!(normal_block.statements[1], Statement::Raise { .. }));
+        
+        // Normal block should connect to exit (exception exits function)
+        assert_eq!(normal_block.successors.len(), 1);
+        let exit_id = normal_block.successors[0];
+        let exit_block = cfg.get_block(exit_id).unwrap();
+        assert_eq!(exit_block.kind, BlockKind::Exit);
+        
+        // Unreachable block should exist with one assignment
+        let unreachable_id = cfg.block_ids()
+            .into_iter()
+            .find(|&id| id != entry && id != normal_block_id && id != exit_id)
+            .expect("Should have unreachable block");
+        let unreachable_block = cfg.get_block(unreachable_id).unwrap();
+        assert_eq!(unreachable_block.statements.len(), 1);
+        assert!(matches!(unreachable_block.statements[0], Statement::Assignment { .. }));
+        
+        // Unreachable block should have no successors
+        assert_eq!(unreachable_block.successors.len(), 0);
+    }
+    
+    #[test]
+    fn test_build_function_rejects_non_function() {
+        // Test that build_function_cfg rejects non-function statements
+        let stmt = Statement::Pass(SourcePosition::new(1, 0, 0));
+        
+        let result = CFGBuilder::build_function_cfg(&stmt);
+        assert!(result.is_err());
+        assert_eq!(result.err().unwrap(), "Expected FunctionDef statement");
+    }
+    
+    #[test]
+    fn test_control_flow_not_yet_supported() {
+        // Test that control flow statements return errors (to be implemented later)
+        // def foo():
+        //     if True:
+        //         pass
+        let func = Statement::FunctionDef {
+            name: "foo".to_string(),
+            parameters: Vec::new(),
+            body: vec![
+                Statement::If {
+                    condition: Expression::Identifier {
+                        name: "True".to_string(),
+                        position: SourcePosition::new(2, 0, 0),
+                    },
+                    then_block: vec![Statement::Pass(SourcePosition::new(3, 0, 0))],
+                    elif_blocks: Vec::new(),
+                    else_block: None,
+                    position: SourcePosition::new(2, 0, 0),
+                },
+            ],
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        };
+        
+        let result = CFGBuilder::build_function_cfg(&func);
+        assert!(result.is_err());
+        assert!(result.err().unwrap().contains("Control flow statements not yet supported"));
     }
 }
