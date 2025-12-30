@@ -282,7 +282,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.4 Advanced Control Flow Analysis
 
-- [ ] Detect unreachable code after if/else with returns in all branches
+- [x] Detect unreachable code after if/else with returns in all branches
 - [ ] Handle unreachable code in try/except blocks
 - [ ] Implement sophisticated control flow graphs for comprehensive analysis
 

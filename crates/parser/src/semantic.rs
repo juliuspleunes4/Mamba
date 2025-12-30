@@ -655,14 +655,75 @@ impl SemanticAnalyzer {
     }
 
     /// Check if a statement always exits (returns, breaks, continues, raises)
+    /// Also checks if/else blocks where ALL branches exit
     fn statement_always_exits(&self, statement: &Statement) -> bool {
-        matches!(
-            statement,
+        match statement {
+            // Simple exit statements
             Statement::Return { .. }
-                | Statement::Break(_)
-                | Statement::Continue(_)
-                | Statement::Raise { .. }
-        )
+            | Statement::Break(_)
+            | Statement::Continue(_)
+            | Statement::Raise { .. } => true,
+            
+            // If/else where all branches exit
+            Statement::If { .. } => self.check_if_all_branches_exit(statement),
+            
+            // All other statements don't always exit
+            _ => false,
+        }
+    }
+
+    /// Check if an if/else statement has all branches exiting
+    /// Returns true only if:
+    /// 1. The statement has an else clause (all paths covered)
+    /// 2. Every branch (if, elif, else) contains at least one exiting statement
+    fn check_if_all_branches_exit(&self, statement: &Statement) -> bool {
+        if let Statement::If {
+            then_block,
+            elif_blocks,
+            else_block,
+            ..
+        } = statement
+        {
+            // Must have an else clause to cover all paths
+            if else_block.is_none() {
+                return false;
+            }
+            
+            // Check if the 'if' branch exits
+            if !self.block_contains_exit(then_block) {
+                return false;
+            }
+            
+            // Check all 'elif' branches exit
+            for (_condition, elif_body) in elif_blocks {
+                if !self.block_contains_exit(elif_body) {
+                    return false;
+                }
+            }
+            
+            // Check the 'else' branch exits
+            if let Some(else_body) = else_block {
+                if !self.block_contains_exit(else_body) {
+                    return false;
+                }
+            }
+            
+            // All branches exit!
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Check if a block of statements contains at least one exiting statement
+    /// Recursively checks nested if/else blocks
+    fn block_contains_exit(&self, block: &[Statement]) -> bool {
+        for statement in block {
+            if self.statement_always_exits(statement) {
+                return true;
+            }
+        }
+        false
     }
 
     /// Check if an expression is a valid assignment target
@@ -5146,6 +5207,442 @@ for i in range(10):
         let errors = result.unwrap_err();
         assert_eq!(errors.len(), 1);
         assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    // ======================
+    // Unreachable Code Detection - Branch Analysis
+    // ======================
+
+    #[test]
+    fn test_unreachable_after_if_else_both_return() {
+        let code = r#"
+def foo():
+    if True:
+        return 1
+    else:
+        return 2
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_if_elif_else_all_return() {
+        let code = r#"
+def foo(x: int):
+    if x == 1:
+        return 1
+    elif x == 2:
+        return 2
+    else:
+        return 3
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_if_else_with_break() {
+        let code = r#"
+def foo(condition: bool):
+    while True:
+        if condition:
+            break
+        else:
+            break
+        print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_if_else_with_continue() {
+        let code = r#"
+def foo(condition: bool):
+    while True:
+        if condition:
+            continue
+        else:
+            continue
+        print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_if_else_with_raise() {
+        let code = r#"
+def foo(condition: bool):
+    if condition:
+        return 1
+    else:
+        return 2
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_if_else_mixed_exits() {
+        let code = r#"
+def foo(condition: bool):
+    while True:
+        if condition:
+            return 1
+        else:
+            break
+        print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error (mixed exit types)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_nested_if_else_all_exit() {
+        let code = r#"
+def foo(a: bool, b: bool):
+    if a:
+        if b:
+            return 1
+        else:
+            return 2
+    else:
+        return 3
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_after_if_without_else() {
+        let code = r#"
+def foo(condition: bool):
+    if condition:
+        return 1
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (code is reachable)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_reachable_after_if_elif_without_else() {
+        let code = r#"
+def foo(x: int):
+    if x == 1:
+        return 1
+    elif x == 2:
+        return 2
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (no else clause)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_reachable_after_if_else_partial_exit() {
+        let code = r#"
+def foo(condition: bool):
+    if condition:
+        return 1
+    else:
+        x = 42
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (else doesn't exit)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_reachable_after_if_else_one_branch_no_exit() {
+        let code = r#"
+def foo(condition: bool):
+    if condition:
+        x = 1
+    else:
+        return 2
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (if doesn't exit)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unreachable_after_if_else_multiple_statements() {
+        let code = r#"
+def foo(condition: bool):
+    if condition:
+        x = 1
+        y = 2
+        return x + y
+    else:
+        z = 3
+        return z
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error (both branches exit)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_unreachable_after_if_elif_else_with_multiple_statements() {
+        let code = r#"
+def foo(x: int):
+    if x == 1:
+        print("one")
+        return 1
+    elif x == 2:
+        print("two")
+        return 2
+    elif x == 3:
+        print("three")
+        return 3
+    else:
+        print("other")
+        return 0
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_after_nested_if_else_partial_exit() {
+        let code = r#"
+def foo(a: bool, b: bool):
+    if a:
+        if b:
+            return 1
+        else:
+            x = 2
+    else:
+        return 3
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (inner if-else doesn't fully exit)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unreachable_multiple_after_if_else_all_return() {
+        let code = r#"
+def foo(condition: bool):
+    if condition:
+        return 1
+    else:
+        return 2
+    print("unreachable 1")
+    x = 42
+    print("unreachable 2")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce 3 UnreachableCode errors
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 3);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+        assert!(matches!(errors[1], SemanticError::UnreachableCode { .. }));
+        assert!(matches!(errors[2], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_after_if_elif_else_one_elif_no_exit() {
+        let code = r#"
+def foo(x: int):
+    if x == 1:
+        return 1
+    elif x == 2:
+        y = 2
+    else:
+        return 3
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (one elif doesn't exit)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unreachable_after_deeply_nested_if_else() {
+        let code = r#"
+def foo(a: bool, b: bool, c: bool, d: bool):
+    if a:
+        if b:
+            if c:
+                return 1
+            else:
+                return 2
+        else:
+            return 3
+    else:
+        if d:
+            return 4
+        else:
+            return 5
+    print("unreachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error (all nested paths exit)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_after_if_else_with_pass() {
+        let code = r#"
+def foo(condition: bool):
+    if condition:
+        return 1
+    else:
+        pass
+    print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (pass doesn't exit)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_unreachable_in_loop_after_if_else_all_break() {
+        let code = r#"
+def foo(condition: bool):
+    while True:
+        if condition:
+            break
+        else:
+            break
+        print("unreachable in loop")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should produce UnreachableCode error
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(errors[0], SemanticError::UnreachableCode { .. }));
+    }
+
+    #[test]
+    fn test_reachable_module_level_after_if_else() {
+        let code = r#"
+condition = True
+if condition:
+    x = 1
+else:
+    y = 2
+print("reachable")
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        
+        // Should NOT produce any errors (module-level, not all branches exit)
+        assert!(result.is_ok());
     }
 
     // ======================

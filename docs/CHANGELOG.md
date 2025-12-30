@@ -8,6 +8,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Advanced Control Flow Analysis - Unreachable Code Detection Phase 2** ✅ (324 tests passing)
+  - Extended unreachable code detection to handle branch analysis
+  - Detects unreachable code after if/else blocks where all branches exit
+  - Added three helper methods working together:
+    * `statement_always_exits()`: Enhanced to recursively check If statements
+    * `check_if_all_branches_exit()`: Validates if/else blocks have all branches exiting
+    * `block_contains_exit()`: Recursively searches for exit statements in blocks
+  - Detection logic:
+    * Must have else clause (all paths covered)
+    * All branches (if, elif, else) must contain exit statement
+    * Exit statements: return, break, continue, raise
+    * Works recursively with nested if/else blocks
+  - Examples detected:
+    * `if cond: return 1; else: return 2; print("unreachable")` ✗
+    * `if x==1: return 1; elif x==2: return 2; else: return 3; print("unreachable")` ✗
+    * `while True: if cond: break; else: break; print("unreachable")` ✗
+    * Nested if/else where all paths exit ✗
+  - Examples NOT detected (conservative approach):
+    * `if cond: return 1; print("reachable")` ✓ (no else clause)
+    * `if x==1: return 1; elif x==2: return 2; print("reachable")` ✓ (no else)
+    * `if cond: return 1; else: x=42; print("reachable")` ✓ (else doesn't exit)
+    * Module-level if/else blocks (even if all exit) ✓
+  - Added 20 comprehensive tests:
+    * 13 tests for unreachable code detection (simple, elif, nested, mixed exits)
+    * 7 tests for reachable code (missing else, partial exits, module-level)
+  - Combines seamlessly with Phase 1 sequential unreachable detection
+  - Conservative approach: only reports when certain all paths exit
+  - Test count increased from 304 → 324 (+20 tests)
+
 - **Phase 3.3: Semantic Validation - Invalid Assignment Target Validation** ✅ (320 tests passing)
   - Added comprehensive validation for assignment targets in assignments and augmented assignments
   - Added `InvalidAssignmentTarget` error variant with descriptive target type
