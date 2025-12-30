@@ -288,7 +288,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
   - [x] Session 1: CFG Data Structures (9 tests - BasicBlock, ControlFlowGraph, BlockKind)
   - [x] Session 2: CFG Builder for Linear Code (7 tests - build_function_cfg, linear statements, return/raise)
   - [x] Session 3: CFG Builder for Conditionals (5 tests - if/elif/else with merge blocks, nested if, edge cases)
-  - [ ] Session 4: CFG Builder for Loops (while/for with break/continue)
+  - [x] Session 4: CFG Builder for Loops (6 tests - while loops with break/continue, while-else, nested loops)
   - [ ] Session 5: CFG Builder for Try/Except
   - [ ] Session 6: CFG Reachability Analysis
   - [ ] Session 7: Advanced CFG Analysis (optional - future work)

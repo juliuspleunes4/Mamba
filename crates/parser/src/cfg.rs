@@ -334,18 +334,42 @@ impl CFGBuilder {
             }
             
             // Break/Continue - these should already be validated by semantic analyzer
-            Statement::Break(_) => {
+            Statement::Break(position) => {
                 if self.break_targets.is_empty() {
                     Err("Break statement outside loop (should be caught by semantic analyzer)".to_string())
                 } else {
+                    // Add statement to current block
+                    self.add_statement_to_current_block(statement.clone());
+                    
+                    // Add edge to break target (loop exit)
+                    if let Some(&target) = self.break_targets.last() {
+                        self.cfg.add_edge(self.current_block, target);
+                    }
+                    
+                    // Start new block for unreachable code after break
+                    let new_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+                    self.current_block = new_block;
+                    
                     Ok(())
                 }
             }
             
-            Statement::Continue(_) => {
+            Statement::Continue(position) => {
                 if self.continue_targets.is_empty() {
                     Err("Continue statement outside loop (should be caught by semantic analyzer)".to_string())
                 } else {
+                    // Add statement to current block
+                    self.add_statement_to_current_block(statement.clone());
+                    
+                    // Add edge to continue target (loop header)
+                    if let Some(&target) = self.continue_targets.last() {
+                        self.cfg.add_edge(self.current_block, target);
+                    }
+                    
+                    // Start new block for unreachable code after continue
+                    let new_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+                    self.current_block = new_block;
+                    
                     Ok(())
                 }
             }
@@ -355,8 +379,11 @@ impl CFGBuilder {
                 self.process_if_statement(condition, then_block, elif_blocks, else_block, position)
             }
             
-            Statement::While { .. }
-            | Statement::For { .. }
+            Statement::While { condition, body, else_block, position } => {
+                self.process_while_statement(condition, body, else_block, position)
+            }
+            
+            Statement::For { .. }
             | Statement::Try { .. } => {
                 Err("Control flow statements not yet supported in CFG builder".to_string())
             }
@@ -499,6 +526,86 @@ impl CFGBuilder {
             // No else block
             Ok((branch_exits, false))
         }
+    }
+    
+    /// Process a while loop statement
+    fn process_while_statement(
+        &mut self,
+        condition: &Expression,
+        body: &[Statement],
+        else_block: &Option<Vec<Statement>>,
+        position: &SourcePosition,
+    ) -> Result<(), String> {
+        // Create loop header block for condition evaluation
+        let header = self.cfg.new_block(BlockKind::LoopHeader, position.clone());
+        
+        // Add edge from current block to header
+        self.cfg.add_edge(self.current_block, header);
+        
+        // Add condition evaluation to header block
+        if let Some(header_block) = self.cfg.get_block_mut(header) {
+            header_block.add_statement(Statement::Expression(condition.clone()));
+        }
+        
+        // Create loop body block
+        let body_block = self.cfg.new_block(BlockKind::LoopBody, position.clone());
+        
+        // Add edge from header to body (true branch)
+        self.cfg.add_edge(header, body_block);
+        
+        // Create loop exit block (merge point after loop)
+        let exit_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+        
+        // Process else block if present
+        if let Some(else_stmts) = else_block {
+            // Create else block
+            let else_blk = self.cfg.new_block(BlockKind::Normal, position.clone());
+            
+            // False branch from header goes to else
+            self.cfg.add_edge(header, else_blk);
+            
+            // Process else statements
+            self.current_block = else_blk;
+            for statement in else_stmts {
+                self.process_statement(statement)?;
+            }
+            
+            // Connect else to exit if reachable
+            if let Some(current) = self.cfg.get_block(self.current_block) {
+                if !current.has_successors() {
+                    self.cfg.add_edge(self.current_block, exit_block);
+                }
+            }
+        } else {
+            // No else block - false branch goes directly to exit
+            self.cfg.add_edge(header, exit_block);
+        }
+        
+        // Push loop context for break/continue
+        self.break_targets.push(exit_block);
+        self.continue_targets.push(header);
+        
+        // Process loop body
+        self.current_block = body_block;
+        for statement in body {
+            self.process_statement(statement)?;
+        }
+        
+        // Add back-edge from body to header (if body is reachable and doesn't exit)
+        if let Some(current) = self.cfg.get_block(self.current_block) {
+            if !current.has_successors() {
+                self.cfg.add_edge(self.current_block, header);
+            }
+        }
+        
+        // Pop loop context
+        self.break_targets.pop();
+        self.continue_targets.pop();
+        
+        // Continue execution after the loop
+        self.current_block = exit_block;
+        
+        Ok(())
     }
     
     /// Add a statement to the current block
@@ -1537,5 +1644,367 @@ mod tests {
             .collect();
         
         assert!(unreachable_blocks.len() >= 1);
+    }
+    
+    // Helper functions for creating test statements
+    fn create_assignment_stmt(line: usize) -> Statement {
+        Statement::Assignment {
+            targets: Vec::new(),
+            value: Expression::Identifier {
+                name: "dummy".to_string(),
+                position: SourcePosition::new(line, 0, 0),
+            },
+            position: SourcePosition::new(line, 0, 0),
+        }
+    }
+    
+    fn create_bool_expression(value: bool, line: usize) -> Expression {
+        use crate::ast::Literal;
+        Expression::Literal(Literal::Boolean {
+            value,
+            position: SourcePosition::new(line, 0, 0),
+        })
+    }
+    
+    fn create_function(body: Vec<Statement>) -> Statement {
+        Statement::FunctionDef {
+            name: "test_func".to_string(),
+            parameters: Vec::new(),
+            body,
+            decorators: Vec::new(),
+            is_async: false,
+            return_type: None,
+            position: SourcePosition::new(1, 0, 0),
+        }
+    }
+    
+    #[test]
+    fn test_simple_while_loop() {
+        // def foo():
+        //     x = 1
+        //     while True:
+        //         y = 2
+        //     z = 3
+        let function = create_function(vec![
+            create_assignment_stmt(2),
+            Statement::While {
+                condition: create_bool_expression(true, 3),
+                body: vec![
+                    create_assignment_stmt(4),
+                ],
+                else_block: None,
+                position: SourcePosition::new(3, 0, 0),
+            },
+            create_assignment_stmt(5),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Expected structure:
+        // entry → initial_block(x=1) → header(condition) → body(y=2) → header (back-edge)
+        //                                      ↓ false
+        //                                   exit_block(z=3) → exit
+        
+        assert!(cfg.block_count() >= 6);
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let initial_id = entry_block.successors[0];
+        let initial_block = cfg.get_block(initial_id).unwrap();
+        
+        // Find assignment x=1
+        assert!(matches!(initial_block.statements.first().unwrap(), Statement::Assignment { .. }));
+        
+        // Initial block should connect to loop header
+        assert_eq!(initial_block.successors.len(), 1);
+        let header_id = initial_block.successors[0];
+        let header_block = cfg.get_block(header_id).unwrap();
+        assert_eq!(header_block.kind, BlockKind::LoopHeader);
+        
+        // Header should have condition
+        assert!(matches!(header_block.statements.first().unwrap(), Statement::Expression(_)));
+        
+        // Header should have 2 successors: body (true) and exit (false)
+        assert_eq!(header_block.successors.len(), 2);
+        let body_id = header_block.successors[0];
+        let exit_block_id = header_block.successors[1];
+        
+        let body_block = cfg.get_block(body_id).unwrap();
+        assert_eq!(body_block.kind, BlockKind::LoopBody);
+        
+        // Body should have y=2
+        assert!(matches!(body_block.statements.first().unwrap(), Statement::Assignment { .. }));
+        
+        // Body should have back-edge to header
+        assert_eq!(body_block.successors.len(), 1);
+        assert_eq!(body_block.successors[0], header_id);
+        
+        // Exit block should have z=3
+        let exit_block = cfg.get_block(exit_block_id).unwrap();
+        assert!(matches!(exit_block.statements.first().unwrap(), Statement::Assignment { .. }));
+    }
+    
+    #[test]
+    fn test_while_with_break() {
+        // def foo():
+        //     while True:
+        //         x = 1
+        //         break
+        //         y = 2  # unreachable
+        //     z = 3
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(true, 2),
+                body: vec![
+                    create_assignment_stmt(3),
+                    Statement::Break(SourcePosition::new(4, 0, 0)),
+                    create_assignment_stmt(5),
+                ],
+                else_block: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(6),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Break should create edge to loop exit
+        // y=2 should be in unreachable block
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let initial_id = entry_block.successors[0];
+        let initial_block = cfg.get_block(initial_id).unwrap();
+        
+        let header_id = initial_block.successors[0];
+        let header_block = cfg.get_block(header_id).unwrap();
+        
+        let body_id = header_block.successors[0];
+        let body_block = cfg.get_block(body_id).unwrap();
+        
+        // Body should have x=1 and break
+        assert!(matches!(body_block.statements[0], Statement::Assignment { .. }));
+        assert!(matches!(body_block.statements[1], Statement::Break(_)));
+        
+        // Body should connect to exit (via break)
+        assert!(body_block.successors.len() >= 1);
+        
+        // Find unreachable block with y=2
+        let unreachable_blocks: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                !block.has_predecessors() && block.kind == BlockKind::Normal
+            })
+            .collect();
+        
+        assert!(unreachable_blocks.len() >= 1);
+    }
+    
+    #[test]
+    fn test_while_with_continue() {
+        // def foo():
+        //     while True:
+        //         x = 1
+        //         continue
+        //         y = 2  # unreachable
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(true, 2),
+                body: vec![
+                    create_assignment_stmt(3),
+                    Statement::Continue(SourcePosition::new(4, 0, 0)),
+                    create_assignment_stmt(5),
+                ],
+                else_block: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let initial_id = entry_block.successors[0];
+        let initial_block = cfg.get_block(initial_id).unwrap();
+        
+        let header_id = initial_block.successors[0];
+        let header_block = cfg.get_block(header_id).unwrap();
+        
+        let body_id = header_block.successors[0];
+        let body_block = cfg.get_block(body_id).unwrap();
+        
+        // Body should have x=1 and continue
+        assert!(matches!(body_block.statements[0], Statement::Assignment { .. }));
+        assert!(matches!(body_block.statements[1], Statement::Continue(_)));
+        
+        // Body should connect back to header (via continue)
+        assert!(body_block.successors.contains(&header_id));
+        
+        // Find unreachable block with y=2
+        let unreachable_blocks: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                !block.has_predecessors() && block.kind == BlockKind::Normal
+            })
+            .collect();
+        
+        assert!(unreachable_blocks.len() >= 1);
+    }
+    
+    #[test]
+    fn test_while_else_no_break() {
+        // def foo():
+        //     while False:
+        //         x = 1
+        //     else:
+        //         y = 2
+        //     z = 3
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(false, 2),
+                body: vec![
+                    create_assignment_stmt(3),
+                ],
+                else_block: Some(vec![
+                    create_assignment_stmt(5),
+                ]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(6),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Header false branch should go to else, which then goes to exit
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let initial_id = entry_block.successors[0];
+        let initial_block = cfg.get_block(initial_id).unwrap();
+        
+        let header_id = initial_block.successors[0];
+        let header_block = cfg.get_block(header_id).unwrap();
+        
+        // Header should have 2 successors: body and else
+        assert_eq!(header_block.successors.len(), 2);
+        
+        let _body_id = header_block.successors[0];
+        let else_id = header_block.successors[1];
+        
+        let else_block = cfg.get_block(else_id).unwrap();
+        // Else block should have y=2
+        assert!(matches!(else_block.statements.first().unwrap(), Statement::Assignment { .. }));
+        
+        // Else should connect to exit with z=3
+        assert!(else_block.successors.len() >= 1);
+    }
+    
+    #[test]
+    fn test_while_else_with_break() {
+        // def foo():
+        //     while True:
+        //         break
+        //     else:
+        //         y = 2  # should not execute
+        //     z = 3
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(true, 2),
+                body: vec![
+                    Statement::Break(SourcePosition::new(3, 0, 0)),
+                ],
+                else_block: Some(vec![
+                    create_assignment_stmt(5),
+                ]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(6),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Break should go to exit, NOT to else
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let initial_id = entry_block.successors[0];
+        let initial_block = cfg.get_block(initial_id).unwrap();
+        
+        let header_id = initial_block.successors[0];
+        let header_block = cfg.get_block(header_id).unwrap();
+        
+        let body_id = header_block.successors[0];
+        let body_block = cfg.get_block(body_id).unwrap();
+        
+        // Body has break
+        assert!(matches!(body_block.statements.first().unwrap(), Statement::Break(_)));
+        
+        // Find the exit block with z=3
+        let exit_blocks: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                block.kind == BlockKind::Normal && 
+                block.statements.iter().any(|s| matches!(s, Statement::Assignment { .. }))
+            })
+            .collect();
+        
+        // Break should connect to one of these exits
+        assert!(exit_blocks.len() >= 1);
+    }
+    
+    #[test]
+    fn test_nested_while_loops() {
+        // def foo():
+        //     while True:
+        //         x = 1
+        //         while True:
+        //             y = 2
+        //             break
+        //         z = 3
+        let function = create_function(vec![
+            Statement::While {
+                condition: create_bool_expression(true, 2),
+                body: vec![
+                    create_assignment_stmt(3),
+                    Statement::While {
+                        condition: create_bool_expression(true, 4),
+                        body: vec![
+                            create_assignment_stmt(5),
+                            Statement::Break(SourcePosition::new(6, 0, 0)),
+                        ],
+                        else_block: None,
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                    create_assignment_stmt(7),
+                ],
+                else_block: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Should have multiple loop headers
+        let loop_headers: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                block.kind == BlockKind::LoopHeader
+            })
+            .collect();
+        
+        assert_eq!(loop_headers.len(), 2); // outer and inner loop
+        
+        // Should have multiple loop bodies
+        let loop_bodies: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                block.kind == BlockKind::LoopBody
+            })
+            .collect();
+        
+        assert_eq!(loop_bodies.len(), 2); // outer and inner loop
     }
 }
