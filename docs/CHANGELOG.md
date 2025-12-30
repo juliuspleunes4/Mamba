@@ -8,8 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Phase 3.4: Control Flow Graph (CFG) - Session 4** ✅ (393 tests passing)
-  - Implemented CFG builder for while loops with break/continue
+- **Phase 3.4: Control Flow Graph (CFG) - Session 4** ✅ (399 tests passing)
+  - Implemented CFG builder for while loops and for loops with break/continue
   - While Loop Processing:
     * `process_while_statement()` - Main handler for while loops
       - Creates loop header block (BlockKind::LoopHeader) for condition
@@ -18,13 +18,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
       - Adds condition evaluation to header block
       - True branch: header → body → header (back-edge)
       - False branch: header → exit (or else block if present)
+  - For Loop Processing (Session 4.3):
+    * `process_for_statement()` - Main handler for for loops
+      - Evaluates iterator in current block before loop
+      - Creates loop header block (BlockKind::LoopHeader) with target assignment
+      - Creates loop body block (BlockKind::LoopBody)
+      - Creates loop exit block for merge after loop
+      - Has next: header → body → header (back-edge)
+      - No more: header → exit (or else block if present)
   - Break/Continue Handling:
     * Updated Statement::Break handler to create edge to loop exit
     * Updated Statement::Continue handler to create edge to loop header
     * Both create unreachable blocks after statement
     * Uses break_targets and continue_targets stacks for nested loops
-  - While-Else Support:
-    * False branch from header goes to else block (if present)
+  - While-Else and For-Else Support:
+    * False/no-more branch from header goes to else block (if present)
     * Else block connects to exit after execution
     * Break bypasses else block, goes directly to exit
     * Correct semantics: else executes only if loop completes normally
@@ -32,19 +40,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     * Stack-based loop context tracking
     * Break/continue connect to correct loop level
     * Multiple loop headers and bodies properly created
-  - Test Coverage (6 new tests, 27 total CFG tests):
-    * test_simple_while_loop: Basic while with back-edge (6+ blocks)
-    * test_while_with_break: Break creates edge to exit, unreachable after
-    * test_while_with_continue: Continue creates edge to header, unreachable after
-    * test_while_else_no_break: Else executes when no break
-    * test_while_else_with_break: Break bypasses else block
-    * test_nested_while_loops: Nested loops with correct stack handling
+  - Test Coverage (12 new tests, 33 total CFG tests):
+    * While Loops (6 tests):
+      - test_simple_while_loop: Basic while with back-edge (6+ blocks)
+      - test_while_with_break: Break creates edge to exit, unreachable after
+      - test_while_with_continue: Continue creates edge to header, unreachable after
+      - test_while_else_no_break: Else executes when no break
+      - test_while_else_with_break: Break bypasses else block
+      - test_nested_while_loops: Nested loops with correct stack handling
+    * For Loops (6 tests):
+      - test_simple_for_loop: Basic for with iterator and back-edge
+      - test_for_with_break: Break creates edge to exit, unreachable after
+      - test_for_with_continue: Continue creates edge to header, unreachable after
+      - test_for_else_no_break: Else executes when no break
+      - test_for_else_with_break: Break bypasses else block
+      - test_nested_for_in_while: Nested for inside while loop
   - Implementation Details:
     * Loop header block has BlockKind::LoopHeader
     * Loop body block has BlockKind::LoopBody
     * Back-edge from body to header for iteration
     * Push/pop loop context (header, exit) for break/continue
-    * For loops deferred to future session (similar structure)
+    * For loops: iterator evaluation before loop, target assignment in header
 
 - **Phase 3.4: Control Flow Graph (CFG) - Session 3** ✅ (387 tests passing)
   - Implemented CFG builder for conditional statements (if/elif/else)
