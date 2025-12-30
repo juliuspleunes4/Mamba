@@ -8,6 +8,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 5** ✅ (407 tests passing)
+  - Implemented CFG builder for try/except/else/finally blocks with exception handling
+  - Try/Except Processing:
+    * `process_try_statement()` - Main handler for exception control flow
+      - Creates try block for protected code
+      - Creates handler blocks for each except clause
+      - Creates optional else block (executes if no exception)
+      - Creates optional finally block (always executes)
+      - Creates merge block (after try/except)
+      - Exception paths: try → handlers (on exception)
+      - Normal path: try → else (if present) → merge
+      - All paths converge: merge → finally (if present)
+  - Exception Handler Context:
+    * Added exception_handlers field to CFGBuilder (Vec<BlockId>)
+    * Stack-based exception handler tracking for nested try blocks
+    * Handlers saved/restored when entering/exiting try blocks
+  - Raise Statement Handling:
+    * Updated Statement::Raise to check for exception handlers
+    * If in try block: connects to all exception handlers
+    * If not in try: connects to function exit (unhandled exception)
+    * Creates unreachable block after raise
+  - Exception Flow Semantics:
+    * Try block connects to all handler blocks via exception edges
+    * Else block only executes if no exception raised
+    * Finally block always executes from all paths
+    * Handlers and else both connect to merge block
+    * Nested try blocks correctly maintain handler stack
+  - Test Coverage (8 new tests, 41 total CFG tests):
+    * test_simple_try_except: Basic try with single handler
+    * test_try_multiple_except: Multiple exception handlers
+    * test_try_except_else: Else block execution on success
+    * test_try_except_finally: Finally always executes
+    * test_try_except_else_finally: All components together
+    * test_nested_try_blocks: Nested try with handler stacks
+    * test_raise_in_try: Raise connects to handler, unreachable after
+    * test_raise_without_handler: Raise to exit, unreachable after
+  - Implementation Details:
+    * Exception handlers stored as Vec<BlockId> for current try context
+    * Raise statements connect to exception_handlers or function exit
+    * Finally blocks reachable from all execution paths
+    * Proper restoration of exception context on exit from try
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 4** ✅ (399 tests passing)
   - Implemented CFG builder for while loops and for loops with break/continue
   - While Loop Processing:

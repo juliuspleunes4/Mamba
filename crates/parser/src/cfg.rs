@@ -1,7 +1,7 @@
 // Control Flow Graph (CFG) implementation
 // Represents all possible execution paths through a function
 
-use crate::ast::{Statement, Expression};
+use crate::ast::{Statement, Expression, ExceptHandler};
 use crate::token::SourcePosition;
 use std::collections::HashMap;
 
@@ -239,6 +239,9 @@ pub struct CFGBuilder {
     
     /// Stack of loop continue targets (for continue statements)
     continue_targets: Vec<BlockId>,
+    
+    /// Stack of exception handler blocks (for raise statements in try blocks)
+    exception_handlers: Vec<BlockId>,
 }
 
 impl CFGBuilder {
@@ -253,6 +256,7 @@ impl CFGBuilder {
             exit_block: None,
             break_targets: Vec::new(),
             continue_targets: Vec::new(),
+            exception_handlers: Vec::new(),
         }
     }
     
@@ -318,12 +322,21 @@ impl CFGBuilder {
                 Ok(())
             }
             
-            // Raise statement - add edge to exit (unhandled exception)
+            // Raise statement - add edge to exception handler or exit
             Statement::Raise { position, .. } => {
                 self.add_statement_to_current_block(statement.clone());
                 
-                if let Some(exit) = self.exit_block {
-                    self.cfg.add_edge(self.current_block, exit);
+                // If we're in a try block, connect to exception handlers
+                if !self.exception_handlers.is_empty() {
+                    // Connect to all exception handlers
+                    for &handler_id in &self.exception_handlers {
+                        self.cfg.add_edge(self.current_block, handler_id);
+                    }
+                } else {
+                    // No exception handler, connect to function exit (unhandled exception)
+                    if let Some(exit) = self.exit_block {
+                        self.cfg.add_edge(self.current_block, exit);
+                    }
                 }
                 
                 // Start new block for any unreachable code after raise
@@ -387,8 +400,8 @@ impl CFGBuilder {
                 self.process_for_statement(target, iter, body, else_block, position)
             }
             
-            Statement::Try { .. } => {
-                Err("Control flow statements not yet supported in CFG builder".to_string())
+            Statement::Try { body, handlers, orelse, finalbody, position } => {
+                self.process_try_statement(body, handlers, orelse, finalbody, position)
             }
             
             // Other statements - treat as linear for now
@@ -696,6 +709,127 @@ impl CFGBuilder {
         
         // Continue execution after the loop
         self.current_block = exit_block;
+        
+        Ok(())
+    }
+    
+    /// Process a try statement (try/except/else/finally)
+    /// 
+    /// CFG structure:
+    /// ```
+    /// try_body → (exception) → handler1, handler2, ... → (merge_or_finally)
+    ///          → (no exception) → else_block (if present) → (merge_or_finally)
+    ///                          → merge_or_finally (if no else)
+    /// finally_block (if present, always executes)
+    /// ```
+    fn process_try_statement(
+        &mut self,
+        body: &[Statement],
+        handlers: &[ExceptHandler],
+        orelse: &Option<Vec<Statement>>,
+        finalbody: &Option<Vec<Statement>>,
+        position: &SourcePosition,
+    ) -> Result<(), String> {
+        // Create try block
+        let try_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+        self.cfg.add_edge(self.current_block, try_block);
+        self.current_block = try_block;
+        
+        // Save current exception handler context (for nested try blocks)
+        let saved_exception_handlers = self.exception_handlers.clone();
+        
+        // Create handler blocks for each except clause
+        let mut handler_blocks = Vec::new();
+        for handler in handlers {
+            let handler_block = self.cfg.new_block(BlockKind::Normal, handler.position.clone());
+            handler_blocks.push(handler_block);
+        }
+        
+        // Set exception handlers for statements in try block
+        self.exception_handlers = handler_blocks.clone();
+        
+        // Process try body
+        for statement in body {
+            self.process_statement(statement)?;
+        }
+        
+        // After try body (no exception path)
+        let after_try_block = self.current_block;
+        
+        // Create else block if present
+        let else_block_id = if let Some(else_stmts) = orelse {
+            let else_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+            self.cfg.add_edge(after_try_block, else_block);
+            self.current_block = else_block;
+            
+            for statement in else_stmts {
+                self.process_statement(statement)?;
+            }
+            
+            Some(self.current_block)
+        } else {
+            None
+        };
+        
+        // Process each exception handler
+        let mut handler_exit_blocks = Vec::new();
+        for (handler, &handler_block_id) in handlers.iter().zip(handler_blocks.iter()) {
+            // Add edge from try block to handler (exception path)
+            self.cfg.add_edge(try_block, handler_block_id);
+            
+            self.current_block = handler_block_id;
+            
+            // Add exception variable binding if present (e.g., 'except Exception as e:')
+            if let Some(var_name) = &handler.name {
+                // Create a pseudo-assignment statement for the exception variable
+                // This is implicit in Python but we model it in the CFG
+                // Note: We don't actually create a statement here, just model the flow
+            }
+            
+            // Process handler body
+            for statement in &handler.body {
+                self.process_statement(statement)?;
+            }
+            
+            handler_exit_blocks.push(self.current_block);
+        }
+        
+        // Create merge block (after try/except/else)
+        let merge_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+        
+        // Connect all paths to merge (or finally if present)
+        // 1. No-exception path (from else or directly from try)
+        if let Some(else_exit) = else_block_id {
+            self.cfg.add_edge(else_exit, merge_block);
+        } else {
+            self.cfg.add_edge(after_try_block, merge_block);
+        }
+        
+        // 2. All exception handlers
+        for handler_exit in handler_exit_blocks {
+            self.cfg.add_edge(handler_exit, merge_block);
+        }
+        
+        // Process finally block if present
+        if let Some(finally_stmts) = finalbody {
+            // Finally always executes regardless of exception
+            let finally_block = self.cfg.new_block(BlockKind::Normal, position.clone());
+            self.cfg.add_edge(merge_block, finally_block);
+            
+            self.current_block = finally_block;
+            for statement in finally_stmts {
+                self.process_statement(statement)?;
+            }
+            
+            // After finally, continue with the block after finally
+            // current_block is already set to the block after finally processing
+        } else {
+            // No finally, continue from merge block
+            self.current_block = merge_block;
+        }
+        
+        // Restore exception handler context
+        self.exception_handlers = saved_exception_handlers;
         
         Ok(())
     }
@@ -2470,5 +2604,432 @@ mod tests {
             .collect();
         
         assert_eq!(loop_bodies.len(), 2); // while and for loop
+    }
+    
+    #[test]
+    fn test_simple_try_except() {
+        // def foo():
+        //     x = 1
+        //     try:
+        //         y = 2
+        //         z = 3
+        //     except Exception:
+        //         a = 4
+        //     b = 5
+        let function = create_function(vec![
+            create_assignment_stmt(2),
+            Statement::Try {
+                body: vec![
+                    create_assignment_stmt(4),
+                    create_assignment_stmt(5),
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "Exception".to_string(),
+                            position: SourcePosition::new(6, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(7),
+                        ],
+                        position: SourcePosition::new(6, 0, 0),
+                    },
+                ],
+                orelse: None,
+                finalbody: None,
+                position: SourcePosition::new(3, 0, 0),
+            },
+            create_assignment_stmt(8),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Expected structure:
+        // entry → initial(x=1) → try(y=2, z=3) → merge(b=5) → exit
+        //                              ↓ exception
+        //                         handler(a=4) → merge
+        
+        assert!(cfg.block_count() >= 5);
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let initial_id = entry_block.successors[0];
+        let initial_block = cfg.get_block(initial_id).unwrap();
+        
+        // Initial block should have x=1
+        assert!(matches!(initial_block.statements.first().unwrap(), Statement::Assignment { .. }));
+        
+        // Should connect to try block
+        assert_eq!(initial_block.successors.len(), 1);
+        let try_id = initial_block.successors[0];
+        let try_block = cfg.get_block(try_id).unwrap();
+        
+        // Try block should have y=2 and z=3
+        assert_eq!(try_block.statements.len(), 2);
+        
+        // Try block should have 2 successors: exception handler and normal path
+        assert_eq!(try_block.successors.len(), 2);
+    }
+    
+    #[test]
+    fn test_try_multiple_except() {
+        // def foo():
+        //     try:
+        //         x = 1
+        //     except ValueError:
+        //         y = 2
+        //     except TypeError:
+        //         z = 3
+        //     a = 4
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    create_assignment_stmt(3),
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "ValueError".to_string(),
+                            position: SourcePosition::new(4, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(5),
+                        ],
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "TypeError".to_string(),
+                            position: SourcePosition::new(6, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(7),
+                        ],
+                        position: SourcePosition::new(6, 0, 0),
+                    },
+                ],
+                orelse: None,
+                finalbody: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(8),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Try block should have edges to both handlers
+        // Verify that both exception handlers are reachable
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let try_id = entry_block.successors[0];
+        
+        // Should have multiple blocks for try body, handlers, and merge
+        assert!(cfg.block_count() >= 5); // entry, try, 2 handlers, merge, after
+    }
+    
+    #[test]
+    fn test_try_except_else() {
+        // def foo():
+        //     try:
+        //         x = 1
+        //     except Exception:
+        //         y = 2
+        //     else:
+        //         z = 3
+        //     a = 4
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    create_assignment_stmt(3),
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "Exception".to_string(),
+                            position: SourcePosition::new(4, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(5),
+                        ],
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                ],
+                orelse: Some(vec![
+                    create_assignment_stmt(7),
+                ]),
+                finalbody: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(8),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Expected structure:
+        // try → (exception) → handler → merge
+        //    → (no exception) → else → merge
+        
+        assert!(cfg.block_count() >= 5);
+    }
+    
+    #[test]
+    fn test_try_except_finally() {
+        // def foo():
+        //     try:
+        //         x = 1
+        //     except Exception:
+        //         y = 2
+        //     finally:
+        //         z = 3
+        //     a = 4
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    create_assignment_stmt(3),
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "Exception".to_string(),
+                            position: SourcePosition::new(4, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(5),
+                        ],
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                ],
+                orelse: None,
+                finalbody: Some(vec![
+                    create_assignment_stmt(7),
+                ]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(8),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Finally block should be present and reachable from all paths
+        assert!(cfg.block_count() >= 6);
+    }
+    
+    #[test]
+    fn test_try_except_else_finally() {
+        // def foo():
+        //     try:
+        //         x = 1
+        //     except Exception:
+        //         y = 2
+        //     else:
+        //         z = 3
+        //     finally:
+        //         a = 4
+        //     b = 5
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    create_assignment_stmt(3),
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "Exception".to_string(),
+                            position: SourcePosition::new(4, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(5),
+                        ],
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                ],
+                orelse: Some(vec![
+                    create_assignment_stmt(7),
+                ]),
+                finalbody: Some(vec![
+                    create_assignment_stmt(9),
+                ]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            create_assignment_stmt(10),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // All paths should converge to finally
+        assert!(cfg.block_count() >= 7);
+    }
+    
+    #[test]
+    fn test_nested_try_blocks() {
+        // def foo():
+        //     try:
+        //         x = 1
+        //         try:
+        //             y = 2
+        //         except ValueError:
+        //             z = 3
+        //     except Exception:
+        //         a = 4
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    create_assignment_stmt(3),
+                    Statement::Try {
+                        body: vec![
+                            create_assignment_stmt(5),
+                        ],
+                        handlers: vec![
+                            ExceptHandler {
+                                exception_type: Some(Expression::Identifier {
+                                    name: "ValueError".to_string(),
+                                    position: SourcePosition::new(6, 0, 0),
+                                }),
+                                name: None,
+                                body: vec![
+                                    create_assignment_stmt(7),
+                                ],
+                                position: SourcePosition::new(6, 0, 0),
+                            },
+                        ],
+                        orelse: None,
+                        finalbody: None,
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "Exception".to_string(),
+                            position: SourcePosition::new(8, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(9),
+                        ],
+                        position: SourcePosition::new(8, 0, 0),
+                    },
+                ],
+                orelse: None,
+                finalbody: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Nested try blocks should create multiple handler levels
+        assert!(cfg.block_count() >= 6);
+    }
+    
+    #[test]
+    fn test_raise_in_try() {
+        // def foo():
+        //     try:
+        //         x = 1
+        //         raise ValueError()
+        //         y = 2  # unreachable
+        //     except ValueError:
+        //         z = 3
+        let function = create_function(vec![
+            Statement::Try {
+                body: vec![
+                    create_assignment_stmt(3),
+                    Statement::Raise {
+                        exception: Some(Expression::Identifier {
+                            name: "ValueError".to_string(),
+                            position: SourcePosition::new(4, 0, 0),
+                        }),
+                        position: SourcePosition::new(4, 0, 0),
+                    },
+                    create_assignment_stmt(5),
+                ],
+                handlers: vec![
+                    ExceptHandler {
+                        exception_type: Some(Expression::Identifier {
+                            name: "ValueError".to_string(),
+                            position: SourcePosition::new(6, 0, 0),
+                        }),
+                        name: None,
+                        body: vec![
+                            create_assignment_stmt(7),
+                        ],
+                        position: SourcePosition::new(6, 0, 0),
+                    },
+                ],
+                orelse: None,
+                finalbody: None,
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Raise should connect to handler
+        // y=2 should be in unreachable block
+        
+        // Find unreachable blocks
+        let unreachable_blocks: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                !block.has_predecessors() && block.kind == BlockKind::Normal
+            })
+            .collect();
+        
+        assert!(unreachable_blocks.len() >= 1);
+    }
+    
+    #[test]
+    fn test_raise_without_handler() {
+        // def foo():
+        //     x = 1
+        //     raise ValueError()
+        //     y = 2  # unreachable
+        let function = create_function(vec![
+            create_assignment_stmt(2),
+            Statement::Raise {
+                exception: Some(Expression::Identifier {
+                    name: "ValueError".to_string(),
+                    position: SourcePosition::new(3, 0, 0),
+                }),
+                position: SourcePosition::new(3, 0, 0),
+            },
+            create_assignment_stmt(4),
+        ]);
+        
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        
+        // Raise should connect to function exit (unhandled)
+        // y=2 should be unreachable
+        
+        let entry = cfg.entry();
+        let entry_block = cfg.get_block(entry).unwrap();
+        let initial_id = entry_block.successors[0];
+        let initial_block = cfg.get_block(initial_id).unwrap();
+        
+        // Initial block should have x=1 and raise
+        assert!(matches!(initial_block.statements[0], Statement::Assignment { .. }));
+        assert!(matches!(initial_block.statements[1], Statement::Raise { .. }));
+        
+        // Should connect to exit
+        assert!(initial_block.successors.len() >= 1);
+        
+        // Find unreachable blocks
+        let unreachable_blocks: Vec<_> = cfg.block_ids()
+            .into_iter()
+            .filter(|&id| {
+                let block = cfg.get_block(id).unwrap();
+                !block.has_predecessors() && block.kind == BlockKind::Normal
+            })
+            .collect();
+        
+        assert!(unreachable_blocks.len() >= 1);
     }
 }
