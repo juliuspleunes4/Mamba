@@ -6729,3 +6729,208 @@ fn test_blank_lines_dont_create_empty_statements() {
     assert_eq!(module.statements.len(), 2);
 }
 
+// ============================================================
+// Try/Except Statement Tests
+// ============================================================
+
+#[test]
+fn test_parse_basic_try_except() {
+    let input = "try:\n    x = 1\nexcept:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { body, handlers, orelse, finalbody, .. } => {
+            assert_eq!(body.len(), 1);
+            assert_eq!(handlers.len(), 1);
+            assert!(orelse.is_none());
+            assert!(finalbody.is_none());
+            
+            // Check bare except handler
+            assert!(handlers[0].exception_type.is_none());
+            assert!(handlers[0].name.is_none());
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_except_with_type() {
+    let input = "try:\n    x = 1\nexcept ValueError:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { handlers, .. } => {
+            assert_eq!(handlers.len(), 1);
+            assert!(handlers[0].exception_type.is_some());
+            assert!(handlers[0].name.is_none());
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_except_with_as_clause() {
+    let input = "try:\n    x = 1\nexcept ValueError as e:\n    print(e)\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { handlers, .. } => {
+            assert_eq!(handlers.len(), 1);
+            assert!(handlers[0].exception_type.is_some());
+            assert_eq!(handlers[0].name.as_deref(), Some("e"));
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_multiple_except_handlers() {
+    let input = "try:\n    x = 1\nexcept ValueError:\n    pass\nexcept TypeError:\n    pass\nexcept:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { handlers, .. } => {
+            assert_eq!(handlers.len(), 3);
+            assert!(handlers[0].exception_type.is_some());
+            assert!(handlers[1].exception_type.is_some());
+            assert!(handlers[2].exception_type.is_none()); // bare except
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_except_else() {
+    let input = "try:\n    x = 1\nexcept ValueError:\n    pass\nelse:\n    y = 2\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { body, handlers, orelse, finalbody, .. } => {
+            assert_eq!(body.len(), 1);
+            assert_eq!(handlers.len(), 1);
+            assert!(orelse.is_some());
+            assert_eq!(orelse.as_ref().unwrap().len(), 1);
+            assert!(finalbody.is_none());
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_except_finally() {
+    let input = "try:\n    x = 1\nexcept ValueError:\n    pass\nfinally:\n    cleanup()\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { body, handlers, orelse, finalbody, .. } => {
+            assert_eq!(body.len(), 1);
+            assert_eq!(handlers.len(), 1);
+            assert!(orelse.is_none());
+            assert!(finalbody.is_some());
+            assert_eq!(finalbody.as_ref().unwrap().len(), 1);
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_except_else_finally() {
+    let input = "try:\n    x = 1\nexcept ValueError:\n    pass\nelse:\n    y = 2\nfinally:\n    cleanup()\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { handlers, orelse, finalbody, .. } => {
+            assert_eq!(handlers.len(), 1);
+            assert!(orelse.is_some());
+            assert!(finalbody.is_some());
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_finally_no_except() {
+    let input = "try:\n    x = 1\nfinally:\n    cleanup()\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { handlers, finalbody, .. } => {
+            assert_eq!(handlers.len(), 0);
+            assert!(finalbody.is_some());
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_nested_try_except() {
+    let input = "try:\n    try:\n        x = 1\n    except:\n        pass\nexcept:\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { body, .. } => {
+            assert_eq!(body.len(), 1);
+            match &body[0] {
+                Statement::Try { .. } => {}, // nested try
+                _ => panic!("Expected nested try statement"),
+            }
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_without_except_or_finally_fails() {
+    let input = "try:\n    x = 1\n";
+    let result = parse(input);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_try_else_without_except_fails() {
+    let input = "try:\n    x = 1\nelse:\n    y = 2\n";
+    let result = parse(input);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_parse_complex_exception_types() {
+    let input = "try:\n    x = 1\nexcept (ValueError, TypeError):\n    pass\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { handlers, .. } => {
+            assert_eq!(handlers.len(), 1);
+            assert!(handlers[0].exception_type.is_some());
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+
+#[test]
+fn test_parse_try_with_multiple_statements() {
+    let input = "try:\n    x = 1\n    y = 2\n    z = 3\nexcept ValueError:\n    a = 1\n    b = 2\nelse:\n    c = 3\nfinally:\n    d = 4\n    e = 5\n";
+    let module = parse(input).unwrap();
+    assert_eq!(module.statements.len(), 1);
+    
+    match &module.statements[0] {
+        Statement::Try { body, handlers, orelse, finalbody, .. } => {
+            assert_eq!(body.len(), 3);
+            assert_eq!(handlers[0].body.len(), 2);
+            assert_eq!(orelse.as_ref().unwrap().len(), 1);
+            assert_eq!(finalbody.as_ref().unwrap().len(), 2);
+        }
+        _ => panic!("Expected try statement"),
+    }
+}
+

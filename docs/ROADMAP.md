@@ -282,8 +282,8 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.4 Advanced Control Flow Analysis
 
-- [ ] Detect unreachable code after if/else with returns in all branches
-- [ ] Handle unreachable code in try/except blocks
+- [x] Detect unreachable code after if/else with returns in all branches
+- [x] Handle unreachable code in try/except blocks (38 tests: parser, semantic, unreachable detection)
 - [ ] Implement sophisticated control flow graphs for comprehensive analysis
 
 ### 3.5 Deferred Semantic Validation
@@ -735,7 +735,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 12.1 Advanced Control Flow
 
-- [ ] Try-except-finally (error handling)
+- [x] Try-except-finally (error handling) - Full implementation with 38 tests
 - [ ] With statement (context managers)
 - [ ] Match statement (pattern matching - Python 3.10+)
 
