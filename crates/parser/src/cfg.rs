@@ -3,7 +3,7 @@
 
 use crate::ast::{Statement, Expression, ExceptHandler};
 use crate::token::SourcePosition;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// Unique identifier for a basic block
 pub type BlockId = usize;
@@ -446,6 +446,319 @@ impl ControlFlowGraph {
         } else {
             false
         }
+    }
+
+    /// Extract variable names defined by an assignment target expression.
+    fn extract_target_definitions(target: &Expression, defs: &mut HashSet<String>) {
+        match target {
+            Expression::Identifier { name, .. } => {
+                defs.insert(name.clone());
+            }
+            Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
+                for element in elements {
+                    Self::extract_target_definitions(element, defs);
+                }
+            }
+            Expression::Starred { value, .. } | Expression::Parenthesized { expr: value, .. } => {
+                Self::extract_target_definitions(value, defs);
+            }
+            _ => {}
+        }
+    }
+
+    /// Extract "use" variables from assignment targets (e.g., `arr[i] = v` uses `arr` and `i`).
+    fn extract_target_uses(target: &Expression, uses: &mut HashSet<String>) {
+        match target {
+            Expression::Identifier { .. } => {}
+            Expression::Tuple { elements, .. } | Expression::List { elements, .. } => {
+                for element in elements {
+                    Self::extract_target_uses(element, uses);
+                }
+            }
+            Expression::Starred { value, .. } | Expression::Parenthesized { expr: value, .. } => {
+                Self::extract_target_uses(value, uses);
+            }
+            Expression::Subscript { object, index, .. } => {
+                Self::extract_identifiers_from_expr(object, uses);
+                Self::extract_identifiers_from_expr(index, uses);
+            }
+            Expression::Attribute { object, .. } => {
+                Self::extract_identifiers_from_expr(object, uses);
+            }
+            _ => {
+                Self::extract_identifiers_from_expr(target, uses);
+            }
+        }
+    }
+
+    /// Extract all identifier uses from an expression.
+    fn extract_identifiers_from_expr(expr: &Expression, uses: &mut HashSet<String>) {
+        match expr {
+            Expression::Literal(_) => {}
+            Expression::Identifier { name, .. } => {
+                uses.insert(name.clone());
+            }
+            Expression::BinaryOp { left, right, .. } => {
+                Self::extract_identifiers_from_expr(left, uses);
+                Self::extract_identifiers_from_expr(right, uses);
+            }
+            Expression::UnaryOp { operand, .. } => {
+                Self::extract_identifiers_from_expr(operand, uses);
+            }
+            Expression::Parenthesized { expr, .. } => {
+                Self::extract_identifiers_from_expr(expr, uses);
+            }
+            Expression::Call {
+                function,
+                arguments,
+                ..
+            } => {
+                Self::extract_identifiers_from_expr(function, uses);
+                for arg in arguments {
+                    Self::extract_identifiers_from_expr(arg, uses);
+                }
+            }
+            Expression::Attribute { object, .. } => {
+                Self::extract_identifiers_from_expr(object, uses);
+            }
+            Expression::Subscript { object, index, .. } => {
+                Self::extract_identifiers_from_expr(object, uses);
+                Self::extract_identifiers_from_expr(index, uses);
+            }
+            Expression::List { elements, .. }
+            | Expression::Tuple { elements, .. }
+            | Expression::Set { elements, .. } => {
+                for element in elements {
+                    Self::extract_identifiers_from_expr(element, uses);
+                }
+            }
+            Expression::Dict { pairs, .. } => {
+                for (key, value) in pairs {
+                    Self::extract_identifiers_from_expr(key, uses);
+                    Self::extract_identifiers_from_expr(value, uses);
+                }
+            }
+            Expression::Lambda { body, .. } => {
+                Self::extract_identifiers_from_expr(body, uses);
+            }
+            Expression::Conditional {
+                condition,
+                true_expr,
+                false_expr,
+                ..
+            } => {
+                Self::extract_identifiers_from_expr(condition, uses);
+                Self::extract_identifiers_from_expr(true_expr, uses);
+                Self::extract_identifiers_from_expr(false_expr, uses);
+            }
+            Expression::AssignmentExpr { value, .. } => {
+                Self::extract_identifiers_from_expr(value, uses);
+            }
+            Expression::ListComp {
+                element,
+                generators,
+                ..
+            }
+            | Expression::SetComp {
+                element,
+                generators,
+                ..
+            }
+            | Expression::GeneratorExpr {
+                element,
+                generators,
+                ..
+            } => {
+                Self::extract_identifiers_from_expr(element, uses);
+                for generator in generators {
+                    Self::extract_identifiers_from_expr(&generator.iter, uses);
+                    for condition in &generator.conditions {
+                        Self::extract_identifiers_from_expr(condition, uses);
+                    }
+                }
+            }
+            Expression::DictComp {
+                key,
+                value,
+                generators,
+                ..
+            } => {
+                Self::extract_identifiers_from_expr(key, uses);
+                Self::extract_identifiers_from_expr(value, uses);
+                for generator in generators {
+                    Self::extract_identifiers_from_expr(&generator.iter, uses);
+                    for condition in &generator.conditions {
+                        Self::extract_identifiers_from_expr(condition, uses);
+                    }
+                }
+            }
+            Expression::Starred { value, .. } => {
+                Self::extract_identifiers_from_expr(value, uses);
+            }
+        }
+    }
+
+    /// Return def/use sets for a statement.
+    fn extract_statement_defs_uses(stmt: &Statement) -> (HashSet<String>, HashSet<String>) {
+        let mut defs = HashSet::new();
+        let mut uses = HashSet::new();
+
+        match stmt {
+            Statement::Assignment { targets, value, .. } => {
+                for target in targets {
+                    Self::extract_target_definitions(target, &mut defs);
+                    Self::extract_target_uses(target, &mut uses);
+                }
+                Self::extract_identifiers_from_expr(value, &mut uses);
+            }
+            Statement::AnnAssignment { target, value, .. } => {
+                defs.insert(target.clone());
+                if let Some(expr) = value {
+                    Self::extract_identifiers_from_expr(expr, &mut uses);
+                }
+            }
+            Statement::AugmentedAssignment { target, value, .. } => {
+                Self::extract_target_definitions(target, &mut defs);
+                Self::extract_identifiers_from_expr(target, &mut uses);
+                Self::extract_identifiers_from_expr(value, &mut uses);
+            }
+            Statement::Expression(expr) => {
+                Self::extract_identifiers_from_expr(expr, &mut uses);
+            }
+            Statement::Return { value, .. } => {
+                if let Some(expr) = value {
+                    Self::extract_identifiers_from_expr(expr, &mut uses);
+                }
+            }
+            Statement::Assert {
+                condition,
+                message,
+                ..
+            } => {
+                Self::extract_identifiers_from_expr(condition, &mut uses);
+                if let Some(expr) = message {
+                    Self::extract_identifiers_from_expr(expr, &mut uses);
+                }
+            }
+            Statement::Del { targets, .. } => {
+                for target in targets {
+                    Self::extract_target_uses(target, &mut uses);
+                }
+            }
+            Statement::Raise { exception, .. } => {
+                if let Some(expr) = exception {
+                    Self::extract_identifiers_from_expr(expr, &mut uses);
+                }
+            }
+            Statement::If { condition, .. } | Statement::While { condition, .. } => {
+                Self::extract_identifiers_from_expr(condition, &mut uses);
+            }
+            Statement::For { target, iter, .. } => {
+                Self::extract_target_definitions(target, &mut defs);
+                Self::extract_identifiers_from_expr(iter, &mut uses);
+            }
+            Statement::FunctionDef { name, .. } | Statement::ClassDef { name, .. } => {
+                defs.insert(name.clone());
+            }
+            Statement::Import { items, .. } => {
+                for item in items {
+                    defs.insert(item.alias.clone().unwrap_or_else(|| item.module.clone()));
+                }
+            }
+            Statement::FromImport { items, .. } => {
+                for item in items {
+                    defs.insert(item.alias.clone().unwrap_or_else(|| item.name.clone()));
+                }
+            }
+            Statement::Pass(_)
+            | Statement::Break(_)
+            | Statement::Continue(_)
+            | Statement::Global { .. }
+            | Statement::Nonlocal { .. }
+            | Statement::Try { .. } => {}
+        }
+
+        (defs, uses)
+    }
+
+    /// Compute variables that are live at block exits (live-out sets).
+    pub fn compute_live_variables(&self) -> HashMap<BlockId, HashSet<String>> {
+        let block_ids = self.block_ids();
+        let mut live_in: HashMap<BlockId, HashSet<String>> = HashMap::new();
+        let mut live_out: HashMap<BlockId, HashSet<String>> = HashMap::new();
+
+        for &block_id in &block_ids {
+            live_in.insert(block_id, HashSet::new());
+            live_out.insert(block_id, HashSet::new());
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+
+            for &block_id in &block_ids {
+                let block = match self.get_block(block_id) {
+                    Some(block) => block,
+                    None => continue,
+                };
+
+                let mut new_live_out = HashSet::new();
+                for successor in &block.successors {
+                    if let Some(successor_live_in) = live_in.get(successor) {
+                        new_live_out.extend(successor_live_in.iter().cloned());
+                    }
+                }
+
+                if live_out.get(&block_id) != Some(&new_live_out) {
+                    live_out.insert(block_id, new_live_out.clone());
+                    changed = true;
+                }
+
+                let mut new_live_in = new_live_out;
+                for statement in block.statements.iter().rev() {
+                    let (defs, uses) = Self::extract_statement_defs_uses(statement);
+
+                    for def in defs {
+                        new_live_in.remove(&def);
+                    }
+                    new_live_in.extend(uses);
+                }
+
+                if live_in.get(&block_id) != Some(&new_live_in) {
+                    live_in.insert(block_id, new_live_in);
+                    changed = true;
+                }
+            }
+        }
+
+        live_out
+    }
+
+    /// Find definitions that are never live after their statement.
+    pub fn find_unused_variables(&self) -> Vec<(BlockId, String)> {
+        let live_out = self.compute_live_variables();
+        let mut unused = Vec::new();
+
+        for (block_id, block) in &self.blocks {
+            let mut live_after = live_out.get(block_id).cloned().unwrap_or_default();
+
+            for statement in block.statements.iter().rev() {
+                let (defs, uses) = Self::extract_statement_defs_uses(statement);
+
+                for def in &defs {
+                    if !live_after.contains(def) {
+                        unused.push((*block_id, def.clone()));
+                    }
+                }
+
+                for def in defs {
+                    live_after.remove(&def);
+                }
+                live_after.extend(uses);
+            }
+        }
+
+        unused
     }
     
     /// Generate a DOT format representation of the CFG for visualization
@@ -2159,6 +2472,21 @@ mod tests {
                 name: "dummy".to_string(),
                 position: SourcePosition::new(line, 0, 0),
             },
+            position: SourcePosition::new(line, 0, 0),
+        }
+    }
+
+    fn create_identifier_expr(name: &str, line: usize) -> Expression {
+        Expression::Identifier {
+            name: name.to_string(),
+            position: SourcePosition::new(line, 0, 0),
+        }
+    }
+
+    fn create_var_assignment_stmt(name: &str, value: Expression, line: usize) -> Statement {
+        Statement::Assignment {
+            targets: vec![create_identifier_expr(name, line)],
+            value,
             position: SourcePosition::new(line, 0, 0),
         }
     }
@@ -4011,6 +4339,172 @@ mod tests {
         for &block_id in cfg.block_ids().iter() {
             assert!(dominators.get(&block_id).unwrap().contains(&block_id),
                 "Block {} should dominate itself", block_id);
+        }
+    }
+
+    // ====================
+    // Liveness Tests
+    // ====================
+
+    #[test]
+    fn test_liveness_linear_chain_no_unused() {
+        use crate::ast::Literal;
+
+        let function = create_function(vec![
+            create_var_assignment_stmt(
+                "a",
+                Expression::Literal(Literal::Integer {
+                    value: 1,
+                    position: SourcePosition::new(1, 0, 0),
+                }),
+                1,
+            ),
+            create_var_assignment_stmt("b", create_identifier_expr("a", 2), 2),
+            create_var_assignment_stmt("c", create_identifier_expr("b", 3), 3),
+            Statement::Return {
+                value: Some(create_identifier_expr("c", 4)),
+                position: SourcePosition::new(4, 0, 0),
+            },
+        ]);
+
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let unused = cfg.find_unused_variables();
+        assert!(unused.is_empty(), "No variable should be unused in linear chain");
+    }
+
+    #[test]
+    fn test_liveness_detects_unused_variable() {
+        use crate::ast::Literal;
+
+        let function = create_function(vec![
+            create_var_assignment_stmt(
+                "a",
+                Expression::Literal(Literal::Integer {
+                    value: 1,
+                    position: SourcePosition::new(1, 0, 0),
+                }),
+                1,
+            ),
+            create_var_assignment_stmt(
+                "b",
+                Expression::Literal(Literal::Integer {
+                    value: 2,
+                    position: SourcePosition::new(2, 0, 0),
+                }),
+                2,
+            ),
+            Statement::Return {
+                value: Some(create_identifier_expr("a", 3)),
+                position: SourcePosition::new(3, 0, 0),
+            },
+        ]);
+
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let unused = cfg.find_unused_variables();
+
+        assert!(
+            unused.iter().any(|(_, name)| name == "b"),
+            "Variable 'b' should be reported as unused"
+        );
+    }
+
+    #[test]
+    fn test_liveness_augmented_assignment_uses_target() {
+        use crate::ast::{AugmentedOperator, Literal};
+
+        let function = create_function(vec![
+            create_var_assignment_stmt(
+                "x",
+                Expression::Literal(Literal::Integer {
+                    value: 1,
+                    position: SourcePosition::new(1, 0, 0),
+                }),
+                1,
+            ),
+            Statement::AugmentedAssignment {
+                target: create_identifier_expr("x", 2),
+                op: AugmentedOperator::Add,
+                value: Expression::Literal(Literal::Integer {
+                    value: 2,
+                    position: SourcePosition::new(2, 0, 0),
+                }),
+                position: SourcePosition::new(2, 0, 0),
+            },
+            Statement::Return {
+                value: Some(create_identifier_expr("x", 3)),
+                position: SourcePosition::new(3, 0, 0),
+            },
+        ]);
+
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let unused = cfg.find_unused_variables();
+        assert!(
+            !unused.iter().any(|(_, name)| name == "x"),
+            "Variable 'x' should not be unused when used in augmented assignment and return"
+        );
+    }
+
+    #[test]
+    fn test_liveness_branch_uses_variable() {
+        use crate::ast::Literal;
+
+        let function = create_function(vec![
+            create_var_assignment_stmt(
+                "x",
+                Expression::Literal(Literal::Integer {
+                    value: 1,
+                    position: SourcePosition::new(1, 0, 0),
+                }),
+                1,
+            ),
+            Statement::If {
+                condition: create_bool_expression(true, 2),
+                then_block: vec![create_var_assignment_stmt("y", create_identifier_expr("x", 3), 3)],
+                elif_blocks: Vec::new(),
+                else_block: Some(vec![create_var_assignment_stmt(
+                    "z",
+                    create_identifier_expr("x", 4),
+                    4,
+                )]),
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let unused = cfg.find_unused_variables();
+        assert!(
+            !unused.iter().any(|(_, name)| name == "x"),
+            "Variable 'x' should not be unused because both branches read it"
+        );
+    }
+
+    #[test]
+    fn test_live_variables_empty_at_exit_block() {
+        use crate::ast::Literal;
+
+        let function = create_function(vec![
+            create_var_assignment_stmt(
+                "x",
+                Expression::Literal(Literal::Integer {
+                    value: 1,
+                    position: SourcePosition::new(1, 0, 0),
+                }),
+                1,
+            ),
+            Statement::Return {
+                value: Some(create_identifier_expr("x", 2)),
+                position: SourcePosition::new(2, 0, 0),
+            },
+        ]);
+
+        let cfg = CFGBuilder::build_function_cfg(&function).unwrap();
+        let live = cfg.compute_live_variables();
+
+        for &exit in cfg.exits() {
+            assert!(
+                live.get(&exit).map(|set| set.is_empty()).unwrap_or(true),
+                "Exit block should have empty live-out set"
+            );
         }
     }
     

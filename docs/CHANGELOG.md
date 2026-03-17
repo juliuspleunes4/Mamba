@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 7 Liveness Follow-up** ✅
+  - Implemented CFG liveness analysis and unused-variable detection
+  - Added liveness methods:
+    * `compute_live_variables()` - backward dataflow live-out sets per block
+    * `find_unused_variables()` - identifies definitions never live after statement
+  - Added internal extraction helpers for def/use analysis:
+    * target definition extraction for assignment-like statements
+    * target/use expression traversal for identifiers in nested expressions
+  - Added 5 liveness-focused CFG tests:
+    * `test_liveness_linear_chain_no_unused`
+    * `test_liveness_detects_unused_variable`
+    * `test_liveness_augmented_assignment_uses_target`
+    * `test_liveness_branch_uses_variable`
+    * `test_live_variables_empty_at_exit_block`
+  - CFG test suite increased from 65 to 70 tests, all passing
+
 - **Phase 3.5: Deferred Semantic Validation** ✅
   - Implemented semantic validation for membership operators `in` and `not in`
   - Added conservative RHS validation with current type system:
