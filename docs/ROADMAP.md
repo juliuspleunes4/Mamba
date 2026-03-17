@@ -451,27 +451,27 @@ harness assertions.
 
 ### 5.1 Built-in Functions
 
-- [ ] Implement print()
-- [ ] Implement len()
-- [ ] Implement range()
-- [ ] Implement type()
-- [ ] Implement str()
-- [ ] Implement int()
-- [ ] Implement float()
-- [ ] Implement bool()
+- [x] Implement print()
+- [x] Implement len()
+- [x] Implement range()
+- [x] Implement type()
+- [x] Implement str()
+- [x] Implement int()
+- [x] Implement float()
+- [x] Implement bool()
 - [ ] Implement input()
-- [ ] Implement abs()
-- [ ] Implement min()
-- [ ] Implement max()
-- [ ] Implement sum()
+- [x] Implement abs()
+- [x] Implement min()
+- [x] Implement max()
+- [x] Implement sum()
 - [ ] Implement sorted()
-- [ ] Implement reversed()
-- [ ] Implement enumerate()
-- [ ] Implement zip()
-- [ ] Implement map()
-- [ ] Implement filter()
-- [ ] Implement all()
-- [ ] Implement any()
+- [x] Implement reversed()
+- [x] Implement enumerate()
+- [x] Implement zip()
+- [x] Implement map()
+- [x] Implement filter()
+- [x] Implement all()
+- [x] Implement any()
 - [ ] Implement chr()
 - [ ] Implement ord()
 - [ ] Implement hex()
@@ -503,6 +503,11 @@ harness assertions.
 - [ ] Implement bytearray()
 - [ ] Implement memoryview()
 - [ ] Implement frozenset()
+
+**In Progress**: First built-in tranche is wired into expression-call lowering
+with coverage for core casting, collection helpers, and iterator combinators.
+Remaining built-ins (I/O, reflection/introspection, formatting/bytes, and
+advanced utility functions) are still pending.
 
 ### 5.2 Built-in Data Structures
 

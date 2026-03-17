@@ -1,6 +1,8 @@
 use mamba_parser::ast::{BinaryOperator, Comprehension, Expression, Literal, UnaryOperator};
 use thiserror::Error;
 
+use crate::builtins::transpile_builtin_call;
+
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ExpressionTranspileError {
     #[error("expression kind is not supported yet")]
@@ -43,9 +45,13 @@ impl ExpressionTranspiler {
                 let args = arguments
                     .iter()
                     .map(|arg| self.transpile(arg))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .join(", ");
-                Ok(format!("{}({})", function_name, args))
+                    .collect::<Result<Vec<_>, _>>()?;
+
+                if let Some(builtin) = transpile_builtin_call(&function_name, &args) {
+                    return Ok(builtin);
+                }
+
+                Ok(format!("{}({})", function_name, args.join(", ")))
             }
             Expression::Attribute {
                 object,
@@ -308,6 +314,57 @@ mod tests {
             position: pos(),
         };
         assert_eq!(tr.transpile(&expr).unwrap(), "add(1, 2)");
+    }
+
+    #[test]
+    fn transpiles_builtin_len_call() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::Call {
+            function: Box::new(ident("len")),
+            arguments: vec![ident("items")],
+            position: pos(),
+        };
+
+        assert_eq!(tr.transpile(&expr).unwrap(), "(items).len()");
+    }
+
+    #[test]
+    fn transpiles_builtin_range_call() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::Call {
+            function: Box::new(ident("range")),
+            arguments: vec![int_lit(1), int_lit(10), int_lit(2)],
+            position: pos(),
+        };
+
+        assert_eq!(tr.transpile(&expr).unwrap(), "(1..10).step_by((2) as usize)");
+    }
+
+    #[test]
+    fn transpiles_builtin_print_call() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::Call {
+            function: Box::new(ident("print")),
+            arguments: vec![ident("x")],
+            position: pos(),
+        };
+
+        assert_eq!(
+            tr.transpile(&expr).unwrap(),
+            r#"println!("{}", vec![format!("{:?}", x)].join(" "))"#
+        );
+    }
+
+    #[test]
+    fn falls_back_for_non_builtin_calls() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::Call {
+            function: Box::new(ident("custom_fn")),
+            arguments: vec![int_lit(7)],
+            position: pos(),
+        };
+
+        assert_eq!(tr.transpile(&expr).unwrap(), "custom_fn(7)");
     }
 
     #[test]

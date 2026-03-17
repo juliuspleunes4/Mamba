@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 5.1: Built-in Functions (Tranche 1)**
+  - Added builtin lowering module: `crates/transpiler/src/builtins.rs`
+  - Wired builtin call transpilation into expression call handling
+  - Implemented built-ins in this tranche:
+    * `print`, `len`, `range`, `type`
+    * `str`, `int`, `float`, `bool`, `abs`
+    * `min`, `max`, `sum`
+    * `reversed`, `enumerate`, `zip`, `map`, `filter`, `all`, `any`
+  - Added builtin-focused unit tests in:
+    * `crates/transpiler/src/builtins.rs`
+    * `crates/transpiler/src/expression.rs`
+  - Updated existing statement/module expectations where `print(...)` now lowers
+    to Rust `println!` output formatting
+  - Validation:
+    * `cargo test -p mamba-transpiler` passing (unit + integration suites)
+
 - **Phase 4.9: Transpiler Testing** ✅
   - Added dedicated integration suite: `crates/transpiler/tests/phase_4_9_integration.rs`
   - Added coverage for all 4.9 goals:

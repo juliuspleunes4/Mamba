@@ -621,7 +621,11 @@ mod tests {
             position: pos(),
         });
 
-        assert_eq!(st.transpile_statement(&stmt).unwrap(), "print(5);\n");
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            r#"println!("{}", vec![format!("{:?}", 5)].join(" "));
+"#
+        );
     }
 
     #[test]

@@ -7,6 +7,7 @@
 // TODO: Implement transpilation logic
 
 pub mod codegen;
+pub mod builtins;
 pub mod expression;
 pub mod module;
 pub mod statement;

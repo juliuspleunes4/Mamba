@@ -131,7 +131,10 @@ mod tests {
 
         assert_eq!(
             transpiler.transpile_module(&module).unwrap(),
-            "fn main() {\n    print(1);\n}\n"
+            r#"fn main() {
+    println!("{}", vec![format!("{:?}", 1)].join(" "));
+}
+"#
         );
     }
 
