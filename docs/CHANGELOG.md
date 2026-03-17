@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.1: Code Generation Infrastructure** ✅
+  - Added `CodeGenerator` core infrastructure in transpiler crate
+  - Implemented output buffer management and indentation tracking
+  - Added helper APIs:
+    * `emit()` / `emit_line()` / `emit_empty_line()`
+    * `indent()` / `dedent()`
+    * `open_block()` / `close_block()`
+    * `clear()` / `as_str()` / `into_string()`
+  - Added a template system for common patterns with:
+    * template registration
+    * placeholder rendering via `{{key}}`
+    * template emission to output
+    * default templates for function signatures and let bindings
+  - Added focused transpiler unit tests (8 total) for formatting behavior,
+    template rendering, and error paths
+
 - **Phase 3.6: Semantic Testing** ✅
   - Completed semantic testing closeout audit and checklist alignment
   - Verified broad semantic coverage for:

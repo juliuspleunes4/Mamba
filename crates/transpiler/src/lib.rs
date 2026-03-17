@@ -6,10 +6,6 @@
 // TODO: Implement type mappings
 // TODO: Implement transpilation logic
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn placeholder_test() {
-        assert_eq!(2 + 2, 4);
-    }
-}
+pub mod codegen;
+
+pub use codegen::{CodeGenerator, CodegenError};

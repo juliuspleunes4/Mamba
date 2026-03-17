@@ -317,11 +317,16 @@ test suites pass, and full workspace `cargo test` runs are green.
 
 ### 4.1 Code Generation Infrastructure
 
-- [ ] Create CodeGenerator structure
-- [ ] Implement output buffer management
-- [ ] Add indentation tracking for generated Rust code
-- [ ] Create helper methods (emit, emit_line, etc.)
-- [ ] Set up template system for common patterns
+- [x] Create CodeGenerator structure
+- [x] Implement output buffer management
+- [x] Add indentation tracking for generated Rust code
+- [x] Create helper methods (emit, emit_line, etc.)
+- [x] Set up template system for common patterns
+
+**Completed**: Added transpiler code generation infrastructure with a reusable
+`CodeGenerator` (buffering, indentation state, block helpers, and template
+registration/rendering), plus focused unit tests for happy paths and failure
+cases.
 
 ### 4.2 Basic Type Mapping
 
