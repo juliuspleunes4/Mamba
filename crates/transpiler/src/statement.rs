@@ -5,6 +5,37 @@ use crate::codegen::{CodeGenerator, CodegenError};
 use crate::expression::{ExpressionTranspileError, ExpressionTranspiler};
 use crate::type_mapping::{TypeMapper, TypeMappingError};
 
+#[derive(Debug, Clone)]
+struct LoopContext {
+    break_flag: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct TranspileContext {
+    next_temp_id: usize,
+    loop_stack: Vec<LoopContext>,
+}
+
+impl TranspileContext {
+    fn allocate_break_flag(&mut self) -> String {
+        let name = format!("__mamba_loop_broke_{}", self.next_temp_id);
+        self.next_temp_id += 1;
+        name
+    }
+
+    fn push_loop(&mut self, break_flag: Option<String>) {
+        self.loop_stack.push(LoopContext { break_flag });
+    }
+
+    fn pop_loop(&mut self) {
+        let _ = self.loop_stack.pop();
+    }
+
+    fn current_break_flag(&self) -> Option<&str> {
+        self.loop_stack.last()?.break_flag.as_deref()
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum StatementTranspileError {
     #[error("unsupported statement kind for phase 4.4")]
@@ -21,7 +52,7 @@ pub enum StatementTranspileError {
     Codegen(#[from] CodegenError),
 }
 
-/// Transpiles core statement forms for Phase 4.4.
+/// Transpiles core statement forms for Phase 4.4 and control flow for Phase 4.5.
 #[derive(Debug, Clone, Default)]
 pub struct StatementTranspiler {
     expr: ExpressionTranspiler,
@@ -41,7 +72,18 @@ impl StatementTranspiler {
         statement: &Statement,
     ) -> Result<String, StatementTranspileError> {
         let mut generator = CodeGenerator::new();
-        self.transpile_into(&mut generator, statement)?;
+        let mut context = TranspileContext::default();
+        self.transpile_into_with_context(&mut generator, statement, &mut context)?;
+        Ok(generator.into_string())
+    }
+
+    pub fn transpile_statements(
+        &self,
+        statements: &[Statement],
+    ) -> Result<String, StatementTranspileError> {
+        let mut generator = CodeGenerator::new();
+        let mut context = TranspileContext::default();
+        self.transpile_block(&mut generator, statements, &mut context)?;
         Ok(generator.into_string())
     }
 
@@ -49,6 +91,16 @@ impl StatementTranspiler {
         &self,
         generator: &mut CodeGenerator,
         statement: &Statement,
+    ) -> Result<(), StatementTranspileError> {
+        let mut context = TranspileContext::default();
+        self.transpile_into_with_context(generator, statement, &mut context)
+    }
+
+    fn transpile_into_with_context(
+        &self,
+        generator: &mut CodeGenerator,
+        statement: &Statement,
+        context: &mut TranspileContext,
     ) -> Result<(), StatementTranspileError> {
         match statement {
             Statement::Expression(expr) => {
@@ -117,6 +169,9 @@ impl StatementTranspiler {
             }
             Statement::Pass(_) => Ok(()),
             Statement::Break(_) => {
+                if let Some(flag) = context.current_break_flag() {
+                    generator.emit_line(&format!("{} = true;", flag));
+                }
                 generator.emit_line("break;");
                 Ok(())
             }
@@ -124,8 +179,102 @@ impl StatementTranspiler {
                 generator.emit_line("continue;");
                 Ok(())
             }
+            Statement::If {
+                condition,
+                then_block,
+                elif_blocks,
+                else_block,
+                ..
+            } => {
+                let condition_expr = self.expr.transpile(condition)?;
+                generator.open_block(&format!("if {}", condition_expr));
+                self.transpile_block(generator, then_block, context)?;
+                generator.close_block()?;
+
+                for (elif_condition, elif_body) in elif_blocks {
+                    let elif_expr = self.expr.transpile(elif_condition)?;
+                    generator.open_block(&format!("else if {}", elif_expr));
+                    self.transpile_block(generator, elif_body, context)?;
+                    generator.close_block()?;
+                }
+
+                if let Some(else_body) = else_block {
+                    generator.open_block("else");
+                    self.transpile_block(generator, else_body, context)?;
+                    generator.close_block()?;
+                }
+
+                Ok(())
+            }
+            Statement::While {
+                condition,
+                body,
+                else_block,
+                ..
+            } => {
+                let break_flag = else_block.as_ref().map(|_| context.allocate_break_flag());
+                if let Some(flag) = &break_flag {
+                    generator.emit_line(&format!("let mut {} = false;", flag));
+                }
+
+                let condition_expr = self.expr.transpile(condition)?;
+                context.push_loop(break_flag.clone());
+                generator.open_block(&format!("while {}", condition_expr));
+                self.transpile_block(generator, body, context)?;
+                generator.close_block()?;
+                context.pop_loop();
+
+                if let (Some(else_body), Some(flag)) = (else_block, break_flag.as_deref()) {
+                    generator.open_block(&format!("if !{}", flag));
+                    self.transpile_block(generator, else_body, context)?;
+                    generator.close_block()?;
+                }
+
+                Ok(())
+            }
+            Statement::For {
+                target,
+                iter,
+                body,
+                else_block,
+                ..
+            } => {
+                let break_flag = else_block.as_ref().map(|_| context.allocate_break_flag());
+                if let Some(flag) = &break_flag {
+                    generator.emit_line(&format!("let mut {} = false;", flag));
+                }
+
+                let rendered_target = self.expr.transpile(target)?;
+                let rendered_iter = self.expr.transpile(iter)?;
+
+                context.push_loop(break_flag.clone());
+                generator.open_block(&format!("for {} in {}", rendered_target, rendered_iter));
+                self.transpile_block(generator, body, context)?;
+                generator.close_block()?;
+                context.pop_loop();
+
+                if let (Some(else_body), Some(flag)) = (else_block, break_flag.as_deref()) {
+                    generator.open_block(&format!("if !{}", flag));
+                    self.transpile_block(generator, else_body, context)?;
+                    generator.close_block()?;
+                }
+
+                Ok(())
+            }
             _ => Err(StatementTranspileError::UnsupportedStatement),
         }
+    }
+
+    fn transpile_block(
+        &self,
+        generator: &mut CodeGenerator,
+        statements: &[Statement],
+        context: &mut TranspileContext,
+    ) -> Result<(), StatementTranspileError> {
+        for statement in statements {
+            self.transpile_into_with_context(generator, statement, context)?;
+        }
+        Ok(())
     }
 
     pub fn transpile_variable_declaration(
@@ -197,6 +346,13 @@ mod tests {
 
     fn int_lit(value: i64) -> Expression {
         Expression::Literal(Literal::Integer {
+            value,
+            position: pos(),
+        })
+    }
+
+    fn bool_lit(value: bool) -> Expression {
+        Expression::Literal(Literal::Boolean {
             value,
             position: pos(),
         })
@@ -311,5 +467,144 @@ mod tests {
             st.transpile_statement(&stmt),
             Err(StatementTranspileError::MultipleAssignmentTargets)
         ));
+    }
+
+    #[test]
+    fn transpiles_if_statement() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::If {
+            condition: ident("ready"),
+            then_block: vec![Statement::Expression(ident("run"))],
+            elif_blocks: vec![],
+            else_block: None,
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "if ready {\n    run;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_if_else_statement() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::If {
+            condition: ident("ok"),
+            then_block: vec![Statement::Expression(ident("left"))],
+            elif_blocks: vec![],
+            else_block: Some(vec![Statement::Expression(ident("right"))]),
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "if ok {\n    left;\n}\nelse {\n    right;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_if_elif_else_statement() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::If {
+            condition: ident("a"),
+            then_block: vec![Statement::Expression(ident("first"))],
+            elif_blocks: vec![(ident("b"), vec![Statement::Expression(ident("second"))])],
+            else_block: Some(vec![Statement::Expression(ident("third"))]),
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "if a {\n    first;\n}\nelse if b {\n    second;\n}\nelse {\n    third;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_while_loop() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::While {
+            condition: ident("running"),
+            body: vec![Statement::Expression(ident("tick"))],
+            else_block: None,
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "while running {\n    tick;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_for_loop_iterator_pattern() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::For {
+            target: ident("item"),
+            iter: ident("items"),
+            body: vec![Statement::Expression(ident("work"))],
+            else_block: None,
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "for item in items {\n    work;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_nested_control_flow() {
+        let st = StatementTranspiler::new();
+        let nested = Statement::While {
+            condition: bool_lit(true),
+            body: vec![Statement::If {
+                condition: ident("flag"),
+                then_block: vec![Statement::Continue(pos())],
+                elif_blocks: vec![],
+                else_block: Some(vec![Statement::Break(pos())]),
+                position: pos(),
+            }],
+            else_block: None,
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&nested).unwrap(),
+            "while true {\n    if flag {\n        continue;\n    }\n    else {\n        break;\n    }\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_while_else_with_break_tracking() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::While {
+            condition: ident("cond"),
+            body: vec![Statement::Break(pos())],
+            else_block: Some(vec![Statement::Expression(ident("after"))]),
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "let mut __mamba_loop_broke_0 = false;\nwhile cond {\n    __mamba_loop_broke_0 = true;\n    break;\n}\nif !__mamba_loop_broke_0 {\n    after;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_for_else_with_break_tracking() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::For {
+            target: ident("x"),
+            iter: ident("xs"),
+            body: vec![Statement::Break(pos())],
+            else_block: Some(vec![Statement::Expression(ident("done"))]),
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "let mut __mamba_loop_broke_0 = false;\nfor x in xs {\n    __mamba_loop_broke_0 = true;\n    break;\n}\nif !__mamba_loop_broke_0 {\n    done;\n}\n"
+        );
     }
 }

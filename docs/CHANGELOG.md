@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.5: Control Flow Transpilation** ✅
+  - Extended `StatementTranspiler` with control-flow lowering
+  - Implemented transpilation for:
+    * `if` statements
+    * `if-else`
+    * `if-elif-else`
+    * `while` loops
+    * `for` loops using iterator pattern (`for target in iter`)
+    * Nested control flow (recursive statement/block lowering)
+  - Added loop-`else` support for `while` and `for` by emitting scoped
+    break-tracking flags and post-loop guard blocks (`if !loop_broke`)
+  - Updated `break` lowering to set loop break flags when loop-`else` semantics
+    are active, preserving expected Python behavior
+  - Added `transpile_statements()` helper for block-level transpilation
+  - Added 8 dedicated control-flow unit tests covering all 4.5 checklist items
+
 - **Phase 4.4: Statement Transpilation** ✅
   - Added `statement` module in transpiler crate
   - Introduced `StatementTranspiler` for core statement lowering

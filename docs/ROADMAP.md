@@ -381,13 +381,17 @@ error handling for unsupported/multi-target forms.
 
 ### 4.5 Control Flow Transpilation
 
-- [ ] Transpile if statements
-- [ ] Transpile if-else
-- [ ] Transpile if-elif-else
-- [ ] Transpile while loops
-- [ ] Transpile for loops (iterator pattern)
-- [ ] Transpile nested control flow
-- [ ] Handle loop-else patterns
+- [x] Transpile if statements
+- [x] Transpile if-else
+- [x] Transpile if-elif-else
+- [x] Transpile while loops
+- [x] Transpile for loops (iterator pattern)
+- [x] Transpile nested control flow
+- [x] Handle loop-else patterns
+
+**Completed**: Extended `StatementTranspiler` with recursive control-flow
+lowering for `if`/`elif`/`else`, `while`, and `for` blocks, including nested
+structures and Python loop-`else` semantics using internal break-tracking flags.
 
 ### 4.6 Function Transpilation
 
