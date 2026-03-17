@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.4: Statement Transpilation** ✅
+  - Added `statement` module in transpiler crate
+  - Introduced `StatementTranspiler` for core statement lowering
+  - Implemented statement support for:
+    * Variable declarations (`let mut`) via annotation and initializer helpers
+    * Assignments (single target)
+    * Augmented assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`)
+    * Power augmented assignment lowered to explicit `target = target.pow(value)` form
+    * Expression statements
+    * Return statements (`return;` and `return value;`)
+    * Pass statements (no-op output)
+    * Break/continue statements
+  - Added explicit error handling for:
+    * Empty assignment target lists
+    * Multi-target assignment (deferred to future phase)
+    * Unsupported statement kinds for phase scope
+  - Added 9 dedicated unit tests for statement transpilation paths and failures
+
 - **Phase 4.3: Expression Transpilation** ✅
   - Added `expression` module in transpiler crate
   - Introduced `ExpressionTranspiler` with recursive expression lowering

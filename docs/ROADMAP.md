@@ -365,14 +365,19 @@ forms and unsupported-expression error handling.
 
 ### 4.4 Statement Transpilation
 
-- [ ] Transpile variable declarations (let)
-- [ ] Transpile assignments
-- [ ] Transpile augmented assignments
-- [ ] Transpile expression statements
-- [ ] Transpile return statements
-- [ ] Transpile pass statements (empty block)
-- [ ] Transpile break statements
-- [ ] Transpile continue statements
+- [x] Transpile variable declarations (let)
+- [x] Transpile assignments
+- [x] Transpile augmented assignments
+- [x] Transpile expression statements
+- [x] Transpile return statements
+- [x] Transpile pass statements (empty block)
+- [x] Transpile break statements
+- [x] Transpile continue statements
+
+**Completed**: Added a dedicated `StatementTranspiler` for core statement
+lowering, covering declarations, assignment forms, expression statements, and
+control transfer (`return`, `break`, `continue`) with unit tests and explicit
+error handling for unsupported/multi-target forms.
 
 ### 4.5 Control Flow Transpilation
 
