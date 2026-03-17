@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.8: Main Function Generation** ✅
+  - Added `module` transpiler module with `ModuleTranspiler`
+  - Implemented full-module lowering pipeline to generate a valid Rust entry point
+  - Top-level handling behavior:
+    * Function definitions are emitted at module scope
+    * Non-function top-level statements are wrapped in `fn main()`
+    * Empty modules still emit a valid `fn main() {}` entry point
+  - Added top-level variable handling:
+    * First simple identifier assignment at module top-level lowers to `let mut`
+    * Subsequent assignments to the same identifier lower as regular reassignments
+    * Annotated top-level assignments remain declaration-oriented and are tracked
+  - Added 4 dedicated module transpilation tests covering:
+    * main-wrapper generation
+    * top-level function hoisting
+    * top-level variable declaration/reassignment behavior
+    * empty-module entry point generation
+
 - **Phase 4.7: Advanced Transpilation** ✅
   - Extended `ExpressionTranspiler` with:
     * lambda expression lowering to Rust closures (`|args| expr`)

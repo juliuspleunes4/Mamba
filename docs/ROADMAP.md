@@ -423,9 +423,14 @@ loop form for eligible return-call patterns.
 
 ### 4.8 Main Function Generation
 
-- [ ] Wrap top-level code in main()
-- [ ] Handle top-level variables
-- [ ] Generate proper entry point
+- [x] Wrap top-level code in main()
+- [x] Handle top-level variables
+- [x] Generate proper entry point
+
+**Completed**: Added `ModuleTranspiler` to lower full modules into Rust source,
+hoist function definitions outside the runtime entry block, wrap executable
+top-level statements into `fn main()`, and materialize first-assignment
+top-level identifiers as `let mut` declarations.
 
 ### 4.9 Transpiler Testing
 
