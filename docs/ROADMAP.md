@@ -284,19 +284,32 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 - [x] Detect unreachable code after if/else with returns in all branches
 - [x] Handle unreachable code in try/except blocks (38 tests: parser, semantic, unreachable detection)
-- [ ] Implement sophisticated control flow graphs for comprehensive analysis
+- [x] Implement sophisticated control flow graphs for comprehensive analysis
+  - [x] Session 1: CFG Data Structures (9 tests - BasicBlock, ControlFlowGraph, BlockKind)
+  - [x] Session 2: CFG Builder for Linear Code (7 tests - build_function_cfg, linear statements, return/raise)
+  - [x] Session 3: CFG Builder for Conditionals (5 tests - if/elif/else with merge blocks, nested if, edge cases)
+  - [x] Session 4: CFG Builder for Loops (6 tests - while loops with break/continue, while-else, nested loops)
+  - [x] Session 5: CFG Builder for Try/Except (8 tests - exception handling, finally blocks, nested try, raise)
+  - [x] Session 6: CFG Reachability Analysis (12 tests - DFS reachability, unreachable code detection)
+  - [x] Session 7: Advanced CFG Analysis (dominance, liveness, visualization)
+  - [x] Session 8: Testing & Integration (CFG reachability integrated into semantic function analysis; regression-tested)
 
 ### 3.5 Deferred Semantic Validation
 
-- [ ] Validate membership operators (in, not in) - requires collection type system
-- [ ] Add explicit tests for augmented assignment operators (+=, -=, etc.)
+- [x] Validate membership operators (in, not in) - conservative validation with current type system
+- [x] Add explicit tests for augmented assignment operators (+=, -=, etc.)
 
 ### 3.6 Semantic Testing
 
-- [ ] Test scope resolution
-- [ ] Test type inference accuracy
-- [ ] Test semantic error detection
-- [ ] Create test suite for edge cases
+- [x] Test scope resolution
+- [x] Test type inference accuracy
+- [x] Test semantic error detection
+- [x] Create test suite for edge cases
+
+**Completed**: Semantic testing coverage is now comprehensive across scope resolution,
+type inference, semantic error detection, unreachable code validation, operator
+validation, assignment validation, and edge-case behavior. Targeted semantic
+test suites pass, and full workspace `cargo test` runs are green.
 
 ---
 

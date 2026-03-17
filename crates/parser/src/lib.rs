@@ -10,3 +10,4 @@ pub mod parser;
 pub mod symbol_table;
 pub mod semantic;
 pub mod types;
+pub mod cfg;

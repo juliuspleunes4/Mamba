@@ -8,6 +8,362 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.6: Semantic Testing** ✅
+  - Completed semantic testing closeout audit and checklist alignment
+  - Verified broad semantic coverage for:
+    * Scope resolution
+    * Type inference accuracy
+    * Semantic error detection
+    * Edge cases (unreachable, control flow, assignment targets, operators)
+  - Confirmed semantic suites and full workspace test runs pass
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 8 Integration & Validation** ✅
+  - Integrated CFG reachability into semantic analysis for function bodies
+  - Added CFG-driven unreachable diagnostics for unreachable top-level statements in functions
+  - Preserved nested sequential unreachable detection to avoid duplicate/overlapping diagnostics
+  - Added deterministic ordering and deduplication of CFG-derived unreachable positions for stable tests
+  - Validation completed:
+    * semantic unreachable suite: 25/25 passing
+    * CFG suite: 70/70 passing
+    * parser crate regression checks: passing
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 7 Liveness Follow-up** ✅
+  - Implemented CFG liveness analysis and unused-variable detection
+  - Added liveness methods:
+    * `compute_live_variables()` - backward dataflow live-out sets per block
+    * `find_unused_variables()` - identifies definitions never live after statement
+  - Added internal extraction helpers for def/use analysis:
+    * target definition extraction for assignment-like statements
+    * target/use expression traversal for identifiers in nested expressions
+  - Added 5 liveness-focused CFG tests:
+    * `test_liveness_linear_chain_no_unused`
+    * `test_liveness_detects_unused_variable`
+    * `test_liveness_augmented_assignment_uses_target`
+    * `test_liveness_branch_uses_variable`
+    * `test_live_variables_empty_at_exit_block`
+  - CFG test suite increased from 65 to 70 tests, all passing
+
+- **Phase 3.5: Deferred Semantic Validation** ✅
+  - Implemented semantic validation for membership operators `in` and `not in`
+  - Added conservative RHS validation with current type system:
+    * Accepts container-like/unknown RHS types to avoid false positives
+    * Rejects known scalar RHS types (`int`, `float`, `bool`, `None`) with `TypeMismatch`
+  - Membership expression result type is now inferred as `bool`
+  - Added semantic tests for:
+    * Valid string membership (`in`, `not in`)
+    * Invalid scalar RHS membership (int/None)
+    * Conservative unknown RHS handling (no false-positive type mismatch)
+
+- **Phase 3.5: Deferred Semantic Validation** ✅ (partial)
+  - Added explicit semantic tests for all supported augmented assignment operators
+  - New coverage includes: `+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `**=`, `&=`, `|=`, `^=`, `>>=`, `<<=`
+  - Added negative coverage to verify undefined-variable errors for each augmented operator variant
+  - Files updated:
+    * `crates/parser/src/semantic.rs` - added 2 new tests
+    * `docs/ROADMAP.md` - marked augmented assignment explicit test task as complete
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 7** ✅ (431 tests passing)
+  - Implemented advanced CFG analysis: dominance analysis and visualization
+  - Dominance Analysis Methods:
+    * `compute_dominators()` - Iterative dominance computation
+      - Returns HashMap<BlockId, HashSet<BlockId>> of all dominators per block
+      - Uses iterative dataflow algorithm until convergence
+      - Entry block dominates only itself, all others start dominated by all blocks
+      - For each block B: dom(B) = {B} ∪ (∩ dom(pred) for all predecessors)
+      - Handles loops, branches, and complex control flow correctly
+    * `compute_immediate_dominators()` - Finds immediate dominator for each block
+      - Returns HashMap<BlockId, Option<BlockId>> mapping blocks to their idom
+      - Immediate dominator is unique closest strict dominator
+      - Strict dominators = all dominators except block itself
+      - idom is strict dominator not dominated by any other strict dominator
+      - Entry block has no immediate dominator (returns None)
+    * `compute_dominator_tree()` - Builds dominator tree structure
+      - Returns HashMap<BlockId, Vec<BlockId>> representing tree relationships
+      - Inverts idom relationship: parent → children
+      - Each block maps to its children in dominator tree
+      - Useful for visualizing dominance relationships
+    * `dominates(x, y)` - Convenience method for dominance check
+      - Returns bool indicating if block x dominates block y
+      - Uses compute_dominators() internally
+      - Simplifies dominance queries in client code
+  - DOT Visualization:
+    * `to_dot()` - Generates GraphViz DOT format for CFG visualization
+      - Returns String in DOT format for rendering with GraphViz
+      - Includes block IDs, block kinds, and statement counts
+      - Color-codes blocks by kind:
+        - Entry blocks: lightgreen
+        - Exit blocks: lightcoral
+        - Loop headers: lightyellow
+        - Conditional blocks: lightblue
+        - Exception handlers: orange
+        - Normal blocks: white
+      - Shows all edges between blocks (control flow)
+      - Can be saved to .dot file and rendered: `dot -Tpng cfg.dot -o cfg.png`
+  - Test Coverage (12 new tests, 65 total CFG tests):
+    * Dominance Tests (7):
+      - test_dominance_linear_code: Sequential code dominance properties
+      - test_dominance_if_else: Branch and merge dominance
+      - test_dominance_loop: Loop header dominates body
+      - test_immediate_dominators: Entry has no idom, all others have one
+      - test_dominator_tree: Tree structure validation
+      - test_dominance_nested_if: Nested conditional dominance
+      - test_dominance_complex_control_flow: Loop with break
+    * DOT Visualization Tests (5):
+      - test_dot_simple_linear: Basic DOT generation
+      - test_dot_with_conditional: Branching visualization
+      - test_dot_with_loop: Loop structure with back edges
+      - test_dot_block_colors: Color coding verification
+      - test_dot_statement_counts: Block label content
+  - Implementation Details:
+    * Dominance analysis uses standard compiler theory algorithms
+    * Iterative dataflow for dominators (not Lengauer-Tarjan for simplicity)
+    * DOT format compatible with GraphViz tools (dot, neato, circo, etc.)
+    * Foundation for future optimizations (dead code elimination, loop invariant motion)
+    * Liveness analysis deferred to future session (complex AST interactions)
+  - Notes:
+    * Session 7 originally included liveness analysis, but simplified for now
+    * Liveness requires extensive AST field name handling across many node types
+    * Current implementation focuses on dominance and visualization
+    * Liveness can be added in future sessions as optional enhancement
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 6** ✅ (419 tests passing)
+  - Implemented CFG reachability analysis to detect unreachable code
+  - Reachability Analysis Methods:
+    * `compute_reachable_blocks()` - DFS-based reachability computation
+      - Uses HashSet to track visited blocks efficiently
+      - Stack-based depth-first search from entry block
+      - Follows all successor edges to find reachable blocks
+      - Returns HashSet<BlockId> of all reachable blocks
+    * `find_unreachable_blocks()` - Identifies unreachable blocks
+      - Computes reachable blocks first
+      - Filters all blocks to find unreachable ones
+      - Returns Vec<BlockId> of unreachable block IDs
+    * `is_block_reachable()` - Convenience method for single block check
+      - Returns bool indicating if specific block is reachable
+      - Useful for targeted reachability queries
+  - Algorithm Design:
+    * DFS traversal starting from CFG entry block
+    * HashSet for O(1) membership checking
+    * Stack-based iteration (no recursion)
+    * Handles all control flow: conditionals, loops, try/except, returns, raises
+  - Test Coverage (12 new tests, 53 total CFG tests):
+    * test_reachability_simple_function: All blocks reachable (baseline)
+    * test_reachability_unreachable_after_return: Code after return statement
+    * test_reachability_unreachable_after_raise: Code after raise statement
+    * test_reachability_unreachable_after_break: Code after break in loop
+    * test_reachability_unreachable_after_continue: Code after continue
+    * test_reachability_if_else_all_return: Both branches return → after unreachable
+    * test_reachability_if_one_branch_returns: One branch returns → after reachable
+    * test_reachability_try_except_all_return: All handlers return → after unreachable
+    * test_reachability_nested_unreachable: Multiple nested unreachable blocks
+    * test_reachability_complex_loop_scenario: Nested loops with multiple exits
+    * test_reachability_is_block_reachable: Test convenience method directly
+    * test_reachability_try_finally_reachable: Finally block always reachable
+  - Implementation Details:
+    * Reachability is structural property of CFG graph
+    * Does not require semantic analysis or type information
+    * Foundation for unreachable code warnings in semantic analyzer
+    * Correctly handles all exit points (return, raise, break, continue)
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 5** ✅ (407 tests passing)
+  - Implemented CFG builder for try/except/else/finally blocks with exception handling
+  - Try/Except Processing:
+    * `process_try_statement()` - Main handler for exception control flow
+      - Creates try block for protected code
+      - Creates handler blocks for each except clause
+      - Creates optional else block (executes if no exception)
+      - Creates optional finally block (always executes)
+      - Creates merge block (after try/except)
+      - Exception paths: try → handlers (on exception)
+      - Normal path: try → else (if present) → merge
+      - All paths converge: merge → finally (if present)
+  - Exception Handler Context:
+    * Added exception_handlers field to CFGBuilder (Vec<BlockId>)
+    * Stack-based exception handler tracking for nested try blocks
+    * Handlers saved/restored when entering/exiting try blocks
+  - Raise Statement Handling:
+    * Updated Statement::Raise to check for exception handlers
+    * If in try block: connects to all exception handlers
+    * If not in try: connects to function exit (unhandled exception)
+    * Creates unreachable block after raise
+  - Exception Flow Semantics:
+    * Try block connects to all handler blocks via exception edges
+    * Else block only executes if no exception raised
+    * Finally block always executes from all paths
+    * Handlers and else both connect to merge block
+    * Nested try blocks correctly maintain handler stack
+  - Test Coverage (8 new tests, 41 total CFG tests):
+    * test_simple_try_except: Basic try with single handler
+    * test_try_multiple_except: Multiple exception handlers
+    * test_try_except_else: Else block execution on success
+    * test_try_except_finally: Finally always executes
+    * test_try_except_else_finally: All components together
+    * test_nested_try_blocks: Nested try with handler stacks
+    * test_raise_in_try: Raise connects to handler, unreachable after
+    * test_raise_without_handler: Raise to exit, unreachable after
+  - Implementation Details:
+    * Exception handlers stored as Vec<BlockId> for current try context
+    * Raise statements connect to exception_handlers or function exit
+    * Finally blocks reachable from all execution paths
+    * Proper restoration of exception context on exit from try
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 4** ✅ (399 tests passing)
+  - Implemented CFG builder for while loops and for loops with break/continue
+  - While Loop Processing:
+    * `process_while_statement()` - Main handler for while loops
+      - Creates loop header block (BlockKind::LoopHeader) for condition
+      - Creates loop body block (BlockKind::LoopBody)
+      - Creates loop exit block for merge after loop
+      - Adds condition evaluation to header block
+      - True branch: header → body → header (back-edge)
+      - False branch: header → exit (or else block if present)
+  - For Loop Processing (Session 4.3):
+    * `process_for_statement()` - Main handler for for loops
+      - Evaluates iterator in current block before loop
+      - Creates loop header block (BlockKind::LoopHeader) with target assignment
+      - Creates loop body block (BlockKind::LoopBody)
+      - Creates loop exit block for merge after loop
+      - Has next: header → body → header (back-edge)
+      - No more: header → exit (or else block if present)
+  - Break/Continue Handling:
+    * Updated Statement::Break handler to create edge to loop exit
+    * Updated Statement::Continue handler to create edge to loop header
+    * Both create unreachable blocks after statement
+    * Uses break_targets and continue_targets stacks for nested loops
+  - While-Else and For-Else Support:
+    * False/no-more branch from header goes to else block (if present)
+    * Else block connects to exit after execution
+    * Break bypasses else block, goes directly to exit
+    * Correct semantics: else executes only if loop completes normally
+  - Nested Loops:
+    * Stack-based loop context tracking
+    * Break/continue connect to correct loop level
+    * Multiple loop headers and bodies properly created
+  - Test Coverage (12 new tests, 33 total CFG tests):
+    * While Loops (6 tests):
+      - test_simple_while_loop: Basic while with back-edge (6+ blocks)
+      - test_while_with_break: Break creates edge to exit, unreachable after
+      - test_while_with_continue: Continue creates edge to header, unreachable after
+      - test_while_else_no_break: Else executes when no break
+      - test_while_else_with_break: Break bypasses else block
+      - test_nested_while_loops: Nested loops with correct stack handling
+    * For Loops (6 tests):
+      - test_simple_for_loop: Basic for with iterator and back-edge
+      - test_for_with_break: Break creates edge to exit, unreachable after
+      - test_for_with_continue: Continue creates edge to header, unreachable after
+      - test_for_else_no_break: Else executes when no break
+      - test_for_else_with_break: Break bypasses else block
+      - test_nested_for_in_while: Nested for inside while loop
+  - Implementation Details:
+    * Loop header block has BlockKind::LoopHeader
+    * Loop body block has BlockKind::LoopBody
+    * Back-edge from body to header for iteration
+    * Push/pop loop context (header, exit) for break/continue
+    * For loops: iterator evaluation before loop, target assignment in header
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 3** ✅ (387 tests passing)
+  - Implemented CFG builder for conditional statements (if/elif/else)
+  - Conditional Processing:
+    * `process_if_statement()` - Main handler for if statements
+      - Adds condition evaluation to current block
+      - Creates then-block and processes statements
+      - Calls process_elif_else_chain for elif/else handling
+      - Collects all branch exits (then, elif, else) in vector
+      - Creates merge block for branch convergence
+      - Connects reachable branches to merge
+      - Handles false branch to merge if no else block
+    * `process_elif_else_chain()` - Handles elif/else chains
+      - Creates elif condition blocks (BlockKind::Conditional)
+      - Chains conditions: if condition false → elif condition
+      - Creates elif then-blocks for each elif statement
+      - Processes else block if present
+      - Returns Vec<BlockId> of all branch exits and has_else flag
+  - Branching Patterns:
+    * Simple if (no else): condition → then → merge
+    * If-else: condition → then/else → merge
+    * If-elif-else: chained conditions → multiple branches → merge
+    * Nested if: recursive processing with correct block structure
+  - Edge Cases Handled:
+    * Return/raise in branches: unreachable detection
+    * All branches exit: merge block still created (unreachable)
+    * Mixed reachability: only reachable branches connect to merge
+  - Test Coverage (5 new tests, 21 total CFG tests):
+    * test_simple_if_no_else: Basic if without else (5 blocks)
+    * test_if_else: If with else block (6 blocks)
+    * test_if_elif_else: Full elif chain (8 blocks)
+    * test_nested_if: Nested conditionals (7+ blocks)
+    * test_if_with_return_in_then: Return in then branch
+    * test_if_else_both_return: Returns in both branches (unreachable after)
+  - Bug Fix:
+    * Fixed elif branch tracking: changed return type from (Option<BlockId>, bool) to (Vec<BlockId>, bool)
+    * All branch exits now properly connect to merge block
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 2** ✅ (382 tests passing)
+  - Implemented CFG builder for linear code (sequences without control flow)
+  - CFG Builder Structure:
+    * `CFGBuilder` struct with cfg, current_block, exit_block, loop targets
+    * `new()` constructor initializing with entry block
+    * `add_statement_to_current_block()` helper method
+  - CFG Building:
+    * `build_function_cfg(function)` - Entry point for building function CFGs
+    * Returns `Result<ControlFlowGraph, String>` with error handling
+    * Automatically creates entry, exit, and normal blocks
+    * Detects unreachable code (blocks with no predecessors)
+  - Statement Processing:
+    * Linear statements: Assignment, AugmentedAssignment, AnnAssignment, Expression, Pass
+    * Control transfer: Return (edge to exit), Raise (edge to exit)
+    * Unreachable block creation after return/raise
+    * Other statements: Import, FromImport, Global, Nonlocal, Assert, Del
+    * Function/class definitions treated as statements
+    * Error reporting for unsupported control flow (if/while/for/try)
+  - Features:
+    * Automatic entry → first block edge creation
+    * Exit block connection for reachable code
+    * Unreachable block detection (no predecessors, no exit edge)
+    * Proper handling of multiple returns/raises
+  - Test Coverage: 7 new CFG builder tests (16 total CFG tests)
+    * Empty function with pass statement
+    * Function with multiple assignments
+    * Function with return in middle (unreachable code after)
+    * Function with multiple returns
+    * Function with raise statement
+    * Rejection of non-function statements
+    * Error for unsupported control flow statements
+  - Foundation for Session 3: conditionals (if/elif/else)
+
+- **Phase 3.4: Control Flow Graph (CFG) - Session 1** ✅ (375 tests passing)
+  - Implemented core CFG data structures for sophisticated program analysis
+  - Data Structures:
+    * `BasicBlock` struct with id, kind, statements, successors, predecessors, position
+    * `ControlFlowGraph` struct managing blocks, entry/exit points, block generation
+    * `BlockKind` enum: Entry, Exit, Normal, Conditional, LoopHeader, LoopBody, ExceptionHandler
+    * `BlockId` type alias for unique block identification
+  - CFG Operations:
+    * `new_block()` - Create new basic blocks with unique IDs
+    * `add_edge()` - Create directed edges between blocks (bidirectional linking)
+    * `remove_edge()` - Remove edges between blocks
+    * `add_exit_block()` - Mark blocks as function exits
+    * Query methods: `get_block()`, `block_count()`, `entry()`, `exits()`
+  - Basic Block Operations:
+    * `add_statement()` - Add statements to blocks
+    * `add_successor()` / `add_predecessor()` - Manage edges
+    * Query methods: `is_empty()`, `has_successors()`, `has_predecessors()`
+  - Features:
+    * Automatic entry block creation
+    * Duplicate edge prevention
+    * Bidirectional edge tracking (successors and predecessors)
+    * Support for multiple exit blocks
+  - Test Coverage: 9 comprehensive CFG tests
+    * CFG creation and entry block
+    * Block ID generation
+    * Edge addition and removal
+    * Exit block management
+    * Basic block operations
+    * Duplicate edge handling
+    * Linear CFG construction (entry → blocks → exit)
+    * Branching CFG construction (if/else with merge points)
+  - Foundation for future analysis: reachability, dominance, liveness, dead code elimination
+
 - **Phase 2: Try/Except Statement Support** ✅
   - Implemented full try/except/else/finally syntax support
   - AST Definition:
