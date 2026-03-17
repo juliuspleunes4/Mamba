@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.2: Basic Type Mapping** ✅
+  - Added `type_mapping` module in transpiler crate
+  - Introduced `TypeMapper` with configurable integer width strategy:
+    * `IntWidth::I32` for `int -> i32`
+    * `IntWidth::I64` for `int -> i64` (default)
+  - Added `RustType` representation and rendering helpers for Rust output:
+    * `i32`, `i64`, `f64`, `String`, `bool`, `()`, `Option<T>`, unknown (`_`)
+  - Implemented semantic type mapping:
+    * `int -> i32/i64`
+    * `float -> f64`
+    * `str -> String`
+    * `bool -> bool`
+    * `None -> Option<()>` (context-free baseline for `Option<T>`)
+  - Added type annotation helpers:
+    * Maps annotation expressions (`int`, `float`, `str`, `bool`, `None`)
+    * Supports parenthesized annotations
+    * Supports `Option[T]` generic form (including nested options)
+    * Renders mapped annotations as Rust type strings
+  - Added robust error handling for unknown/unsupported annotation shapes
+  - Added 11 dedicated unit tests for happy paths, nested generics, and failures
+
 - **Phase 4.1: Code Generation Infrastructure** ✅
   - Added `CodeGenerator` core infrastructure in transpiler crate
   - Implemented output buffer management and indentation tracking

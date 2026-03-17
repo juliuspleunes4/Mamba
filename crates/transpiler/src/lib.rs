@@ -7,5 +7,7 @@
 // TODO: Implement transpilation logic
 
 pub mod codegen;
+pub mod type_mapping;
 
 pub use codegen::{CodeGenerator, CodegenError};
+pub use type_mapping::{IntWidth, RustType, TypeMapper, TypeMappingError};

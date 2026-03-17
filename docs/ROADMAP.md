@@ -330,12 +330,17 @@ cases.
 
 ### 4.2 Basic Type Mapping
 
-- [ ] Map int → i32/i64
-- [ ] Map float → f64
-- [ ] Map str → String
-- [ ] Map bool → bool
-- [ ] Map None → Option<T>
-- [ ] Create type annotation helpers
+- [x] Map int → i32/i64
+- [x] Map float → f64
+- [x] Map str → String
+- [x] Map bool → bool
+- [x] Map None → Option<T>
+- [x] Create type annotation helpers
+
+**Completed**: Added a dedicated `TypeMapper` with configurable integer width
+(`i32` or `i64`), semantic type-to-Rust mapping, annotation-expression mapping,
+and Rust type rendering helpers, plus focused unit tests for supported and
+unsupported annotation shapes.
 
 ### 4.3 Expression Transpilation
 
