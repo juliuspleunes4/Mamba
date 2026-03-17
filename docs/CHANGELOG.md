@@ -8,6 +8,166 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.9: Transpiler Testing** ✅
+  - Added dedicated integration suite: `crates/transpiler/tests/phase_4_9_integration.rs`
+  - Added coverage for all 4.9 goals:
+    * Unit-surface smoke coverage across `CodeGenerator`, `ExpressionTranspiler`,
+      `StatementTranspiler`, and `ModuleTranspiler`
+    * Complex nested module transpilation path validation
+    * Generated Rust compilation checks via `rustc`
+    * Runtime behavior verification by compiling generated code as test binaries
+      and asserting expected function behavior (`assert_eq!`)
+  - Added portable test helpers for temporary workspace creation, code emission,
+    `rustc` invocation, and binary execution
+  - `cargo test -p mamba-transpiler` now runs both unit and integration tests,
+    including compile-and-run validation of generated Rust artifacts
+
+- **Phase 4.8: Main Function Generation** ✅
+  - Added `module` transpiler module with `ModuleTranspiler`
+  - Implemented full-module lowering pipeline to generate a valid Rust entry point
+  - Top-level handling behavior:
+    * Function definitions are emitted at module scope
+    * Non-function top-level statements are wrapped in `fn main()`
+    * Empty modules still emit a valid `fn main() {}` entry point
+  - Added top-level variable handling:
+    * First simple identifier assignment at module top-level lowers to `let mut`
+    * Subsequent assignments to the same identifier lower as regular reassignments
+    * Annotated top-level assignments remain declaration-oriented and are tracked
+  - Added 4 dedicated module transpilation tests covering:
+    * main-wrapper generation
+    * top-level function hoisting
+    * top-level variable declaration/reassignment behavior
+    * empty-module entry point generation
+
+- **Phase 4.7: Advanced Transpilation** ✅
+  - Extended `ExpressionTranspiler` with:
+    * lambda expression lowering to Rust closures (`|args| expr`)
+    * list-comprehension lowering to iterator map/filter pipelines collecting to `Vec<_>`
+  - Added comprehension validation for this phase scope:
+    * supports single-generator list comprehensions
+    * emits explicit error for multi-generator comprehensions (deferred)
+  - Extended `StatementTranspiler` function lowering with:
+    * basic decorator handling (emits decorator metadata comments above function)
+    * recursive call preservation for non-tail recursive forms
+    * direct self tail-recursion optimization for eligible
+      `return self(...args...)` function bodies by rewriting to explicit loops
+  - Added 7 dedicated advanced transpilation tests covering:
+    * lambda and closure lowering
+    * list-comprehension map/filter output
+    * unsupported multi-generator comprehension behavior
+    * decorator emission
+    * recursive call output
+    * tail recursion optimization output
+
+- **Phase 4.6: Function Transpilation** ✅
+  - Extended `StatementTranspiler` to support `FunctionDef` lowering
+  - Implemented function signature generation for:
+    * sync and async functions (`fn` / `async fn`)
+    * annotated return types (defaulting to `()` when absent)
+    * positional/regular/keyword-only parameters
+    * varargs (`Vec<T>`) and kwargs (`HashMap<String, T>`) parameters
+  - Implemented default-parameter lowering by using `Option<T>` in signatures
+    and function-entry initialization (`name.unwrap_or(default)`)
+  - Added parameter base-type resolution from annotations with fallback literal
+    inference for default values
+  - Function body transpilation now reuses recursive statement/block lowering,
+    preserving nested control-flow semantics and multiple return statements
+  - Added 5 dedicated function transpilation unit tests covering signatures,
+    defaults, async functions, varargs/kwargs, and multi-return bodies
+
+- **Phase 4.5: Control Flow Transpilation** ✅
+  - Extended `StatementTranspiler` with control-flow lowering
+  - Implemented transpilation for:
+    * `if` statements
+    * `if-else`
+    * `if-elif-else`
+    * `while` loops
+    * `for` loops using iterator pattern (`for target in iter`)
+    * Nested control flow (recursive statement/block lowering)
+  - Added loop-`else` support for `while` and `for` by emitting scoped
+    break-tracking flags and post-loop guard blocks (`if !loop_broke`)
+  - Updated `break` lowering to set loop break flags when loop-`else` semantics
+    are active, preserving expected Python behavior
+  - Added `transpile_statements()` helper for block-level transpilation
+  - Added 8 dedicated control-flow unit tests covering all 4.5 checklist items
+
+- **Phase 4.4: Statement Transpilation** ✅
+  - Added `statement` module in transpiler crate
+  - Introduced `StatementTranspiler` for core statement lowering
+  - Implemented statement support for:
+    * Variable declarations (`let mut`) via annotation and initializer helpers
+    * Assignments (single target)
+    * Augmented assignments (`+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=`)
+    * Power augmented assignment lowered to explicit `target = target.pow(value)` form
+    * Expression statements
+    * Return statements (`return;` and `return value;`)
+    * Pass statements (no-op output)
+    * Break/continue statements
+  - Added explicit error handling for:
+    * Empty assignment target lists
+    * Multi-target assignment (deferred to future phase)
+    * Unsupported statement kinds for phase scope
+  - Added 9 dedicated unit tests for statement transpilation paths and failures
+
+- **Phase 4.3: Expression Transpilation** ✅
+  - Added `expression` module in transpiler crate
+  - Introduced `ExpressionTranspiler` with recursive expression lowering
+  - Implemented transpilation coverage for:
+    * Literals (`int`, `float`, `str`, `bool`, `None`, `Ellipsis`)
+    * Identifiers
+    * Binary/unary expressions
+    * Comparisons and logical operators
+    * Function calls
+    * Parenthesized expressions
+    * Tuples
+    * Lists to `vec![...]`
+    * Dicts to `std::collections::HashMap::from([...])`
+    * Subscript operations
+    * Attribute access
+  - Added mapping for membership operators:
+    * `a in b` -> `b.contains(&a)`
+    * `a not in b` -> `!b.contains(&a)`
+  - Added explicit unsupported-expression error handling for non-implemented
+    expression kinds
+  - Added 14 focused unit tests for expression output and failure paths
+
+- **Phase 4.2: Basic Type Mapping** ✅
+  - Added `type_mapping` module in transpiler crate
+  - Introduced `TypeMapper` with configurable integer width strategy:
+    * `IntWidth::I32` for `int -> i32`
+    * `IntWidth::I64` for `int -> i64` (default)
+  - Added `RustType` representation and rendering helpers for Rust output:
+    * `i32`, `i64`, `f64`, `String`, `bool`, `()`, `Option<T>`, unknown (`_`)
+  - Implemented semantic type mapping:
+    * `int -> i32/i64`
+    * `float -> f64`
+    * `str -> String`
+    * `bool -> bool`
+    * `None -> Option<()>` (context-free baseline for `Option<T>`)
+  - Added type annotation helpers:
+    * Maps annotation expressions (`int`, `float`, `str`, `bool`, `None`)
+    * Supports parenthesized annotations
+    * Supports `Option[T]` generic form (including nested options)
+    * Renders mapped annotations as Rust type strings
+  - Added robust error handling for unknown/unsupported annotation shapes
+  - Added 11 dedicated unit tests for happy paths, nested generics, and failures
+
+- **Phase 4.1: Code Generation Infrastructure** ✅
+  - Added `CodeGenerator` core infrastructure in transpiler crate
+  - Implemented output buffer management and indentation tracking
+  - Added helper APIs:
+    * `emit()` / `emit_line()` / `emit_empty_line()`
+    * `indent()` / `dedent()`
+    * `open_block()` / `close_block()`
+    * `clear()` / `as_str()` / `into_string()`
+  - Added a template system for common patterns with:
+    * template registration
+    * placeholder rendering via `{{key}}`
+    * template emission to output
+    * default templates for function signatures and let bindings
+  - Added focused transpiler unit tests (8 total) for formatting behavior,
+    template rendering, and error paths
+
 - **Phase 3.6: Semantic Testing** ✅
   - Completed semantic testing closeout audit and checklist alignment
   - Verified broad semantic coverage for:

@@ -317,89 +317,133 @@ test suites pass, and full workspace `cargo test` runs are green.
 
 ### 4.1 Code Generation Infrastructure
 
-- [ ] Create CodeGenerator structure
-- [ ] Implement output buffer management
-- [ ] Add indentation tracking for generated Rust code
-- [ ] Create helper methods (emit, emit_line, etc.)
-- [ ] Set up template system for common patterns
+- [x] Create CodeGenerator structure
+- [x] Implement output buffer management
+- [x] Add indentation tracking for generated Rust code
+- [x] Create helper methods (emit, emit_line, etc.)
+- [x] Set up template system for common patterns
+
+**Completed**: Added transpiler code generation infrastructure with a reusable
+`CodeGenerator` (buffering, indentation state, block helpers, and template
+registration/rendering), plus focused unit tests for happy paths and failure
+cases.
 
 ### 4.2 Basic Type Mapping
 
-- [ ] Map int → i32/i64
-- [ ] Map float → f64
-- [ ] Map str → String
-- [ ] Map bool → bool
-- [ ] Map None → Option<T>
-- [ ] Create type annotation helpers
+- [x] Map int → i32/i64
+- [x] Map float → f64
+- [x] Map str → String
+- [x] Map bool → bool
+- [x] Map None → Option<T>
+- [x] Create type annotation helpers
+
+**Completed**: Added a dedicated `TypeMapper` with configurable integer width
+(`i32` or `i64`), semantic type-to-Rust mapping, annotation-expression mapping,
+and Rust type rendering helpers, plus focused unit tests for supported and
+unsupported annotation shapes.
 
 ### 4.3 Expression Transpilation
 
-- [ ] Transpile literals
-- [ ] Transpile identifiers
-- [ ] Transpile binary operations
-- [ ] Transpile unary operations
-- [ ] Transpile comparisons
-- [ ] Transpile logical operations
-- [ ] Transpile function calls
-- [ ] Transpile parenthesized expressions
-- [ ] Transpile tuple creation
-- [ ] Transpile list creation (Vec)
-- [ ] Transpile dict creation (HashMap)
-- [ ] Transpile subscript operations
-- [ ] Transpile attribute access
+- [x] Transpile literals
+- [x] Transpile identifiers
+- [x] Transpile binary operations
+- [x] Transpile unary operations
+- [x] Transpile comparisons
+- [x] Transpile logical operations
+- [x] Transpile function calls
+- [x] Transpile parenthesized expressions
+- [x] Transpile tuple creation
+- [x] Transpile list creation (Vec)
+- [x] Transpile dict creation (HashMap)
+- [x] Transpile subscript operations
+- [x] Transpile attribute access
+
+**Completed**: Added an `ExpressionTranspiler` with recursive AST lowering for
+core expression forms, including list/dict container lowering to Rust
+(`vec![...]`, `HashMap::from([...])`), plus focused unit tests across supported
+forms and unsupported-expression error handling.
 
 ### 4.4 Statement Transpilation
 
-- [ ] Transpile variable declarations (let)
-- [ ] Transpile assignments
-- [ ] Transpile augmented assignments
-- [ ] Transpile expression statements
-- [ ] Transpile return statements
-- [ ] Transpile pass statements (empty block)
-- [ ] Transpile break statements
-- [ ] Transpile continue statements
+- [x] Transpile variable declarations (let)
+- [x] Transpile assignments
+- [x] Transpile augmented assignments
+- [x] Transpile expression statements
+- [x] Transpile return statements
+- [x] Transpile pass statements (empty block)
+- [x] Transpile break statements
+- [x] Transpile continue statements
+
+**Completed**: Added a dedicated `StatementTranspiler` for core statement
+lowering, covering declarations, assignment forms, expression statements, and
+control transfer (`return`, `break`, `continue`) with unit tests and explicit
+error handling for unsupported/multi-target forms.
 
 ### 4.5 Control Flow Transpilation
 
-- [ ] Transpile if statements
-- [ ] Transpile if-else
-- [ ] Transpile if-elif-else
-- [ ] Transpile while loops
-- [ ] Transpile for loops (iterator pattern)
-- [ ] Transpile nested control flow
-- [ ] Handle loop-else patterns
+- [x] Transpile if statements
+- [x] Transpile if-else
+- [x] Transpile if-elif-else
+- [x] Transpile while loops
+- [x] Transpile for loops (iterator pattern)
+- [x] Transpile nested control flow
+- [x] Handle loop-else patterns
+
+**Completed**: Extended `StatementTranspiler` with recursive control-flow
+lowering for `if`/`elif`/`else`, `while`, and `for` blocks, including nested
+structures and Python loop-`else` semantics using internal break-tracking flags.
 
 ### 4.6 Function Transpilation
 
-- [ ] Transpile function definitions
-- [ ] Transpile parameters
-- [ ] Transpile default parameters
-- [ ] Transpile return types
-- [ ] Handle multiple return statements
-- [ ] Generate function signatures
+- [x] Transpile function definitions
+- [x] Transpile parameters
+- [x] Transpile default parameters
+- [x] Transpile return types
+- [x] Handle multiple return statements
+- [x] Generate function signatures
+
+**Completed**: Extended `StatementTranspiler` with function lowering, including
+signature generation, parameter kind mapping, default-argument initialization,
+return type annotation mapping, and recursive body transpilation that supports
+multiple return statements in nested control flow.
 
 ### 4.7 Advanced Transpilation
 
-- [ ] Transpile list comprehensions (map/filter)
-- [ ] Transpile lambda expressions
-- [ ] Transpile closures
-- [ ] Transpile decorators (basic)
-- [ ] Handle recursion
-- [ ] Optimize tail recursion
+- [x] Transpile list comprehensions (map/filter)
+- [x] Transpile lambda expressions
+- [x] Transpile closures
+- [x] Transpile decorators (basic)
+- [x] Handle recursion
+- [x] Optimize tail recursion
+
+**Completed**: Added advanced expression/function lowering with lambda-to-closure
+transpilation, list-comprehension map/filter lowering, basic decorator emission,
+recursive-call support, and direct self tail-recursion rewriting to explicit
+loop form for eligible return-call patterns.
 
 ### 4.8 Main Function Generation
 
-- [ ] Wrap top-level code in main()
-- [ ] Handle top-level variables
-- [ ] Generate proper entry point
+- [x] Wrap top-level code in main()
+- [x] Handle top-level variables
+- [x] Generate proper entry point
+
+**Completed**: Added `ModuleTranspiler` to lower full modules into Rust source,
+hoist function definitions outside the runtime entry block, wrap executable
+top-level statements into `fn main()`, and materialize first-assignment
+top-level identifiers as `let mut` declarations.
 
 ### 4.9 Transpiler Testing
 
-- [ ] Test each transpilation unit
-- [ ] Test complex nested structures
-- [ ] Verify generated Rust compiles
-- [ ] Test runtime behavior matches expectations
-- [ ] Create integration test suite
+- [x] Test each transpilation unit
+- [x] Test complex nested structures
+- [x] Verify generated Rust compiles
+- [x] Test runtime behavior matches expectations
+- [x] Create integration test suite
+
+**Completed**: Added an end-to-end transpiler integration suite that exercises
+unit-level APIs together, validates complex nested module lowering, compiles
+generated Rust via `rustc`, and verifies runtime behavior with generated test
+harness assertions.
 
 ---
 
