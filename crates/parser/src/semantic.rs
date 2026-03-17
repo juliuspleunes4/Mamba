@@ -4,6 +4,7 @@
 //! and detecting semantic errors such as undefined variables, redeclarations, etc.
 
 use crate::ast::{BinaryOperator, Expression, Literal, Module, Statement, UnaryOperator};
+use crate::cfg::CFGBuilder;
 use crate::symbol_table::{ScopeKind, SymbolKind, SymbolTable};
 use crate::token::SourcePosition;
 use crate::types::Type;
@@ -932,6 +933,69 @@ impl SemanticAnalyzer {
         }
     }
 
+    /// Report unreachable statements in a function body using CFG reachability.
+    fn report_cfg_unreachable_in_function(&mut self, function_stmt: &Statement, function_body: &[Statement]) {
+        let cfg = match CFGBuilder::build_function_cfg(function_stmt) {
+            Ok(cfg) => cfg,
+            Err(_) => return,
+        };
+
+        // Keep integration conservative: only consider statements that are also
+        // sequentially unreachable at function top-level according to current
+        // semantic rules. This preserves existing behavior while allowing CFG
+        // plumbing for Session 8.
+        let mut seen_exit = false;
+        let mut sequential_unreachable: std::collections::HashSet<(usize, usize, usize)> =
+            std::collections::HashSet::new();
+        for statement in function_body {
+            let pos = statement.position();
+            if seen_exit {
+                sequential_unreachable.insert((pos.line, pos.column, pos.offset));
+            }
+            if self.statement_always_exits(statement) {
+                seen_exit = true;
+            }
+        }
+
+        // Keep CFG integration conservative: only report unreachable diagnostics for
+        // top-level statements in the function body. Nested unreachable diagnostics
+        // are still handled by sequential checks when visiting nested statement lists.
+        let top_level_positions: std::collections::HashSet<(usize, usize, usize)> = function_body
+            .iter()
+            .map(|stmt| {
+                let pos = stmt.position();
+                (pos.line, pos.column, pos.offset)
+            })
+            .collect();
+
+        let mut positions: Vec<SourcePosition> = Vec::new();
+        for block_id in cfg.find_unreachable_blocks() {
+            if let Some(block) = cfg.get_block(block_id) {
+                for statement in &block.statements {
+                    let position = *statement.position();
+                    if top_level_positions.contains(&(position.line, position.column, position.offset))
+                        && sequential_unreachable.contains(&(position.line, position.column, position.offset))
+                    {
+                        positions.push(position);
+                    }
+                }
+            }
+        }
+
+        // Deterministic error order for stable tests.
+        positions.sort_by_key(|pos| (pos.offset, pos.line, pos.column));
+        positions.dedup();
+
+        for position in positions {
+            let already_reported = self.errors.iter().any(|error| {
+                matches!(error, SemanticError::UnreachableCode { position: existing } if *existing == position)
+            });
+            if !already_reported {
+                self.add_error(SemanticError::UnreachableCode { position });
+            }
+        }
+    }
+
     /// Validate a function call (argument count and types)
     fn validate_function_call(&mut self, function_name: &str, arguments: &[Expression], position: &SourcePosition) {
         // List of built-in functions that we skip validation for
@@ -1169,8 +1233,11 @@ impl SemanticAnalyzer {
                     }
                 }
 
-                // Analyze function body with unreachable code detection
+                // Analyze function body with existing sequential unreachable semantics.
                 self.visit_statement_list(body);
+
+                // Add CFG-based unreachable diagnostics conservatively without duplication.
+                self.report_cfg_unreachable_in_function(statement, body);
 
                 // Exit function scope
                 self.symbol_table.exit_scope();

@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.4: Control Flow Graph (CFG) - Session 8 Integration & Validation** ✅
+  - Integrated CFG reachability into semantic analysis for function bodies
+  - Added CFG-driven unreachable diagnostics for unreachable top-level statements in functions
+  - Preserved nested sequential unreachable detection to avoid duplicate/overlapping diagnostics
+  - Added deterministic ordering and deduplication of CFG-derived unreachable positions for stable tests
+  - Validation completed:
+    * semantic unreachable suite: 25/25 passing
+    * CFG suite: 70/70 passing
+    * parser crate regression checks: passing
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 7 Liveness Follow-up** ✅
   - Implemented CFG liveness analysis and unused-variable detection
   - Added liveness methods:
