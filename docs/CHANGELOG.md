@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 5.1: Built-in Functions (Tranche 2)**
+  - Extended builtin lowering with:
+    * I/O helper: `input`
+    * Sequence/number helpers: `sorted`, `round`, `pow`, `divmod`
+    * Conversions/representation: `chr`, `ord`, `hex`, `oct`, `bin`, `repr`, `ascii`
+    * Iteration helpers: `iter`, `next`, `slice`
+    * Memory/container helpers: `bytes`, `bytearray`, `memoryview`, `frozenset`
+    * Utility helpers: `hash`, `id`, `format`
+  - Added helper-based lowering for complex builtins (`input`, `sorted`, `hash`, `slice`)
+  - Added expanded builtin unit coverage in `crates/transpiler/src/builtins.rs`
+  - Validation:
+    * `cargo test -p mamba-transpiler` passing (unit + integration suites)
+
 - **Phase 5.1: Built-in Functions (Tranche 1)**
   - Added builtin lowering module: `crates/transpiler/src/builtins.rs`
   - Wired builtin call transpilation into expression call handling

@@ -24,12 +24,54 @@ pub fn transpile_builtin_call(name: &str, args: &[String]) -> Option<String> {
         "reversed" if args.len() == 1 => {
             Some(format!("({}).into_iter().rev().collect::<Vec<_>>()", args[0]))
         }
+        "sorted" if args.len() == 1 => Some(transpile_sorted(&args[0])),
         "enumerate" if args.len() == 1 => Some(format!("({}).into_iter().enumerate()", args[0])),
         "zip" if args.len() == 2 => Some(format!("({}).into_iter().zip({})", args[0], args[1])),
         "map" if args.len() == 2 => Some(format!("({}).into_iter().map({})", args[1], args[0])),
         "filter" if args.len() == 2 => Some(format!("({}).into_iter().filter({})", args[1], args[0])),
         "all" if args.len() == 1 => Some(format!("({}).into_iter().all(|x| x)", args[0])),
         "any" if args.len() == 1 => Some(format!("({}).into_iter().any(|x| x)", args[0])),
+        "input" => transpile_input(args),
+        "chr" if args.len() == 1 => Some(format!(
+            "char::from_u32(({}) as u32).expect(\"chr() arg not in range(0x110000)\")",
+            args[0]
+        )),
+        "ord" if args.len() == 1 => Some(format!(
+            "({}).chars().next().expect(\"ord() expected a character\") as u32",
+            args[0]
+        )),
+        "hex" if args.len() == 1 => Some(format!("format!(\"0x{{:x}}\", ({}))", args[0])),
+        "oct" if args.len() == 1 => Some(format!("format!(\"0o{{:o}}\", ({}))", args[0])),
+        "bin" if args.len() == 1 => Some(format!("format!(\"0b{{:b}}\", ({}))", args[0])),
+        "round" if args.len() == 1 => Some(format!("({}).round()", args[0])),
+        "round" if args.len() == 2 => Some(format!(
+            "(({} * 10f64.powi(({}) as i32)).round() / 10f64.powi(({}) as i32))",
+            args[0], args[1], args[1]
+        )),
+        "pow" if args.len() == 2 => Some(format!("(({} as f64).powf({} as f64))", args[0], args[1])),
+        "divmod" if args.len() == 2 => Some(format!("(({} / {}), ({} % {}))", args[0], args[1], args[0], args[1])),
+        "hash" if args.len() == 1 => Some(transpile_hash(&args[0])),
+        "id" if args.len() == 1 => Some(format!("(&{} as *const _ as usize)", args[0])),
+        "iter" if args.len() == 1 => Some(format!("({}).into_iter()", args[0])),
+        "next" if args.len() == 1 => Some(format!(
+            "({}).next().expect(\"next() called on exhausted iterator\")",
+            args[0]
+        )),
+        "next" if args.len() == 2 => Some(format!("({}).next().unwrap_or({})", args[0], args[1])),
+        "slice" => transpile_slice(args),
+        "format" if args.len() == 1 => Some(format!("({}).to_string()", args[0])),
+        "repr" if args.len() == 1 => Some(format!("format!(\"{{:?}}\", ({}))", args[0])),
+        "ascii" if args.len() == 1 => Some(format!(
+            "format!(\"{{:?}}\", ({})).chars().flat_map(|c| c.escape_default()).collect::<String>()",
+            args[0]
+        )),
+        "bytes" if args.len() == 1 => Some(format!("({}).as_bytes().to_vec()", args[0])),
+        "bytearray" if args.len() == 1 => Some(format!("({}).as_bytes().to_vec()", args[0])),
+        "memoryview" if args.len() == 1 => Some(format!("({}).as_bytes()", args[0])),
+        "frozenset" if args.len() == 1 => Some(format!(
+            "({}).into_iter().collect::<std::collections::BTreeSet<_>>()",
+            args[0]
+        )),
         _ => None,
     }
 }
@@ -49,6 +91,42 @@ fn transpile_print(args: &[String]) -> String {
 }
 
 fn transpile_range(args: &[String]) -> Option<String> {
+    match args.len() {
+        1 => Some(format!("(0..{})", args[0])),
+        2 => Some(format!("({}..{})", args[0], args[1])),
+        3 => Some(format!("({}..{}).step_by(({}) as usize)", args[0], args[1], args[2])),
+        _ => None,
+    }
+}
+
+fn transpile_sorted(arg: &str) -> String {
+    format!(
+        "{{ let mut __mamba_sorted = ({}).into_iter().collect::<Vec<_>>(); __mamba_sorted.sort(); __mamba_sorted }}",
+        arg
+    )
+}
+
+fn transpile_input(args: &[String]) -> Option<String> {
+    match args.len() {
+        0 => Some(
+            "{ let mut __mamba_input = String::new(); std::io::stdin().read_line(&mut __mamba_input).expect(\"input() failed\"); __mamba_input.trim_end_matches(['\\n', '\\r']).to_string() }".to_string(),
+        ),
+        1 => Some(format!(
+            "{{ use std::io::Write; print!(\"{{}}\", {}); std::io::stdout().flush().expect(\"flush failed\"); let mut __mamba_input = String::new(); std::io::stdin().read_line(&mut __mamba_input).expect(\"input() failed\"); __mamba_input.trim_end_matches(['\\n', '\\r']).to_string() }}",
+            args[0]
+        )),
+        _ => None,
+    }
+}
+
+fn transpile_hash(arg: &str) -> String {
+    format!(
+        "{{ use std::hash::{{Hash, Hasher}}; let mut __mamba_hasher = std::collections::hash_map::DefaultHasher::new(); ({}).hash(&mut __mamba_hasher); __mamba_hasher.finish() }}",
+        arg
+    )
+}
+
+fn transpile_slice(args: &[String]) -> Option<String> {
     match args.len() {
         1 => Some(format!("(0..{})", args[0])),
         2 => Some(format!("({}..{})", args[0], args[1])),
@@ -110,6 +188,72 @@ mod tests {
             transpile_builtin_call("any", &["values".to_string()]),
             Some("(values).into_iter().any(|x| x)".to_string())
         );
+        assert_eq!(
+            transpile_builtin_call("sorted", &["values".to_string()]),
+            Some(
+                "{ let mut __mamba_sorted = (values).into_iter().collect::<Vec<_>>(); __mamba_sorted.sort(); __mamba_sorted }"
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn transpiles_math_and_conversion_helpers() {
+        assert_eq!(
+            transpile_builtin_call("round", &["x".to_string()]),
+            Some("(x).round()".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("pow", &["x".to_string(), "y".to_string()]),
+            Some("((x as f64).powf(y as f64))".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("divmod", &["a".to_string(), "b".to_string()]),
+            Some("((a / b), (a % b))".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("hex", &["255".to_string()]),
+            Some("format!(\"0x{:x}\", (255))".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("ord", &["s".to_string()]),
+            Some("(s).chars().next().expect(\"ord() expected a character\") as u32".to_string())
+        );
+    }
+
+    #[test]
+    fn transpiles_iter_like_and_repr_helpers() {
+        assert_eq!(
+            transpile_builtin_call("iter", &["xs".to_string()]),
+            Some("(xs).into_iter()".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("next", &["it".to_string(), "0".to_string()]),
+            Some("(it).next().unwrap_or(0)".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("repr", &["x".to_string()]),
+            Some("format!(\"{:?}\", (x))".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("bytes", &["s".to_string()]),
+            Some("(s).as_bytes().to_vec()".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("frozenset", &["xs".to_string()]),
+            Some("(xs).into_iter().collect::<std::collections::BTreeSet<_>>()".to_string())
+        );
+    }
+
+    #[test]
+    fn transpiles_input_builtin() {
+        assert!(transpile_builtin_call("input", &[])
+            .expect("input() should transpile")
+            .contains("read_line"));
+
+        assert!(transpile_builtin_call("input", &["prompt".to_string()])
+            .expect("input(prompt) should transpile")
+            .contains("print!(\"{}\", prompt)"));
     }
 
     #[test]
@@ -119,5 +263,6 @@ mod tests {
             transpile_builtin_call("len", &["a".to_string(), "b".to_string()]),
             None
         );
+        assert_eq!(transpile_builtin_call("input", &["a".to_string(), "b".to_string()]), None);
     }
 }
