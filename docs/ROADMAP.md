@@ -296,7 +296,7 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.5 Deferred Semantic Validation
 
-- [ ] Validate membership operators (in, not in) - requires collection type system
+- [x] Validate membership operators (in, not in) - conservative validation with current type system
 - [x] Add explicit tests for augmented assignment operators (+=, -=, etc.)
 
 ### 3.6 Semantic Testing

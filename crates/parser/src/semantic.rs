@@ -387,6 +387,8 @@ impl SemanticAnalyzer {
                     _ => Type::Unknown,
                 }
             },
+            // Membership operators always return bool
+            In | NotIn => Type::Bool,
             // Other operations return Unknown for now
             _ => Type::Unknown,
         }
@@ -544,9 +546,20 @@ impl SemanticAnalyzer {
                     }
                 }
             },
+            // Membership operators: right-hand side must be a container-like type.
+            // With current type system we conservatively reject only known scalar RHS.
+            In | NotIn => {
+                if matches!(right, Type::Int | Type::Float | Type::Bool | Type::None) {
+                    self.add_error(SemanticError::TypeMismatch {
+                        expected: "container type (e.g., str, list, tuple, set, dict)".to_string(),
+                        actual: right.clone(),
+                        position: position.clone(),
+                    });
+                    return Type::Unknown;
+                }
+            },
             // Logical operators (And, Or) accept any type - truthy/falsy semantics
             // Identity operators (Is, IsNot) accept any type - reference comparison
-            // Membership operators (In, NotIn) - deferred until we have collection types
             _ => {}
         }
         
@@ -6370,6 +6383,88 @@ result = x or y
         
         // Should not produce errors (logical operators accept any type)
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_membership_in_string_valid() {
+        let code = r#"
+ch = "e"
+text = "hello"
+result = ch in text
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+
+        // Should not produce errors (string is a valid container)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_membership_not_in_string_valid() {
+        let code = r#"
+ch = "z"
+text = "hello"
+result = ch not in text
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+
+        // Should not produce errors (string is a valid container)
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_membership_rhs_integer_error() {
+        let code = r#"
+x = 1
+y = 2
+result = x in y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+
+        // Should produce TypeMismatch error (int is not a container)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_membership_rhs_none_error() {
+        let code = r#"
+x = 1
+y = None
+result = x not in y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+
+        // Should produce TypeMismatch error (None is not a container)
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
+    }
+
+    #[test]
+    fn test_membership_unknown_rhs_allowed_conservative() {
+        let code = r#"
+x = 1
+y = maybe_container()
+result = x in y
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+
+        // Undefined function error is expected, but no membership type mismatch for unknown RHS.
+        assert!(result.is_err());
+        let errors = result.unwrap_err();
+        assert!(errors.iter().any(|e| matches!(e, SemanticError::UndefinedFunction { .. })));
+        assert!(!errors.iter().any(|e| matches!(e, SemanticError::TypeMismatch { .. })));
     }
 
     // ===== Invalid Assignment Target Tests =====

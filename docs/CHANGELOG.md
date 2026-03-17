@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.5: Deferred Semantic Validation** ✅
+  - Implemented semantic validation for membership operators `in` and `not in`
+  - Added conservative RHS validation with current type system:
+    * Accepts container-like/unknown RHS types to avoid false positives
+    * Rejects known scalar RHS types (`int`, `float`, `bool`, `None`) with `TypeMismatch`
+  - Membership expression result type is now inferred as `bool`
+  - Added semantic tests for:
+    * Valid string membership (`in`, `not in`)
+    * Invalid scalar RHS membership (int/None)
+    * Conservative unknown RHS handling (no false-positive type mismatch)
+
 - **Phase 3.5: Deferred Semantic Validation** ✅ (partial)
   - Added explicit semantic tests for all supported augmented assignment operators
   - New coverage includes: `+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `**=`, `&=`, `|=`, `^=`, `>>=`, `<<=`
