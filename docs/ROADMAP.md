@@ -344,19 +344,24 @@ unsupported annotation shapes.
 
 ### 4.3 Expression Transpilation
 
-- [ ] Transpile literals
-- [ ] Transpile identifiers
-- [ ] Transpile binary operations
-- [ ] Transpile unary operations
-- [ ] Transpile comparisons
-- [ ] Transpile logical operations
-- [ ] Transpile function calls
-- [ ] Transpile parenthesized expressions
-- [ ] Transpile tuple creation
-- [ ] Transpile list creation (Vec)
-- [ ] Transpile dict creation (HashMap)
-- [ ] Transpile subscript operations
-- [ ] Transpile attribute access
+- [x] Transpile literals
+- [x] Transpile identifiers
+- [x] Transpile binary operations
+- [x] Transpile unary operations
+- [x] Transpile comparisons
+- [x] Transpile logical operations
+- [x] Transpile function calls
+- [x] Transpile parenthesized expressions
+- [x] Transpile tuple creation
+- [x] Transpile list creation (Vec)
+- [x] Transpile dict creation (HashMap)
+- [x] Transpile subscript operations
+- [x] Transpile attribute access
+
+**Completed**: Added an `ExpressionTranspiler` with recursive AST lowering for
+core expression forms, including list/dict container lowering to Rust
+(`vec![...]`, `HashMap::from([...])`), plus focused unit tests across supported
+forms and unsupported-expression error handling.
 
 ### 4.4 Statement Transpilation
 

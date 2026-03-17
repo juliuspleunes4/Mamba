@@ -8,6 +8,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.3: Expression Transpilation** ✅
+  - Added `expression` module in transpiler crate
+  - Introduced `ExpressionTranspiler` with recursive expression lowering
+  - Implemented transpilation coverage for:
+    * Literals (`int`, `float`, `str`, `bool`, `None`, `Ellipsis`)
+    * Identifiers
+    * Binary/unary expressions
+    * Comparisons and logical operators
+    * Function calls
+    * Parenthesized expressions
+    * Tuples
+    * Lists to `vec![...]`
+    * Dicts to `std::collections::HashMap::from([...])`
+    * Subscript operations
+    * Attribute access
+  - Added mapping for membership operators:
+    * `a in b` -> `b.contains(&a)`
+    * `a not in b` -> `!b.contains(&a)`
+  - Added explicit unsupported-expression error handling for non-implemented
+    expression kinds
+  - Added 14 focused unit tests for expression output and failure paths
+
 - **Phase 4.2: Basic Type Mapping** ✅
   - Added `type_mapping` module in transpiler crate
   - Introduced `TypeMapper` with configurable integer width strategy:
