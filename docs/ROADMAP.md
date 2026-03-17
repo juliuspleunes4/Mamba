@@ -434,11 +434,16 @@ top-level identifiers as `let mut` declarations.
 
 ### 4.9 Transpiler Testing
 
-- [ ] Test each transpilation unit
-- [ ] Test complex nested structures
-- [ ] Verify generated Rust compiles
-- [ ] Test runtime behavior matches expectations
-- [ ] Create integration test suite
+- [x] Test each transpilation unit
+- [x] Test complex nested structures
+- [x] Verify generated Rust compiles
+- [x] Test runtime behavior matches expectations
+- [x] Create integration test suite
+
+**Completed**: Added an end-to-end transpiler integration suite that exercises
+unit-level APIs together, validates complex nested module lowering, compiles
+generated Rust via `rustc`, and verifies runtime behavior with generated test
+harness assertions.
 
 ---
 

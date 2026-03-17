@@ -8,6 +8,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.9: Transpiler Testing** ✅
+  - Added dedicated integration suite: `crates/transpiler/tests/phase_4_9_integration.rs`
+  - Added coverage for all 4.9 goals:
+    * Unit-surface smoke coverage across `CodeGenerator`, `ExpressionTranspiler`,
+      `StatementTranspiler`, and `ModuleTranspiler`
+    * Complex nested module transpilation path validation
+    * Generated Rust compilation checks via `rustc`
+    * Runtime behavior verification by compiling generated code as test binaries
+      and asserting expected function behavior (`assert_eq!`)
+  - Added portable test helpers for temporary workspace creation, code emission,
+    `rustc` invocation, and binary execution
+  - `cargo test -p mamba-transpiler` now runs both unit and integration tests,
+    including compile-and-run validation of generated Rust artifacts
+
 - **Phase 4.8: Main Function Generation** ✅
   - Added `module` transpiler module with `ModuleTranspiler`
   - Implemented full-module lowering pipeline to generate a valid Rust entry point
