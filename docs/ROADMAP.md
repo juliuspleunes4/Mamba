@@ -395,12 +395,17 @@ structures and Python loop-`else` semantics using internal break-tracking flags.
 
 ### 4.6 Function Transpilation
 
-- [ ] Transpile function definitions
-- [ ] Transpile parameters
-- [ ] Transpile default parameters
-- [ ] Transpile return types
-- [ ] Handle multiple return statements
-- [ ] Generate function signatures
+- [x] Transpile function definitions
+- [x] Transpile parameters
+- [x] Transpile default parameters
+- [x] Transpile return types
+- [x] Handle multiple return statements
+- [x] Generate function signatures
+
+**Completed**: Extended `StatementTranspiler` with function lowering, including
+signature generation, parameter kind mapping, default-argument initialization,
+return type annotation mapping, and recursive body transpilation that supports
+multiple return statements in nested control flow.
 
 ### 4.7 Advanced Transpilation
 

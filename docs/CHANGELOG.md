@@ -8,6 +8,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.6: Function Transpilation** ✅
+  - Extended `StatementTranspiler` to support `FunctionDef` lowering
+  - Implemented function signature generation for:
+    * sync and async functions (`fn` / `async fn`)
+    * annotated return types (defaulting to `()` when absent)
+    * positional/regular/keyword-only parameters
+    * varargs (`Vec<T>`) and kwargs (`HashMap<String, T>`) parameters
+  - Implemented default-parameter lowering by using `Option<T>` in signatures
+    and function-entry initialization (`name.unwrap_or(default)`)
+  - Added parameter base-type resolution from annotations with fallback literal
+    inference for default values
+  - Function body transpilation now reuses recursive statement/block lowering,
+    preserving nested control-flow semantics and multiple return statements
+  - Added 5 dedicated function transpilation unit tests covering signatures,
+    defaults, async functions, varargs/kwargs, and multi-return bodies
+
 - **Phase 4.5: Control Flow Transpilation** ✅
   - Extended `StatementTranspiler` with control-flow lowering
   - Implemented transpilation for:

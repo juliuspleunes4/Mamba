@@ -1,4 +1,4 @@
-use mamba_parser::ast::{AugmentedOperator, Expression, Statement};
+use mamba_parser::ast::{AugmentedOperator, Expression, Literal, Parameter, ParameterKind, Statement};
 use thiserror::Error;
 
 use crate::codegen::{CodeGenerator, CodegenError};
@@ -38,7 +38,7 @@ impl TranspileContext {
 
 #[derive(Debug, Error)]
 pub enum StatementTranspileError {
-    #[error("unsupported statement kind for phase 4.4")]
+    #[error("unsupported statement kind for current transpilation phase")]
     UnsupportedStatement,
     #[error("assignment must include at least one target")]
     EmptyAssignmentTargets,
@@ -261,6 +261,22 @@ impl StatementTranspiler {
 
                 Ok(())
             }
+            Statement::FunctionDef {
+                name,
+                parameters,
+                body,
+                is_async,
+                return_type,
+                ..
+            } => self.transpile_function_definition(
+                generator,
+                name,
+                parameters,
+                body,
+                *is_async,
+                return_type.as_ref(),
+                context,
+            ),
             _ => Err(StatementTranspileError::UnsupportedStatement),
         }
     }
@@ -275,6 +291,95 @@ impl StatementTranspiler {
             self.transpile_into_with_context(generator, statement, context)?;
         }
         Ok(())
+    }
+
+    fn transpile_function_definition(
+        &self,
+        generator: &mut CodeGenerator,
+        name: &str,
+        parameters: &[Parameter],
+        body: &[Statement],
+        is_async: bool,
+        return_type: Option<&Expression>,
+        context: &mut TranspileContext,
+    ) -> Result<(), StatementTranspileError> {
+        let signature = self.render_function_signature(name, parameters, is_async, return_type)?;
+        generator.open_block(&signature);
+
+        for parameter in parameters {
+            if let Some(default_expr) = &parameter.default {
+                if matches!(parameter.kind, ParameterKind::Regular | ParameterKind::PositionalOnly | ParameterKind::KwOnly) {
+                    let rendered_default = self.expr.transpile(default_expr)?;
+                    generator.emit_line(&format!(
+                        "let mut {} = {}.unwrap_or({});",
+                        parameter.name, parameter.name, rendered_default
+                    ));
+                }
+            }
+        }
+
+        self.transpile_block(generator, body, context)?;
+        generator.close_block()?;
+        Ok(())
+    }
+
+    fn render_function_signature(
+        &self,
+        name: &str,
+        parameters: &[Parameter],
+        is_async: bool,
+        return_type: Option<&Expression>,
+    ) -> Result<String, StatementTranspileError> {
+        let rendered_params = parameters
+            .iter()
+            .map(|param| self.render_parameter(param))
+            .collect::<Result<Vec<_>, _>>()?
+            .join(", ");
+
+        let return_rust_type = if let Some(ann) = return_type {
+            self.types.render_annotation(ann)?
+        } else {
+            "()".to_string()
+        };
+
+        let fn_prefix = if is_async { "async fn" } else { "fn" };
+        Ok(format!(
+            "{} {}({}) -> {}",
+            fn_prefix, name, rendered_params, return_rust_type
+        ))
+    }
+
+    fn render_parameter(&self, parameter: &Parameter) -> Result<String, StatementTranspileError> {
+        let base_type = self.parameter_base_type(parameter)?;
+
+        let rendered = match parameter.kind {
+            ParameterKind::Regular | ParameterKind::PositionalOnly | ParameterKind::KwOnly => {
+                if parameter.default.is_some() {
+                    format!("{}: Option<{}>", parameter.name, base_type)
+                } else {
+                    format!("{}: {}", parameter.name, base_type)
+                }
+            }
+            ParameterKind::VarArgs => format!("{}: Vec<{}>", parameter.name, base_type),
+            ParameterKind::VarKwargs => format!(
+                "{}: std::collections::HashMap<String, {}>",
+                parameter.name, base_type
+            ),
+        };
+
+        Ok(rendered)
+    }
+
+    fn parameter_base_type(&self, parameter: &Parameter) -> Result<String, StatementTranspileError> {
+        if let Some(annotation) = &parameter.type_annotation {
+            return Ok(self.types.render_annotation(annotation)?);
+        }
+
+        if let Some(default_expr) = &parameter.default {
+            return Ok(infer_expression_type(default_expr));
+        }
+
+        Ok("()".to_string())
     }
 
     pub fn transpile_variable_declaration(
@@ -308,6 +413,17 @@ impl StatementTranspiler {
     }
 }
 
+fn infer_expression_type(expr: &Expression) -> String {
+    match expr {
+        Expression::Literal(Literal::Integer { .. }) => "i64".to_string(),
+        Expression::Literal(Literal::Float { .. }) => "f64".to_string(),
+        Expression::Literal(Literal::String { .. }) => "String".to_string(),
+        Expression::Literal(Literal::Boolean { .. }) => "bool".to_string(),
+        Expression::Literal(Literal::None { .. }) => "Option<()>".to_string(),
+        _ => "()".to_string(),
+    }
+}
+
 fn augmented_operator_to_rust(op: &AugmentedOperator) -> &'static str {
     match op {
         AugmentedOperator::Add => "+",
@@ -329,7 +445,7 @@ fn augmented_operator_to_rust(op: &AugmentedOperator) -> &'static str {
 mod tests {
     use super::{StatementTranspileError, StatementTranspiler};
     use mamba_parser::ast::{
-        AugmentedOperator, Expression, Literal, Statement,
+        AugmentedOperator, Expression, Literal, Parameter, ParameterKind, Statement,
     };
     use mamba_parser::token::SourcePosition;
 
@@ -356,6 +472,16 @@ mod tests {
             value,
             position: pos(),
         })
+    }
+
+    fn param(name: &str) -> Parameter {
+        Parameter {
+            name: name.to_string(),
+            kind: ParameterKind::Regular,
+            default: None,
+            type_annotation: None,
+            position: pos(),
+        }
     }
 
     #[test]
@@ -605,6 +731,144 @@ mod tests {
         assert_eq!(
             st.transpile_statement(&stmt).unwrap(),
             "let mut __mamba_loop_broke_0 = false;\nfor x in xs {\n    __mamba_loop_broke_0 = true;\n    break;\n}\nif !__mamba_loop_broke_0 {\n    done;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_function_definition_and_signature() {
+        let st = StatementTranspiler::new();
+        let mut a = param("a");
+        a.type_annotation = Some(ident("int"));
+        let mut b = param("b");
+        b.type_annotation = Some(ident("int"));
+
+        let stmt = Statement::FunctionDef {
+            name: "add".to_string(),
+            parameters: vec![a, b],
+            body: vec![Statement::Return {
+                value: Some(Expression::BinaryOp {
+                    left: Box::new(ident("a")),
+                    op: mamba_parser::ast::BinaryOperator::Add,
+                    right: Box::new(ident("b")),
+                    position: pos(),
+                }),
+                position: pos(),
+            }],
+            is_async: false,
+            return_type: Some(ident("int")),
+            decorators: vec![],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "fn add(a: i64, b: i64) -> i64 {\n    return (a + b);\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_default_parameters() {
+        let st = StatementTranspiler::new();
+        let mut p = param("count");
+        p.type_annotation = Some(ident("int"));
+        p.default = Some(int_lit(5));
+
+        let stmt = Statement::FunctionDef {
+            name: "take".to_string(),
+            parameters: vec![p],
+            body: vec![Statement::Return {
+                value: Some(ident("count")),
+                position: pos(),
+            }],
+            is_async: false,
+            return_type: Some(ident("int")),
+            decorators: vec![],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "fn take(count: Option<i64>) -> i64 {\n    let mut count = count.unwrap_or(5);\n    return count;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_async_function() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::FunctionDef {
+            name: "run".to_string(),
+            parameters: vec![],
+            body: vec![Statement::Return {
+                value: None,
+                position: pos(),
+            }],
+            is_async: true,
+            return_type: None,
+            decorators: vec![],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "async fn run() -> () {\n    return;\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_varargs_and_kwargs_parameters() {
+        let st = StatementTranspiler::new();
+        let mut args = param("args");
+        args.kind = ParameterKind::VarArgs;
+        args.type_annotation = Some(ident("str"));
+
+        let mut kwargs = param("kwargs");
+        kwargs.kind = ParameterKind::VarKwargs;
+        kwargs.type_annotation = Some(ident("bool"));
+
+        let stmt = Statement::FunctionDef {
+            name: "collect".to_string(),
+            parameters: vec![args, kwargs],
+            body: vec![Statement::Pass(pos())],
+            is_async: false,
+            return_type: None,
+            decorators: vec![],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "fn collect(args: Vec<String>, kwargs: std::collections::HashMap<String, bool>) -> () {\n}\n"
+        );
+    }
+
+    #[test]
+    fn handles_multiple_return_statements() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::FunctionDef {
+            name: "sign".to_string(),
+            parameters: vec![param("x")],
+            body: vec![Statement::If {
+                condition: ident("x"),
+                then_block: vec![Statement::Return {
+                    value: Some(int_lit(1)),
+                    position: pos(),
+                }],
+                elif_blocks: vec![],
+                else_block: Some(vec![Statement::Return {
+                    value: Some(int_lit(-1)),
+                    position: pos(),
+                }]),
+                position: pos(),
+            }],
+            is_async: false,
+            return_type: Some(ident("int")),
+            decorators: vec![],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "fn sign(x: ()) -> i64 {\n    if x {\n        return 1;\n    }\n    else {\n        return -1;\n    }\n}\n"
         );
     }
 }
