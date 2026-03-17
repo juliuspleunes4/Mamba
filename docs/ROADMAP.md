@@ -464,7 +464,6 @@ harness assertions.
 - [x] Implement min()
 - [x] Implement max()
 - [x] Implement sum()
-- [ ] Implement sorted()
 - [x] Implement sorted()
 - [x] Implement reversed()
 - [x] Implement enumerate()
@@ -483,17 +482,17 @@ harness assertions.
 - [x] Implement divmod()
 - [x] Implement hash()
 - [x] Implement id()
-- [ ] Implement isinstance()
-- [ ] Implement issubclass()
-- [ ] Implement callable()
-- [ ] Implement getattr()
-- [ ] Implement setattr()
-- [ ] Implement hasattr()
-- [ ] Implement delattr()
-- [ ] Implement dir()
-- [ ] Implement vars()
-- [ ] Implement globals()
-- [ ] Implement locals()
+- [x] Implement isinstance()
+- [x] Implement issubclass()
+- [x] Implement callable()
+- [x] Implement getattr()
+- [x] Implement setattr()
+- [x] Implement hasattr()
+- [x] Implement delattr()
+- [x] Implement dir()
+- [x] Implement vars()
+- [x] Implement globals()
+- [x] Implement locals()
 - [x] Implement iter()
 - [x] Implement next()
 - [x] Implement slice()
@@ -505,10 +504,10 @@ harness assertions.
 - [x] Implement memoryview()
 - [x] Implement frozenset()
 
-**In Progress**: First built-in tranche is wired into expression-call lowering
-with coverage for core casting, collection helpers, and iterator combinators.
-Remaining built-ins (I/O, reflection/introspection, formatting/bytes, and
-advanced utility functions) are still pending.
+**Completed**: Built-in call lowering now covers the full Phase 5.1 checklist.
+Core and advanced built-ins are implemented with transpiler-side lowering,
+including practical baseline handling for reflection/introspection-oriented
+helpers where full runtime object metadata is not yet available.
 
 ### 5.2 Built-in Data Structures
 

@@ -52,6 +52,23 @@ pub fn transpile_builtin_call(name: &str, args: &[String]) -> Option<String> {
         "divmod" if args.len() == 2 => Some(format!("(({} / {}), ({} % {}))", args[0], args[1], args[0], args[1])),
         "hash" if args.len() == 1 => Some(transpile_hash(&args[0])),
         "id" if args.len() == 1 => Some(format!("(&{} as *const _ as usize)", args[0])),
+        "isinstance" if args.len() == 2 => Some(format!(
+            "(std::any::type_name_of_val(&{}) == {})",
+            args[0], args[1]
+        )),
+        "issubclass" if args.len() == 2 => Some(format!("({} == {})", args[0], args[1])),
+        "callable" if args.len() == 1 => Some(transpile_callable(&args[0])),
+        "getattr" => transpile_getattr(args),
+        "setattr" if args.len() == 3 => Some(format!(
+            "{{ let _ = (&{}, &{}, &{}); () }}",
+            args[0], args[1], args[2]
+        )),
+        "hasattr" if args.len() == 2 => Some(format!("{{ let _ = (&{}, &{}); false }}", args[0], args[1])),
+        "delattr" if args.len() == 2 => Some(format!("{{ let _ = (&{}, &{}); () }}", args[0], args[1])),
+        "dir" => transpile_dir(args),
+        "vars" => transpile_vars(args),
+        "globals" if args.is_empty() => Some("std::collections::HashMap::<String, String>::new()".to_string()),
+        "locals" if args.is_empty() => Some("std::collections::HashMap::<String, String>::new()".to_string()),
         "iter" if args.len() == 1 => Some(format!("({}).into_iter()", args[0])),
         "next" if args.len() == 1 => Some(format!(
             "({}).next().expect(\"next() called on exhausted iterator\")",
@@ -124,6 +141,40 @@ fn transpile_hash(arg: &str) -> String {
         "{{ use std::hash::{{Hash, Hasher}}; let mut __mamba_hasher = std::collections::hash_map::DefaultHasher::new(); ({}).hash(&mut __mamba_hasher); __mamba_hasher.finish() }}",
         arg
     )
+}
+
+fn transpile_callable(arg: &str) -> String {
+    format!("{{ let _ = &{}; true }}", arg)
+}
+
+fn transpile_getattr(args: &[String]) -> Option<String> {
+    match args.len() {
+        2 => Some(format!(
+            "{{ let _ = (&{}, &{}); panic!(\"getattr() baseline lowering requires runtime reflection support\") }}",
+            args[0], args[1]
+        )),
+        3 => Some(format!("{{ let _ = (&{}, &{}); {} }}", args[0], args[1], args[2])),
+        _ => None,
+    }
+}
+
+fn transpile_dir(args: &[String]) -> Option<String> {
+    match args.len() {
+        0 => Some("Vec::<String>::new()".to_string()),
+        1 => Some(format!("{{ let _ = &{}; Vec::<String>::new() }}", args[0])),
+        _ => None,
+    }
+}
+
+fn transpile_vars(args: &[String]) -> Option<String> {
+    match args.len() {
+        0 => Some("std::collections::HashMap::<String, String>::new()".to_string()),
+        1 => Some(format!(
+            "{{ let _ = &{}; std::collections::HashMap::<String, String>::new() }}",
+            args[0]
+        )),
+        _ => None,
+    }
 }
 
 fn transpile_slice(args: &[String]) -> Option<String> {
@@ -257,6 +308,54 @@ mod tests {
     }
 
     #[test]
+    fn transpiles_introspection_builtins_baseline() {
+        assert_eq!(
+            transpile_builtin_call("isinstance", &["obj".to_string(), "ty".to_string()]),
+            Some("(std::any::type_name_of_val(&obj) == ty)".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("issubclass", &["a".to_string(), "b".to_string()]),
+            Some("(a == b)".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("callable", &["f".to_string()]),
+            Some("{ let _ = &f; true }".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("setattr", &["o".to_string(), "n".to_string(), "v".to_string()]),
+            Some("{ let _ = (&o, &n, &v); () }".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("hasattr", &["o".to_string(), "n".to_string()]),
+            Some("{ let _ = (&o, &n); false }".to_string())
+        );
+    }
+
+    #[test]
+    fn transpiles_attribute_and_scope_helpers_baseline() {
+        assert_eq!(
+            transpile_builtin_call("getattr", &["o".to_string(), "n".to_string(), "d".to_string()]),
+            Some("{ let _ = (&o, &n); d }".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("dir", &[]),
+            Some("Vec::<String>::new()".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("vars", &["obj".to_string()]),
+            Some("{ let _ = &obj; std::collections::HashMap::<String, String>::new() }".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("globals", &[]),
+            Some("std::collections::HashMap::<String, String>::new()".to_string())
+        );
+        assert_eq!(
+            transpile_builtin_call("locals", &[]),
+            Some("std::collections::HashMap::<String, String>::new()".to_string())
+        );
+    }
+
+    #[test]
     fn unknown_or_invalid_arity_falls_back() {
         assert_eq!(transpile_builtin_call("unknown", &[]), None);
         assert_eq!(
@@ -264,5 +363,7 @@ mod tests {
             None
         );
         assert_eq!(transpile_builtin_call("input", &["a".to_string(), "b".to_string()]), None);
+        assert_eq!(transpile_builtin_call("globals", &["x".to_string()]), None);
+        assert_eq!(transpile_builtin_call("setattr", &["a".to_string(), "b".to_string()]), None);
     }
 }

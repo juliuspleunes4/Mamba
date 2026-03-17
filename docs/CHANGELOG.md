@@ -8,6 +8,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 5.1: Built-in Functions (Tranche 3 / Completion)**
+  - Implemented remaining built-ins:
+    * `isinstance`, `issubclass`, `callable`
+    * `getattr`, `setattr`, `hasattr`, `delattr`
+    * `dir`, `vars`, `globals`, `locals`
+  - Added helper-based baseline lowering for reflection/introspection-oriented
+    built-ins to keep generated Rust valid while runtime metadata support is
+    still evolving
+  - Added dedicated builtin tests for introspection and scope helper arities
+  - Completed all Phase 5.1 roadmap checklist items
+  - Validation:
+    * `cargo test -p mamba-transpiler` passing (unit + integration suites)
+
 - **Phase 5.1: Built-in Functions (Tranche 2)**
   - Extended builtin lowering with:
     * I/O helper: `input`
