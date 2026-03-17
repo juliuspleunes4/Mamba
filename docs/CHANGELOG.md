@@ -8,6 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 4.7: Advanced Transpilation** ✅
+  - Extended `ExpressionTranspiler` with:
+    * lambda expression lowering to Rust closures (`|args| expr`)
+    * list-comprehension lowering to iterator map/filter pipelines collecting to `Vec<_>`
+  - Added comprehension validation for this phase scope:
+    * supports single-generator list comprehensions
+    * emits explicit error for multi-generator comprehensions (deferred)
+  - Extended `StatementTranspiler` function lowering with:
+    * basic decorator handling (emits decorator metadata comments above function)
+    * recursive call preservation for non-tail recursive forms
+    * direct self tail-recursion optimization for eligible
+      `return self(...args...)` function bodies by rewriting to explicit loops
+  - Added 7 dedicated advanced transpilation tests covering:
+    * lambda and closure lowering
+    * list-comprehension map/filter output
+    * unsupported multi-generator comprehension behavior
+    * decorator emission
+    * recursive call output
+    * tail recursion optimization output
+
 - **Phase 4.6: Function Transpilation** ✅
   - Extended `StatementTranspiler` to support `FunctionDef` lowering
   - Implemented function signature generation for:

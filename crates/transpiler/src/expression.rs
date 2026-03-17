@@ -1,10 +1,12 @@
-use mamba_parser::ast::{BinaryOperator, Expression, Literal, UnaryOperator};
+use mamba_parser::ast::{BinaryOperator, Comprehension, Expression, Literal, UnaryOperator};
 use thiserror::Error;
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ExpressionTranspileError {
     #[error("expression kind is not supported yet")]
     UnsupportedExpression,
+    #[error("only single-generator comprehensions are supported in this phase")]
+    UnsupportedComprehension,
 }
 
 /// Transpiles Mamba expression AST nodes into Rust expression source.
@@ -86,8 +88,53 @@ impl ExpressionTranspiler {
 
                 Ok(format!("std::collections::HashMap::from([{}])", entries))
             }
+            Expression::Lambda {
+                parameters, body, ..
+            } => {
+                let params = parameters.join(", ");
+                let rendered_body = self.transpile(body)?;
+                Ok(format!("|{}| {}", params, rendered_body))
+            }
+            Expression::ListComp {
+                element,
+                generators,
+                ..
+            } => self.transpile_list_comprehension(element, generators),
             _ => Err(ExpressionTranspileError::UnsupportedExpression),
         }
+    }
+
+    fn transpile_list_comprehension(
+        &self,
+        element: &Expression,
+        generators: &[Comprehension],
+    ) -> Result<String, ExpressionTranspileError> {
+        if generators.len() != 1 {
+            return Err(ExpressionTranspileError::UnsupportedComprehension);
+        }
+
+        let generator = &generators[0];
+        let iter_expr = self.transpile(&generator.iter)?;
+        let element_expr = self.transpile(element)?;
+
+        if generator.conditions.is_empty() {
+            return Ok(format!(
+                "({}).into_iter().map(|{}| {}).collect::<Vec<_>>()",
+                iter_expr, generator.target, element_expr
+            ));
+        }
+
+        let rendered_conditions = generator
+            .conditions
+            .iter()
+            .map(|condition| self.transpile(condition))
+            .collect::<Result<Vec<_>, _>>()?
+            .join(" && ");
+
+        Ok(format!(
+            "({}).into_iter().filter(|{}| {}).map(|{}| {}).collect::<Vec<_>>()",
+            iter_expr, generator.target, rendered_conditions, generator.target, element_expr
+        ))
     }
 
     fn transpile_literal(&self, literal: &Literal) -> Result<String, ExpressionTranspileError> {
@@ -162,7 +209,9 @@ fn escape_rust_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{ExpressionTranspileError, ExpressionTranspiler};
-    use mamba_parser::ast::{BinaryOperator, Expression, Literal, UnaryOperator};
+    use mamba_parser::ast::{
+        BinaryOperator, Comprehension, Expression, Literal, UnaryOperator,
+    };
     use mamba_parser::token::SourcePosition;
 
     fn pos() -> SourcePosition {
@@ -348,6 +397,101 @@ mod tests {
         assert_eq!(
             tr.transpile(&expr),
             Err(ExpressionTranspileError::UnsupportedExpression)
+        );
+    }
+
+    #[test]
+    fn transpiles_lambda_expression() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::Lambda {
+            parameters: vec!["x".to_string(), "y".to_string()],
+            body: Box::new(Expression::BinaryOp {
+                left: Box::new(ident("x")),
+                op: BinaryOperator::Add,
+                right: Box::new(ident("y")),
+                position: pos(),
+            }),
+            position: pos(),
+        };
+
+        assert_eq!(tr.transpile(&expr).unwrap(), "|x, y| (x + y)");
+    }
+
+    #[test]
+    fn transpiles_list_comprehension_with_map() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::ListComp {
+            element: Box::new(Expression::BinaryOp {
+                left: Box::new(ident("x")),
+                op: BinaryOperator::Add,
+                right: Box::new(int_lit(1)),
+                position: pos(),
+            }),
+            generators: vec![Comprehension {
+                target: "x".to_string(),
+                iter: ident("items"),
+                conditions: vec![],
+                position: pos(),
+            }],
+            position: pos(),
+        };
+
+        assert_eq!(
+            tr.transpile(&expr).unwrap(),
+            "(items).into_iter().map(|x| (x + 1)).collect::<Vec<_>>()"
+        );
+    }
+
+    #[test]
+    fn transpiles_list_comprehension_with_filter_and_map() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::ListComp {
+            element: Box::new(ident("x")),
+            generators: vec![Comprehension {
+                target: "x".to_string(),
+                iter: ident("items"),
+                conditions: vec![Expression::BinaryOp {
+                    left: Box::new(ident("x")),
+                    op: BinaryOperator::GreaterThan,
+                    right: Box::new(int_lit(0)),
+                    position: pos(),
+                }],
+                position: pos(),
+            }],
+            position: pos(),
+        };
+
+        assert_eq!(
+            tr.transpile(&expr).unwrap(),
+            "(items).into_iter().filter(|x| (x > 0)).map(|x| x).collect::<Vec<_>>()"
+        );
+    }
+
+    #[test]
+    fn rejects_multi_generator_list_comprehension_for_now() {
+        let tr = ExpressionTranspiler::new();
+        let expr = Expression::ListComp {
+            element: Box::new(ident("x")),
+            generators: vec![
+                Comprehension {
+                    target: "x".to_string(),
+                    iter: ident("xs"),
+                    conditions: vec![],
+                    position: pos(),
+                },
+                Comprehension {
+                    target: "y".to_string(),
+                    iter: ident("ys"),
+                    conditions: vec![],
+                    position: pos(),
+                },
+            ],
+            position: pos(),
+        };
+
+        assert_eq!(
+            tr.transpile(&expr),
+            Err(ExpressionTranspileError::UnsupportedComprehension)
         );
     }
 }

@@ -267,6 +267,7 @@ impl StatementTranspiler {
                 body,
                 is_async,
                 return_type,
+                decorators,
                 ..
             } => self.transpile_function_definition(
                 generator,
@@ -275,6 +276,7 @@ impl StatementTranspiler {
                 body,
                 *is_async,
                 return_type.as_ref(),
+                decorators,
                 context,
             ),
             _ => Err(StatementTranspileError::UnsupportedStatement),
@@ -301,8 +303,14 @@ impl StatementTranspiler {
         body: &[Statement],
         is_async: bool,
         return_type: Option<&Expression>,
+        decorators: &[Expression],
         context: &mut TranspileContext,
     ) -> Result<(), StatementTranspileError> {
+        for decorator in decorators {
+            let rendered_decorator = self.expr.transpile(decorator)?;
+            generator.emit_line(&format!("// @{}", rendered_decorator));
+        }
+
         let signature = self.render_function_signature(name, parameters, is_async, return_type)?;
         generator.open_block(&signature);
 
@@ -318,9 +326,75 @@ impl StatementTranspiler {
             }
         }
 
+        if self.try_emit_direct_tail_recursion_optimization(generator, name, parameters, body)? {
+            generator.close_block()?;
+            return Ok(());
+        }
+
         self.transpile_block(generator, body, context)?;
         generator.close_block()?;
         Ok(())
+    }
+
+    fn try_emit_direct_tail_recursion_optimization(
+        &self,
+        generator: &mut CodeGenerator,
+        function_name: &str,
+        parameters: &[Parameter],
+        body: &[Statement],
+    ) -> Result<bool, StatementTranspileError> {
+        if body.len() != 1 {
+            return Ok(false);
+        }
+
+        let tail_call_args = match &body[0] {
+            Statement::Return {
+                value:
+                    Some(Expression::Call {
+                        function,
+                        arguments,
+                        ..
+                    }),
+                ..
+            } => match function.as_ref() {
+                Expression::Identifier { name, .. } if name == function_name => arguments,
+                _ => return Ok(false),
+            },
+            _ => return Ok(false),
+        };
+
+        let updatable_parameters = parameters
+            .iter()
+            .filter(|param| {
+                matches!(
+                    param.kind,
+                    ParameterKind::Regular | ParameterKind::PositionalOnly | ParameterKind::KwOnly
+                )
+            })
+            .collect::<Vec<_>>();
+
+        if updatable_parameters.len() != tail_call_args.len() {
+            return Ok(false);
+        }
+
+        generator.emit_line("// Tail recursion optimized to an explicit loop");
+        for parameter in &updatable_parameters {
+            generator.emit_line(&format!("let mut {} = {};", parameter.name, parameter.name));
+        }
+
+        generator.open_block("loop");
+        for (index, arg_expr) in tail_call_args.iter().enumerate() {
+            let rendered_arg = self.expr.transpile(arg_expr)?;
+            generator.emit_line(&format!("let __mamba_next_{} = {};", index, rendered_arg));
+        }
+
+        for (index, parameter) in updatable_parameters.iter().enumerate() {
+            generator.emit_line(&format!("{} = __mamba_next_{};", parameter.name, index));
+        }
+        generator.emit_line("continue;");
+        generator.close_block()?;
+
+        Ok(true)
     }
 
     fn render_function_signature(
@@ -869,6 +943,101 @@ mod tests {
         assert_eq!(
             st.transpile_statement(&stmt).unwrap(),
             "fn sign(x: ()) -> i64 {\n    if x {\n        return 1;\n    }\n    else {\n        return -1;\n    }\n}\n"
+        );
+    }
+
+    #[test]
+    fn transpiles_basic_decorators_as_metadata_comments() {
+        let st = StatementTranspiler::new();
+        let stmt = Statement::FunctionDef {
+            name: "work".to_string(),
+            parameters: vec![],
+            body: vec![Statement::Return {
+                value: None,
+                position: pos(),
+            }],
+            is_async: false,
+            return_type: None,
+            decorators: vec![ident("trace"), ident("timed")],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "// @trace\n// @timed\nfn work() -> () {\n    return;\n}\n"
+        );
+    }
+
+    #[test]
+    fn keeps_recursive_call_for_non_tail_pattern() {
+        let st = StatementTranspiler::new();
+        let mut n_param = param("n");
+        n_param.type_annotation = Some(ident("int"));
+
+        let stmt = Statement::FunctionDef {
+            name: "fact".to_string(),
+            parameters: vec![n_param],
+            body: vec![Statement::Return {
+                value: Some(Expression::BinaryOp {
+                    left: Box::new(ident("n")),
+                    op: mamba_parser::ast::BinaryOperator::Multiply,
+                    right: Box::new(Expression::Call {
+                        function: Box::new(ident("fact")),
+                        arguments: vec![Expression::BinaryOp {
+                            left: Box::new(ident("n")),
+                            op: mamba_parser::ast::BinaryOperator::Subtract,
+                            right: Box::new(int_lit(1)),
+                            position: pos(),
+                        }],
+                        position: pos(),
+                    }),
+                    position: pos(),
+                }),
+                position: pos(),
+            }],
+            is_async: false,
+            return_type: Some(ident("int")),
+            decorators: vec![],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "fn fact(n: i64) -> i64 {\n    return (n * fact((n - 1)));\n}\n"
+        );
+    }
+
+    #[test]
+    fn optimizes_direct_tail_recursion_to_loop() {
+        let st = StatementTranspiler::new();
+        let mut n_param = param("n");
+        n_param.type_annotation = Some(ident("int"));
+
+        let stmt = Statement::FunctionDef {
+            name: "countdown".to_string(),
+            parameters: vec![n_param],
+            body: vec![Statement::Return {
+                value: Some(Expression::Call {
+                    function: Box::new(ident("countdown")),
+                    arguments: vec![Expression::BinaryOp {
+                        left: Box::new(ident("n")),
+                        op: mamba_parser::ast::BinaryOperator::Subtract,
+                        right: Box::new(int_lit(1)),
+                        position: pos(),
+                    }],
+                    position: pos(),
+                }),
+                position: pos(),
+            }],
+            is_async: false,
+            return_type: Some(ident("int")),
+            decorators: vec![],
+            position: pos(),
+        };
+
+        assert_eq!(
+            st.transpile_statement(&stmt).unwrap(),
+            "fn countdown(n: i64) -> i64 {\n    // Tail recursion optimized to an explicit loop\n    let mut n = n;\n    loop {\n        let __mamba_next_0 = (n - 1);\n        n = __mamba_next_0;\n        continue;\n    }\n}\n"
         );
     }
 }

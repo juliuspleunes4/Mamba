@@ -409,12 +409,17 @@ multiple return statements in nested control flow.
 
 ### 4.7 Advanced Transpilation
 
-- [ ] Transpile list comprehensions (map/filter)
-- [ ] Transpile lambda expressions
-- [ ] Transpile closures
-- [ ] Transpile decorators (basic)
-- [ ] Handle recursion
-- [ ] Optimize tail recursion
+- [x] Transpile list comprehensions (map/filter)
+- [x] Transpile lambda expressions
+- [x] Transpile closures
+- [x] Transpile decorators (basic)
+- [x] Handle recursion
+- [x] Optimize tail recursion
+
+**Completed**: Added advanced expression/function lowering with lambda-to-closure
+transpilation, list-comprehension map/filter lowering, basic decorator emission,
+recursive-call support, and direct self tail-recursion rewriting to explicit
+loop form for eligible return-call patterns.
 
 ### 4.8 Main Function Generation
 
