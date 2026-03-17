@@ -1972,6 +1972,60 @@ mod tests {
     }
 
     #[test]
+    fn test_all_augmented_operators_explicit_coverage() {
+        let code = r#"
+x = 10
+x += 1
+x -= 1
+x *= 2
+x /= 2
+x //= 2
+x %= 3
+x **= 2
+x &= 7
+x |= 8
+x ^= 1
+x >>= 1
+x <<= 2
+"#;
+        let module = parse(code);
+        let analyzer = SemanticAnalyzer::new();
+        let result = analyzer.analyze(&module);
+        assert!(
+            result.is_ok(),
+            "All supported augmented assignment operators should work with a defined variable"
+        );
+    }
+
+    #[test]
+    fn test_augmented_operator_undefined_variable_reports_error() {
+        let operators = [
+            "+=", "-=", "*=", "/=", "//=", "%=", "**=", "&=", "|=", "^=", ">>=", "<<=",
+        ];
+
+        for op in operators {
+            let code = format!("x {} 1", op);
+            let module = parse(&code);
+            let analyzer = SemanticAnalyzer::new();
+            let result = analyzer.analyze(&module);
+            assert!(
+                result.is_err(),
+                "Operator '{}' should fail when variable is undefined",
+                op
+            );
+
+            let errors = result.unwrap_err();
+            assert!(
+                errors
+                    .iter()
+                    .any(|e| matches!(e, SemanticError::UndefinedVariable { name, .. } if name == "x")),
+                "Operator '{}' should report UndefinedVariable for x",
+                op
+            );
+        }
+    }
+
+    #[test]
     fn test_augmented_assignment_complex_target() {
         // Augmented assignment to attribute or subscript should not error
         // (we don't track whether those exist, only identifier variables)

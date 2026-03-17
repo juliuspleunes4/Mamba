@@ -8,6 +8,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.5: Deferred Semantic Validation** ✅ (partial)
+  - Added explicit semantic tests for all supported augmented assignment operators
+  - New coverage includes: `+=`, `-=`, `*=`, `/=`, `//=`, `%=`, `**=`, `&=`, `|=`, `^=`, `>>=`, `<<=`
+  - Added negative coverage to verify undefined-variable errors for each augmented operator variant
+  - Files updated:
+    * `crates/parser/src/semantic.rs` - added 2 new tests
+    * `docs/ROADMAP.md` - marked augmented assignment explicit test task as complete
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 7** ✅ (431 tests passing)
   - Implemented advanced CFG analysis: dominance analysis and visualization
   - Dominance Analysis Methods:
