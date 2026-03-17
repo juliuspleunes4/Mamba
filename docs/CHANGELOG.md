@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Phase 3.6: Semantic Testing** ✅
+  - Completed semantic testing closeout audit and checklist alignment
+  - Verified broad semantic coverage for:
+    * Scope resolution
+    * Type inference accuracy
+    * Semantic error detection
+    * Edge cases (unreachable, control flow, assignment targets, operators)
+  - Confirmed semantic suites and full workspace test runs pass
+
 - **Phase 3.4: Control Flow Graph (CFG) - Session 8 Integration & Validation** ✅
   - Integrated CFG reachability into semantic analysis for function bodies
   - Added CFG-driven unreachable diagnostics for unreachable top-level statements in functions

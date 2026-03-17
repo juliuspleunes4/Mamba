@@ -301,10 +301,15 @@ Note: Most indentation features were implemented in Phase 1 (Lexer):
 
 ### 3.6 Semantic Testing
 
-- [ ] Test scope resolution
-- [ ] Test type inference accuracy
-- [ ] Test semantic error detection
-- [ ] Create test suite for edge cases
+- [x] Test scope resolution
+- [x] Test type inference accuracy
+- [x] Test semantic error detection
+- [x] Create test suite for edge cases
+
+**Completed**: Semantic testing coverage is now comprehensive across scope resolution,
+type inference, semantic error detection, unreachable code validation, operator
+validation, assignment validation, and edge-case behavior. Targeted semantic
+test suites pass, and full workspace `cargo test` runs are green.
 
 ---
 
